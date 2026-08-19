@@ -1,3 +1,35 @@
+@font-face {
+  font-family: "Maersk Headline";
+  src: url("https://www.maersk.com/~/media/maersk/assets/fonts/MaerskHeadline-Light.woff2") format("woff2");
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Maersk Headline";
+  src: url("https://www.maersk.com/~/media/maersk/assets/fonts/MaerskHeadline-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Maersk Headline";
+  src: url("https://www.maersk.com/~/media/maersk/assets/fonts/MaerskHeadline-Bold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Maersk Headline";
+  src: url("https://www.maersk.com/~/media/maersk/assets/fonts/MaerskHeadline-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --maersk-navy: #00243d;
   --maersk-blue: #42b0d5;
@@ -14,9 +46,10 @@
   --maersk-success-bg: #eef8ed;
   --maersk-danger: #b80012;
   --maersk-danger-bg: #fdecec;
-  --header-height: 64px;
+  --header-height: 56px;
+  --sidebar-width: 240px;
   --radius: 0;
-  font-family: "IBM Plex Sans", Arial, sans-serif;
+  font-family: "Maersk Headline", Arial, sans-serif;
   color: var(--maersk-text);
   background: var(--maersk-page);
 }
@@ -27,6 +60,7 @@
 
 body {
   margin: 0;
+  font-family: "Maersk Headline", Arial, sans-serif;
 }
 
 button,
@@ -37,18 +71,93 @@ textarea {
 
 .app-shell {
   min-height: 100vh;
+  display: flex;
+}
+
+.sidebar {
+  width: var(--sidebar-width);
+  flex-shrink: 0;
+  background: var(--maersk-navy);
+  color: var(--maersk-white);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  position: sticky;
+  top: 0;
+  border-right: 4px solid var(--maersk-blue);
+}
+
+.sidebar-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 20px 16px 16px;
+  border-bottom: 1px solid rgba(66, 176, 213, 0.25);
+}
+
+.sidebar-brand .brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 12px 20px;
+  gap: 4px;
+  flex: 1;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: #b5e0f5;
+  text-align: left;
+  padding: 10px 12px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.nav-item:hover {
+  background: rgba(66, 176, 213, 0.16);
+  color: var(--maersk-white);
+}
+
+.nav-item.active {
+  background: var(--maersk-blue);
+  color: var(--maersk-navy);
+  font-weight: 600;
+}
+
+.workspace {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .topbar {
-  background: var(--maersk-navy);
-  color: var(--maersk-white);
+  background: var(--maersk-white);
+  color: var(--maersk-navy);
   min-height: var(--header-height);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   padding: 0 28px;
-  border-bottom: 4px solid var(--maersk-blue);
+  border-bottom: 1px solid var(--maersk-border);
+}
+
+.topbar h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
 }
 
 .brand {
@@ -67,6 +176,7 @@ textarea {
 
 .brand-copy {
   min-width: 0;
+  width: 100%;
 }
 
 .brand-kicker {
@@ -77,11 +187,15 @@ textarea {
   color: var(--maersk-blue);
 }
 
-.brand h1 {
+.brand h1,
+.sidebar-brand h1 {
   margin: 0;
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 600;
   line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .topbar-actions {
@@ -142,7 +256,8 @@ textarea {
 }
 
 .primary:disabled,
-.secondary:disabled {
+.secondary:disabled,
+.ghost:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
@@ -237,6 +352,10 @@ textarea {
   border-bottom: 1px solid var(--maersk-border);
   color: var(--maersk-muted);
   font-size: 14px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .summary strong {
@@ -464,7 +583,70 @@ td.copied {
   border-color: var(--maersk-navy);
 }
 
+.log-card {
+  margin-top: 0;
+}
+
+.log-list {
+  max-height: 320px;
+  overflow: auto;
+  font-size: 13px;
+}
+
+.log-row {
+  display: grid;
+  grid-template-columns: 168px 180px 1fr;
+  gap: 10px;
+  padding: 8px 20px;
+  border-top: 1px solid var(--maersk-border);
+  align-items: start;
+}
+
+.log-row time {
+  color: var(--maersk-navy);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.log-action {
+  font-weight: 600;
+  color: var(--maersk-navy);
+}
+
+.log-detail {
+  color: var(--maersk-muted);
+  word-break: break-word;
+}
+
+.log-empty {
+  margin: 0;
+  padding: 20px;
+  color: var(--maersk-muted);
+}
+
 @media (max-width: 760px) {
+  .app-shell {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    min-height: auto;
+    position: static;
+    border-right: 0;
+    border-bottom: 4px solid var(--maersk-blue);
+  }
+
+  .sidebar-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .nav-item {
+    width: auto;
+    flex: 1;
+  }
+
   .topbar {
     align-items: flex-start;
     flex-direction: column;
@@ -490,5 +672,9 @@ td.copied {
 
   .wide {
     grid-column: auto;
+  }
+
+  .log-row {
+    grid-template-columns: 1fr;
   }
 }

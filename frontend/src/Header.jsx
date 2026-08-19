@@ -26,8 +26,8 @@ export default function Header({ fileRef, importing, onImportClick, onImportChan
       <div className="brand">
         <MaerskStar />
         <div className="brand-copy">
-          <p className="brand-kicker">Customer configuration</p>
-          <h1>Customer remarks</h1>
+          <p className="brand-kicker">MALSTAR</p>
+          <h1>MALSTAR_Toolkit</h1>
         </div>
       </div>
       <div className="topbar-actions">

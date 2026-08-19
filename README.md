@@ -14,6 +14,25 @@ CSV headers must be: `CTRLOrgcode,Customer,Remark1,Remark2,Remark3`. Existing ro
 
 If replacing the previous project, delete the old SQLite database because its schema is different. The new database is `backend/customer_remark.db`.
 
+## Run on this machine (no Docker)
+
+Docker is optional. On a Windows CVM you can serve the built SPA from Flask:
+
+```powershell
+cd frontend
+npm install
+npm run build
+cd ..\backend
+python -m venv .venv
+.\.venv\Scripts\python -m pip install -r requirements.txt
+$env:FLASK_HOST="0.0.0.0"
+$env:PORT="8080"
+$env:FLASK_DEBUG="false"
+.\.venv\Scripts\python app.py
+```
+
+Then open `http://localhost:8080` on the CVM, or `http://<cvm-ip>:8080` from another machine (port 8080 must be allowed in the firewall).
+
 ## Docker
 
 Build and run the production image locally:
@@ -35,3 +54,12 @@ From a machine logged in with Azure CLI (`az login`):
 ```
 
 Use a **single instance**. SQLite is not safe across scale-out. Persist `/home` (`WEBSITES_ENABLE_APP_SERVICE_STORAGE=true`) so remarks survive restarts.
+
+## Public access on this Tencent CVM
+
+Cloud security group allows **TCP 80**, not 8080. Customer Remarks is proxied through the existing port-80 service:
+
+- Public: http://111.229.173.46/remarks/
+- Local: http://127.0.0.1/remarks/
+
+Time Motion Tracker Pro stays at http://111.229.173.46/

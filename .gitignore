@@ -4,3 +4,10 @@ frontend/node_modules/
 frontend/dist/
 __pycache__/
 *.pyc
+.env
+.venv/
+*.db
+*.db-wal
+*.db-shm
+backend/malstar_toolkit.log
+backend/malstar_toolkit.log.*

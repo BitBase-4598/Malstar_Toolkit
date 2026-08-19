@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Search, X } from "lucide-react";
+import { Search, X, Plus, Upload } from "lucide-react";
 import { api } from "./api";
-import Header from "./Header";
+import Sidebar from "./Sidebar";
 import RecordTable from "./RecordTable";
 import RecordModal from "./RecordModal";
+import ActivityLog from "./ActivityLog";
 import { lettersOnly } from "./letters";
 
 const emptyForm = {
@@ -27,7 +28,29 @@ export default function App() {
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
+  const [logs, setLogs] = useState([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [section, setSection] = useState("records");
   const fileRef = useRef();
+
+  const refreshLogs = useCallback(async () => {
+    setLogsLoading(true);
+    try {
+      const result = await api.listLogs();
+      setLogs(result.data || []);
+    } catch {
+      /* keep previous log rows */
+    } finally {
+      setLogsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    api.recordLog("Opened MALSTAR_Toolkit", "page loaded");
+    refreshLogs();
+    const timer = setInterval(refreshLogs, 4000);
+    return () => clearInterval(timer);
+  }, [refreshLogs]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -66,6 +89,7 @@ export default function App() {
     setEditing(null);
     setForm(emptyForm);
     setModal(true);
+    api.recordLog("Opened add form");
   };
 
   const openEdit = (row) => {
@@ -78,6 +102,7 @@ export default function App() {
       remark3: row.remark3,
     });
     setModal(true);
+    api.recordLog("Opened edit form", `${row.ctrlOrgcode} / ${row.customer}`);
   };
 
   const closeModal = useCallback(() => {
@@ -94,7 +119,9 @@ export default function App() {
       setNotice({ type: "success", text: result.message });
       setModal(false);
       await load();
+      await refreshLogs();
     } catch (error) {
+      api.recordLog("Save failed", error.message);
       setNotice({ type: "error", text: error.message });
     } finally {
       setSaving(false);
@@ -103,13 +130,16 @@ export default function App() {
 
   const remove = async (row) => {
     if (!window.confirm(`Delete ${row.ctrlOrgcode} / ${row.customer}?`)) {
+      api.recordLog("Delete cancelled", `${row.ctrlOrgcode} / ${row.customer}`);
       return;
     }
     try {
       const result = await api.remove(row.id);
       setNotice({ type: "success", text: result.message });
       await load();
+      await refreshLogs();
     } catch (error) {
+      api.recordLog("Delete failed", error.message);
       setNotice({ type: "error", text: error.message });
     }
   };
@@ -120,15 +150,21 @@ export default function App() {
       return;
     }
     setImporting(true);
+    api.recordLog("CSV import started", file.name);
     try {
       const result = await api.importCsv(file);
+      const extra = result.duplicates
+        ? ` Duplicate rows in CSV used last value (${result.duplicates}).`
+        : "";
       setNotice({
         type: "success",
-        text: `${result.message}. Created ${result.created}, updated ${result.updated}.`,
+        text: `${result.message}. Created ${result.created}, updated ${result.updated}.${extra}`,
       });
       setPage(1);
       await load();
+      await refreshLogs();
     } catch (error) {
+      api.recordLog("CSV import failed", error.message);
       setNotice({ type: "error", text: error.message });
     } finally {
       setImporting(false);
@@ -136,64 +172,99 @@ export default function App() {
     }
   };
 
+  const changeSection = (next) => {
+    setSection(next);
+    api.recordLog("Opened section", next);
+  };
+
   const updateQuery = (value) => setQuery(lettersOnly(value));
 
   return (
     <div className="app-shell">
-      <Header
-        fileRef={fileRef}
-        importing={importing}
-        onImportClick={() => fileRef.current.click()}
-        onImportChange={upload}
-        onAdd={openNew}
+      <Sidebar
+        section={section}
+        onSectionChange={changeSection}
       />
-      <main className="page">
-        <div className="page-intro">
-          <h2>Customer remarks</h2>
-          <p>Search and maintain organization-level customer remarks.</p>
-        </div>
-        {notice.text && (
-          <div className={`alert ${notice.type}`}>
-            {notice.text}
-            <button type="button" onClick={() => setNotice({ type: "", text: "" })} aria-label="Dismiss">
-              <X size={16} />
+      <div className="workspace">
+        <header className="topbar">
+          <h2>{section === "logs" ? "Activity log" : "Records"}</h2>
+          <div className="topbar-actions">
+            <input
+              ref={fileRef}
+              hidden
+              type="file"
+              accept=".csv,text/csv"
+              onChange={upload}
+            />
+            <button className="ghost" type="button" onClick={() => fileRef.current.click()} disabled={importing}>
+              <Upload size={16} />
+              {importing ? "Importing..." : "Import CSV"}
+            </button>
+            <button className="primary" type="button" onClick={openNew}>
+              <Plus size={16} />
+              Add record
             </button>
           </div>
-        )}
-        <div className="search">
-          <Search size={19} />
-          <input
-            autoFocus
-            value={query}
-            onChange={(event) => updateQuery(event.target.value)}
-            onPaste={(event) => {
-              event.preventDefault();
-              updateQuery(event.clipboardData.getData("text"));
-            }}
-            placeholder="Paste or type a company name"
-            aria-describedby="search-hint"
-          />
-          {query && (
-            <button type="button" onClick={() => setQuery("")} aria-label="Clear search">
-              <X size={17} />
-            </button>
+        </header>
+        <main className="page">
+          {notice.text && (
+            <div className={`alert ${notice.type}`}>
+              {notice.text}
+              <button type="button" onClick={() => setNotice({ type: "", text: "" })} aria-label="Dismiss">
+                <X size={16} />
+              </button>
+            </div>
           )}
-        </div>
-        <p id="search-hint" className="search-hint">
-          Matching uses letters in the company name only. Punctuation, numbers, and extra text are cleared automatically.
-        </p>
-        <RecordTable
-          rows={rows}
-          loading={loading}
-          pagination={pagination}
-          page={page}
-          onPageChange={setPage}
-          onEdit={openEdit}
-          onDelete={remove}
-          onCopied={(label) => setNotice({ type: "success", text: `Copied ${label}` })}
-          onCopyError={(message) => setNotice({ type: "error", text: message })}
-        />
-      </main>
+          {section === "records" ? (
+            <>
+              <div className="page-intro">
+                <p>Search and maintain organization-level customer remarks.</p>
+              </div>
+              <div className="search">
+                <Search size={19} />
+                <input
+                  autoFocus
+                  value={query}
+                  onChange={(event) => updateQuery(event.target.value)}
+                  onPaste={(event) => {
+                    event.preventDefault();
+                    updateQuery(event.clipboardData.getData("text"));
+                  }}
+                  placeholder="Paste or type a company name"
+                  aria-describedby="search-hint"
+                />
+                {query && (
+                  <button type="button" onClick={() => setQuery("")} aria-label="Clear search">
+                    <X size={17} />
+                  </button>
+                )}
+              </div>
+              <p id="search-hint" className="search-hint">
+                Matching uses letters in the company name only. Punctuation, numbers, and extra text are cleared automatically.
+              </p>
+              <RecordTable
+                rows={rows}
+                loading={loading}
+                pagination={pagination}
+                page={page}
+                onPageChange={setPage}
+                onEdit={openEdit}
+                onDelete={remove}
+                onCopied={(label) => {
+                  setNotice({ type: "success", text: `Copied ${label}` });
+                  api.recordLog("Copied cell", label);
+                }}
+                onCopyError={(message) => {
+                  setNotice({ type: "error", text: message });
+                  api.recordLog("Copy failed", message);
+                }}
+              />
+            </>
+          ) : (
+            <ActivityLog entries={logs} loading={logsLoading} />
+          )}
+        </main>
+      </div>
       {modal && (
         <RecordModal
           editing={editing}
