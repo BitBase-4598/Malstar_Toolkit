@@ -1,0 +1,494 @@
+:root {
+  --maersk-navy: #00243d;
+  --maersk-blue: #42b0d5;
+  --maersk-blue-dark: #0077b2;
+  --maersk-blue-hover: #003d6d;
+  --maersk-text: #141414;
+  --maersk-muted: #4c4c4c;
+  --maersk-page: #f5f5f5;
+  --maersk-white: #ffffff;
+  --maersk-border: #d4d4d4;
+  --maersk-row: #f0f0f0;
+  --maersk-hover: #f7fbfd;
+  --maersk-success: #40ab35;
+  --maersk-success-bg: #eef8ed;
+  --maersk-danger: #b80012;
+  --maersk-danger-bg: #fdecec;
+  --header-height: 64px;
+  --radius: 0;
+  font-family: "IBM Plex Sans", Arial, sans-serif;
+  color: var(--maersk-text);
+  background: var(--maersk-page);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.topbar {
+  background: var(--maersk-navy);
+  color: var(--maersk-white);
+  min-height: var(--header-height);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 28px;
+  border-bottom: 4px solid var(--maersk-blue);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.star {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  color: var(--maersk-blue);
+}
+
+.brand-copy {
+  min-width: 0;
+}
+
+.brand-kicker {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  color: var(--maersk-blue);
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.topbar-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.page {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 32px 28px 48px;
+}
+
+.page-intro {
+  margin-bottom: 24px;
+}
+
+.page-intro h2 {
+  margin: 0 0 8px;
+  color: var(--maersk-navy);
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.page-intro p {
+  margin: 0;
+  color: var(--maersk-muted);
+  font-size: 15px;
+}
+
+.primary,
+.secondary,
+.ghost,
+.pagination button {
+  border-radius: var(--radius);
+}
+
+.primary,
+.secondary {
+  padding: 10px 16px;
+  font-weight: 600;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  cursor: pointer;
+}
+
+.primary {
+  border: 0;
+  background: var(--maersk-blue);
+  color: var(--maersk-navy);
+}
+
+.primary:hover:not(:disabled) {
+  background: #77c6e0;
+}
+
+.primary:disabled,
+.secondary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.secondary {
+  background: transparent;
+  color: var(--maersk-white);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+}
+
+.secondary:hover:not(:disabled) {
+  border-color: var(--maersk-white);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ghost {
+  background: var(--maersk-white);
+  color: var(--maersk-navy);
+  border: 1px solid var(--maersk-border);
+}
+
+.ghost:hover:not(:disabled) {
+  border-color: var(--maersk-navy);
+}
+
+.search {
+  background: var(--maersk-white);
+  border: 1px solid var(--maersk-border);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+}
+
+.search:focus-within {
+  border-color: var(--maersk-navy);
+  outline: 2px solid var(--maersk-navy);
+  outline-offset: 0;
+}
+
+.search svg {
+  color: var(--maersk-muted);
+  flex-shrink: 0;
+}
+
+.search input {
+  border: 0;
+  outline: 0;
+  width: 100%;
+  padding: 12px 10px;
+  font-size: 15px;
+  background: transparent;
+}
+
+.search input:focus {
+  outline: none;
+}
+
+.search-hint {
+  margin: 8px 0 16px;
+  color: var(--maersk-muted);
+  font-size: 13px;
+}
+
+.search button,
+.alert button,
+.modal-head button,
+.actions button {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: var(--maersk-muted);
+}
+
+.grid input:focus-visible,
+.grid textarea:focus-visible,
+.primary:focus-visible,
+.secondary:focus-visible,
+.ghost:focus-visible,
+.pagination button:focus-visible {
+  outline: 2px solid var(--maersk-blue);
+  outline-offset: 2px;
+}
+
+.card {
+  background: var(--maersk-white);
+  border: 1px solid var(--maersk-border);
+  overflow: hidden;
+}
+
+.summary {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--maersk-border);
+  color: var(--maersk-muted);
+  font-size: 14px;
+}
+
+.summary strong {
+  color: var(--maersk-navy);
+  font-weight: 600;
+}
+
+.table-wrap {
+  overflow: auto;
+  max-height: min(70vh, 720px);
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 1000px;
+}
+
+th {
+  text-align: left;
+  padding: 11px 16px;
+  background: var(--maersk-navy);
+  color: var(--maersk-white);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+td {
+  padding: 13px 16px;
+  border-top: 1px solid var(--maersk-border);
+  font-size: 14px;
+  max-width: 270px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+tbody tr:hover td {
+  background: var(--maersk-hover);
+}
+
+td.copyable {
+  cursor: pointer;
+}
+
+td.copyable:hover {
+  color: var(--maersk-blue-dark);
+}
+
+td.copied {
+  background: #e8f6fb !important;
+}
+
+.actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.actions button {
+  padding: 6px;
+}
+
+.actions button:hover {
+  background: #e8f6fb;
+  color: var(--maersk-blue-dark);
+}
+
+.actions .danger:hover {
+  background: var(--maersk-danger-bg);
+  color: var(--maersk-danger);
+}
+
+.empty {
+  text-align: center;
+  padding: 48px 16px;
+  color: var(--maersk-muted);
+  cursor: default;
+}
+
+.pagination {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 12px 18px;
+  align-items: center;
+  border-top: 1px solid var(--maersk-border);
+  font-size: 14px;
+}
+
+.pagination button {
+  padding: 8px 12px;
+  border: 1px solid var(--maersk-border);
+  background: var(--maersk-white);
+  color: var(--maersk-navy);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pagination button:hover:not(:disabled) {
+  border-color: var(--maersk-navy);
+}
+
+.pagination button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.alert {
+  padding: 12px 15px;
+  margin-bottom: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  white-space: pre-wrap;
+  font-size: 14px;
+}
+
+.success {
+  background: var(--maersk-success-bg);
+  color: #1f6b1a;
+  border-left: 4px solid var(--maersk-success);
+}
+
+.error {
+  background: var(--maersk-danger-bg);
+  color: var(--maersk-danger);
+  border-left: 4px solid var(--maersk-danger);
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 36, 61, 0.55);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  z-index: 20;
+}
+
+.modal {
+  background: var(--maersk-white);
+  width: min(700px, 100%);
+  border: 1px solid var(--maersk-border);
+}
+
+.modal-head {
+  display: flex;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 4px solid var(--maersk-blue);
+  background: var(--maersk-navy);
+  color: var(--maersk-white);
+}
+
+.modal-head h2,
+.modal-head p {
+  margin: 0;
+}
+
+.modal-head h2 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.modal-head p {
+  color: #91d8f2;
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+.modal-head button {
+  color: var(--maersk-white);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  padding: 24px;
+}
+
+.grid label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--maersk-navy);
+}
+
+.grid input,
+.grid textarea {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px;
+  border: 1px solid var(--maersk-border);
+  border-radius: var(--radius);
+  font: inherit;
+  resize: vertical;
+}
+
+.wide {
+  grid-column: 1 / -1;
+}
+
+.modal-actions {
+  padding: 16px 24px;
+  border-top: 1px solid var(--maersk-border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.modal-actions .secondary {
+  color: var(--maersk-navy);
+  border-color: var(--maersk-border);
+}
+
+.modal-actions .secondary:hover:not(:disabled) {
+  background: var(--maersk-row);
+  border-color: var(--maersk-navy);
+}
+
+@media (max-width: 760px) {
+  .topbar {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 16px 20px;
+  }
+
+  .page {
+    padding: 20px;
+  }
+
+  .page-intro h2 {
+    font-size: 24px;
+  }
+
+  .topbar-actions {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .wide {
+    grid-column: auto;
+  }
+}
