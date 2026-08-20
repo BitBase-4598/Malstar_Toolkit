@@ -1,14 +1,19 @@
+import base64
 import csv
 import io
 import logging
 import os
+import re
 import sqlite3
+import uuid
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from flask import Flask, abort, jsonify, request, send_from_directory
+import mammoth
+from flask import Flask, abort, jsonify, request, send_file, send_from_directory
 from flask_cors import CORS
+from openpyxl import load_workbook
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -16,7 +21,15 @@ DB_PATH = Path(
     os.environ.get("DATABASE_PATH", BASE_DIR / "customer_remark.db")
 ).expanduser()
 LOG_PATH = Path(os.environ.get("LOG_PATH", BASE_DIR / "malstar_toolkit.log")).expanduser()
+UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", BASE_DIR / "uploads")).expanduser()
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "32"))
+MAX_JSON_UPLOAD_MB = int(os.environ.get("MAX_JSON_UPLOAD_MB", "4"))
+PREVIEW_ROWS = 200
+PREVIEW_COLS = 30
+ALLOWED_FILE_KINDS = {
+    ".docx": "docx",
+    ".xlsx": "xlsx",
+}
 CORS_ORIGINS = [
     origin.strip()
     for origin in os.environ.get(
@@ -175,6 +188,56 @@ def init_db():
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_activity_logs_time ON ActivityLogs (Timestamp DESC, ID DESC)"
         )
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS ToolkitFiles (
+                ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                OriginalName TEXT NOT NULL,
+                StoredName TEXT NOT NULL UNIQUE,
+                Kind TEXT NOT NULL,
+                Size INTEGER NOT NULL DEFAULT 0,
+                UploadedAt TEXT NOT NULL,
+                UpdatedAt TEXT NOT NULL
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_toolkit_files_name ON ToolkitFiles (OriginalName)"
+        )
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS Sops (
+                ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                Title TEXT NOT NULL,
+                Purpose TEXT NOT NULL DEFAULT '',
+                Owner TEXT NOT NULL DEFAULT '',
+                Revision TEXT NOT NULL DEFAULT '',
+                Status TEXT NOT NULL DEFAULT 'draft',
+                CreatedAt TEXT NOT NULL,
+                UpdatedAt TEXT NOT NULL
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sops_title ON Sops (Title)"
+        )
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS SopSteps (
+                ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                SopID INTEGER NOT NULL,
+                StepNumber INTEGER NOT NULL,
+                Instruction TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (SopID) REFERENCES Sops(ID) ON DELETE CASCADE
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sop_steps_sop ON SopSteps (SopID, StepNumber)"
+        )
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS SopAttachments (
+                SopID INTEGER NOT NULL,
+                FileID INTEGER NOT NULL,
+                PRIMARY KEY (SopID, FileID),
+                FOREIGN KEY (SopID) REFERENCES Sops(ID) ON DELETE CASCADE,
+                FOREIGN KEY (FileID) REFERENCES ToolkitFiles(ID)
+            )
+        """)
         count = conn.execute("SELECT COUNT(*) FROM CustomerRemarks").fetchone()[0]
         if count == 0:
             seeds = [
@@ -196,6 +259,7 @@ def init_db():
 
 
 init_db()
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 log_event("MALSTAR_Toolkit started", f"database={DB_PATH}")
 
 
@@ -227,6 +291,204 @@ def row_to_dict(row):
         "createTime": row["CreateTime"],
         "updateTime": row["UpdateTime"],
     }
+
+
+def file_to_dict(row):
+    return {
+        "id": row["ID"],
+        "originalName": row["OriginalName"],
+        "kind": row["Kind"],
+        "size": row["Size"],
+        "uploadedAt": row["UploadedAt"],
+        "updatedAt": row["UpdatedAt"],
+    }
+
+
+def ensure_upload_dir():
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    return UPLOAD_DIR
+
+
+def file_kind_from_name(filename):
+    suffix = Path(filename or "").suffix.lower()
+    return ALLOWED_FILE_KINDS.get(suffix), suffix
+
+
+def stored_path(stored_name):
+    path = (ensure_upload_dir() / stored_name).resolve()
+    if path.parent != ensure_upload_dir().resolve():
+        abort(404)
+    return path
+
+
+def save_bytes_as_file(original_name, data):
+    kind, suffix = file_kind_from_name(original_name)
+    if not kind:
+        return None, "Please upload a .docx or .xlsx file."
+    if not data:
+        return None, "The uploaded file is empty."
+    if len(data) > MAX_UPLOAD_MB * 1024 * 1024:
+        return None, f"File exceeds the {MAX_UPLOAD_MB} MB limit."
+    display_name = Path(original_name).name.strip() or f"upload{suffix}"
+    stored_name = f"{uuid.uuid4().hex}{suffix}"
+    dest = stored_path(stored_name)
+    dest.write_bytes(data)
+    stamp = now_stamp()
+    with get_connection() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO ToolkitFiles (OriginalName, StoredName, Kind, Size, UploadedAt, UpdatedAt)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (display_name, stored_name, kind, len(data), stamp, stamp),
+        )
+        row = conn.execute("SELECT * FROM ToolkitFiles WHERE ID=?", (cur.lastrowid,)).fetchone()
+    return file_to_dict(row), None
+
+
+def cell_to_text(value):
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d %H:%M:%S")
+    return str(value)
+
+
+def sanitize_preview_html(value):
+    cleaned = re.sub(r"(?is)<script.*?>.*?</script>", "", value or "")
+    cleaned = re.sub(r"(?is)<iframe.*?>.*?</iframe>", "", cleaned)
+    return cleaned
+
+
+def preview_docx(path):
+    with path.open("rb") as handle:
+        result = mammoth.convert_to_html(handle)
+    return {
+        "kind": "docx",
+        "html": sanitize_preview_html(result.value),
+        "messages": [str(item) for item in (result.messages or [])][:8],
+    }
+
+
+def preview_xlsx(path):
+    workbook = load_workbook(path, read_only=True, data_only=True)
+    sheets = []
+    try:
+        for worksheet in workbook.worksheets:
+            rows = []
+            truncated = False
+            for row_index, row in enumerate(worksheet.iter_rows(max_col=PREVIEW_COLS, values_only=True), start=1):
+                if row_index > PREVIEW_ROWS:
+                    truncated = True
+                    break
+                values = [cell_to_text(cell) for cell in row]
+                if any(values):
+                    rows.append(values)
+            sheets.append({
+                "name": worksheet.title,
+                "rows": rows,
+                "truncated": truncated,
+            })
+    finally:
+        workbook.close()
+    return {"kind": "xlsx", "sheets": sheets}
+
+
+def load_sop(conn, sop_id):
+    row = conn.execute("SELECT * FROM Sops WHERE ID=?", (sop_id,)).fetchone()
+    if not row:
+        return None
+    steps = conn.execute(
+        """
+        SELECT ID, StepNumber, Instruction
+        FROM SopSteps WHERE SopID=? ORDER BY StepNumber, ID
+        """,
+        (sop_id,),
+    ).fetchall()
+    attachments = conn.execute(
+        """
+        SELECT f.* FROM ToolkitFiles f
+        INNER JOIN SopAttachments a ON a.FileID = f.ID
+        WHERE a.SopID=?
+        ORDER BY f.OriginalName
+        """,
+        (sop_id,),
+    ).fetchall()
+    return {
+        "id": row["ID"],
+        "title": row["Title"],
+        "purpose": row["Purpose"],
+        "owner": row["Owner"],
+        "revision": row["Revision"],
+        "status": row["Status"],
+        "createdAt": row["CreatedAt"],
+        "updatedAt": row["UpdatedAt"],
+        "steps": [
+            {
+                "id": step["ID"],
+                "stepNumber": step["StepNumber"],
+                "instruction": step["Instruction"],
+            }
+            for step in steps
+        ],
+        "attachments": [file_to_dict(item) for item in attachments],
+    }
+
+
+def parse_sop_payload(data):
+    title = str(data.get("title") or "").strip()
+    if not title:
+        return None, "Title is required."
+    status = str(data.get("status") or "draft").strip().lower()
+    if status not in {"draft", "active"}:
+        status = "draft"
+    raw_steps = data.get("steps") if isinstance(data.get("steps"), list) else []
+    steps = []
+    for item in raw_steps:
+        if isinstance(item, str):
+            instruction = item.strip()
+        elif isinstance(item, dict):
+            instruction = str(item.get("instruction") or "").strip()
+        else:
+            instruction = ""
+        if instruction:
+            steps.append(instruction)
+    raw_ids = data.get("attachmentIds") if isinstance(data.get("attachmentIds"), list) else []
+    attachment_ids = []
+    for item in raw_ids:
+        try:
+            file_id = int(item)
+        except (TypeError, ValueError):
+            continue
+        if file_id not in attachment_ids:
+            attachment_ids.append(file_id)
+    return {
+        "title": title[:200],
+        "purpose": str(data.get("purpose") or "").strip(),
+        "owner": str(data.get("owner") or "").strip()[:120],
+        "revision": str(data.get("revision") or "").strip()[:40],
+        "status": status,
+        "steps": steps,
+        "attachmentIds": attachment_ids,
+    }, None
+
+
+def replace_sop_children(conn, sop_id, payload):
+    conn.execute("DELETE FROM SopSteps WHERE SopID=?", (sop_id,))
+    conn.execute("DELETE FROM SopAttachments WHERE SopID=?", (sop_id,))
+    for index, instruction in enumerate(payload["steps"], start=1):
+        conn.execute(
+            "INSERT INTO SopSteps (SopID, StepNumber, Instruction) VALUES (?, ?, ?)",
+            (sop_id, index, instruction),
+        )
+    for file_id in payload["attachmentIds"]:
+        exists = conn.execute("SELECT ID FROM ToolkitFiles WHERE ID=?", (file_id,)).fetchone()
+        if not exists:
+            continue
+        conn.execute(
+            "INSERT INTO SopAttachments (SopID, FileID) VALUES (?, ?)",
+            (sop_id, file_id),
+        )
 
 
 def upsert_imported_records(records):
@@ -335,11 +597,264 @@ def create_activity_log():
     return jsonify({"success": True, "timestamp": stamp})
 
 
+@app.get("/api/files")
+def list_files():
+    q = str(request.args.get("q") or "").strip()
+    with get_connection() as conn:
+        if q:
+            rows = conn.execute(
+                """
+                SELECT * FROM ToolkitFiles
+                WHERE OriginalName LIKE ?
+                ORDER BY UploadedAt DESC, ID DESC
+                """,
+                (f"%{q}%",),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM ToolkitFiles ORDER BY UploadedAt DESC, ID DESC"
+            ).fetchall()
+    return jsonify({"success": True, "data": [file_to_dict(row) for row in rows]})
+
+
+def store_uploaded_file(filename, data):
+    record, error = save_bytes_as_file(filename, data)
+    if error:
+        log_event("File upload failed", error)
+        return jsonify({"success": False, "message": error}), 400
+    log_event("File uploaded", f"{record['originalName']} ({record['kind']})")
+    return jsonify({"success": True, "message": "File uploaded", "data": record}), 201
+
+
+@app.post("/api/files")
+def upload_file():
+    if "file" in request.files:
+        file = request.files["file"]
+        filename = file.filename or ""
+        data = file.read()
+        return store_uploaded_file(filename, data)
+    data = request.get_json(silent=True) or {}
+    filename = str(data.get("filename") or "")
+    raw = str(data.get("content") or data.get("contentBase64") or "")
+    if not raw:
+        log_event("File upload failed", "no file uploaded")
+        return jsonify({"success": False, "message": "No file was uploaded."}), 400
+    try:
+        payload = base64.b64decode(raw, validate=False)
+    except Exception:
+        return jsonify({"success": False, "message": "The file data is not valid base64."}), 400
+    if len(payload) > MAX_JSON_UPLOAD_MB * 1024 * 1024:
+        return jsonify({
+            "success": False,
+            "message": f"JSON uploads are limited to {MAX_JSON_UPLOAD_MB} MB. Use a smaller file.",
+        }), 400
+    return store_uploaded_file(filename, payload)
+
+
+@app.get("/api/files/<int:file_id>/preview")
+def preview_file(file_id):
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM ToolkitFiles WHERE ID=?", (file_id,)).fetchone()
+    if not row:
+        return jsonify({"success": False, "message": "File not found"}), 404
+    path = stored_path(row["StoredName"])
+    if not path.is_file():
+        return jsonify({"success": False, "message": "File is missing on disk"}), 404
+    try:
+        preview = preview_docx(path) if row["Kind"] == "docx" else preview_xlsx(path)
+    except Exception as error:
+        log_event("File preview failed", f"id={file_id} {error}")
+        return jsonify({"success": False, "message": f"Could not preview this file. {error}"}), 400
+    preview["file"] = file_to_dict(row)
+    return jsonify({"success": True, "data": preview})
+
+
+@app.get("/api/files/<int:file_id>")
+def download_file(file_id):
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM ToolkitFiles WHERE ID=?", (file_id,)).fetchone()
+    if not row:
+        return jsonify({"success": False, "message": "File not found"}), 404
+    path = stored_path(row["StoredName"])
+    if not path.is_file():
+        return jsonify({"success": False, "message": "File is missing on disk"}), 404
+    return send_file(path, as_attachment=True, download_name=row["OriginalName"])
+
+
+@app.patch("/api/files/<int:file_id>")
+def rename_file(file_id):
+    data = request.get_json(silent=True) or {}
+    name = Path(str(data.get("originalName") or data.get("name") or "")).name.strip()
+    if not name:
+        return jsonify({"success": False, "message": "A file name is required."}), 400
+    kind, suffix = file_kind_from_name(name)
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM ToolkitFiles WHERE ID=?", (file_id,)).fetchone()
+        if not row:
+            return jsonify({"success": False, "message": "File not found"}), 404
+        if kind and kind != row["Kind"]:
+            name = f"{Path(name).stem}{Path(row['StoredName']).suffix}"
+        elif not Path(name).suffix:
+            name = f"{name}{Path(row['StoredName']).suffix}"
+        conn.execute(
+            "UPDATE ToolkitFiles SET OriginalName=?, UpdatedAt=? WHERE ID=?",
+            (name, now_stamp(), file_id),
+        )
+        updated = conn.execute("SELECT * FROM ToolkitFiles WHERE ID=?", (file_id,)).fetchone()
+    log_event("File renamed", f"id={file_id} {name}")
+    return jsonify({"success": True, "message": "File renamed", "data": file_to_dict(updated)})
+
+
+@app.delete("/api/files/<int:file_id>")
+def delete_file(file_id):
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM ToolkitFiles WHERE ID=?", (file_id,)).fetchone()
+        if not row:
+            return jsonify({"success": False, "message": "File not found"}), 404
+        attached = conn.execute(
+            "SELECT SopID FROM SopAttachments WHERE FileID=? LIMIT 1",
+            (file_id,),
+        ).fetchone()
+        if attached:
+            return jsonify({
+                "success": False,
+                "message": "This file is attached to an SOP. Detach it first, then delete.",
+            }), 409
+        conn.execute("DELETE FROM ToolkitFiles WHERE ID=?", (file_id,))
+    path = stored_path(row["StoredName"])
+    if path.is_file():
+        path.unlink()
+    log_event("File deleted", f"id={file_id} {row['OriginalName']}")
+    return jsonify({"success": True, "message": "File deleted"})
+
+
+@app.get("/api/sops")
+def list_sops():
+    q = str(request.args.get("q") or "").strip()
+    with get_connection() as conn:
+        if q:
+            rows = conn.execute(
+                """
+                SELECT * FROM Sops
+                WHERE Title LIKE ? OR Owner LIKE ? OR Revision LIKE ?
+                ORDER BY UpdatedAt DESC, ID DESC
+                """,
+                (f"%{q}%", f"%{q}%", f"%{q}%"),
+            ).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM Sops ORDER BY UpdatedAt DESC, ID DESC").fetchall()
+        data = []
+        for row in rows:
+            step_count = conn.execute(
+                "SELECT COUNT(*) FROM SopSteps WHERE SopID=?", (row["ID"],)
+            ).fetchone()[0]
+            file_count = conn.execute(
+                "SELECT COUNT(*) FROM SopAttachments WHERE SopID=?", (row["ID"],)
+            ).fetchone()[0]
+            data.append({
+                "id": row["ID"],
+                "title": row["Title"],
+                "purpose": row["Purpose"],
+                "owner": row["Owner"],
+                "revision": row["Revision"],
+                "status": row["Status"],
+                "createdAt": row["CreatedAt"],
+                "updatedAt": row["UpdatedAt"],
+                "stepCount": step_count,
+                "attachmentCount": file_count,
+            })
+    return jsonify({"success": True, "data": data})
+
+
+@app.post("/api/sops")
+def create_sop():
+    payload, error = parse_sop_payload(request.get_json(silent=True) or {})
+    if error:
+        log_event("SOP create failed", error)
+        return jsonify({"success": False, "message": error}), 400
+    stamp = now_stamp()
+    with get_connection() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO Sops (Title, Purpose, Owner, Revision, Status, CreatedAt, UpdatedAt)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                payload["title"],
+                payload["purpose"],
+                payload["owner"],
+                payload["revision"],
+                payload["status"],
+                stamp,
+                stamp,
+            ),
+        )
+        sop_id = cur.lastrowid
+        replace_sop_children(conn, sop_id, payload)
+        data = load_sop(conn, sop_id)
+    log_event("SOP created", payload["title"])
+    return jsonify({"success": True, "message": "SOP created", "data": data}), 201
+
+
+@app.get("/api/sops/<int:sop_id>")
+def get_sop(sop_id):
+    with get_connection() as conn:
+        data = load_sop(conn, sop_id)
+    if not data:
+        return jsonify({"success": False, "message": "SOP not found"}), 404
+    return jsonify({"success": True, "data": data})
+
+
+@app.put("/api/sops/<int:sop_id>")
+def update_sop(sop_id):
+    payload, error = parse_sop_payload(request.get_json(silent=True) or {})
+    if error:
+        log_event("SOP update failed", error)
+        return jsonify({"success": False, "message": error}), 400
+    with get_connection() as conn:
+        existing = conn.execute("SELECT ID FROM Sops WHERE ID=?", (sop_id,)).fetchone()
+        if not existing:
+            return jsonify({"success": False, "message": "SOP not found"}), 404
+        conn.execute(
+            """
+            UPDATE Sops
+            SET Title=?, Purpose=?, Owner=?, Revision=?, Status=?, UpdatedAt=?
+            WHERE ID=?
+            """,
+            (
+                payload["title"],
+                payload["purpose"],
+                payload["owner"],
+                payload["revision"],
+                payload["status"],
+                now_stamp(),
+                sop_id,
+            ),
+        )
+        replace_sop_children(conn, sop_id, payload)
+        data = load_sop(conn, sop_id)
+    log_event("SOP updated", f"id={sop_id} {payload['title']}")
+    return jsonify({"success": True, "message": "SOP saved", "data": data})
+
+
+@app.delete("/api/sops/<int:sop_id>")
+def delete_sop(sop_id):
+    with get_connection() as conn:
+        row = conn.execute("SELECT Title FROM Sops WHERE ID=?", (sop_id,)).fetchone()
+        if not row:
+            return jsonify({"success": False, "message": "SOP not found"}), 404
+        conn.execute("DELETE FROM SopSteps WHERE SopID=?", (sop_id,))
+        conn.execute("DELETE FROM SopAttachments WHERE SopID=?", (sop_id,))
+        conn.execute("DELETE FROM Sops WHERE ID=?", (sop_id,))
+    log_event("SOP deleted", f"id={sop_id} {row['Title']}")
+    return jsonify({"success": True, "message": "SOP deleted"})
+
+
 @app.get("/api/customer-remarks")
 def list_records():
     q_letters = letters_only(request.args.get("q", ""))
     page = max(request.args.get("page", 1, type=int), 1)
-    page_size = min(max(request.args.get("pageSize", 20, type=int), 1), 100)
+    page_size = min(max(request.args.get("pageSize", 20, type=int), 1), 10000)
     if q_letters:
         where = """WHERE CustomerLetters != '' AND (
                        instr(CustomerLetters, ?) > 0
@@ -575,7 +1090,7 @@ def import_csv():
 def too_large(_):
     return jsonify({
         "success": False,
-        "message": f"CSV file exceeds the {MAX_UPLOAD_MB} MB limit.",
+        "message": f"Upload exceeds the {MAX_UPLOAD_MB} MB limit.",
     }), 413
 
 
@@ -607,7 +1122,7 @@ def write_request_log(response):
     if (
         path.startswith("/api/")
         and path not in {"/api/activity-logs", "/api/health"}
-        and request.method in {"POST", "PUT", "DELETE"}
+        and request.method in {"POST", "PUT", "PATCH", "DELETE"}
     ):
         log_event(
             f"{request.method} {path}",

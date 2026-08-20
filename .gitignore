@@ -11,3 +11,4 @@ __pycache__/
 *.db-shm
 backend/malstar_toolkit.log
 backend/malstar_toolkit.log.*
+backend/uploads/

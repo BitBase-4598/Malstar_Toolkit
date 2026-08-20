@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 import { copyText } from "./copyText";
 
@@ -22,6 +22,13 @@ export default function RecordTable({
   onCopyError,
 }) {
   const [copiedKey, setCopiedKey] = useState("");
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    if (wrapRef.current) {
+      wrapRef.current.scrollTop = 0;
+    }
+  }, [page, rows]);
 
   const copyCell = async (row, field) => {
     const value = String(row[field.key] || "").trim();
@@ -35,19 +42,36 @@ export default function RecordTable({
       window.setTimeout(() => {
         setCopiedKey((current) => (current === key ? "" : current));
       }, 700);
-      onCopied?.(field.label);
+      onCopied?.(value, field.label);
     } catch {
       onCopyError?.("Could not copy to the clipboard.");
     }
   };
 
+  const total = pagination.total || 0;
+  const totalPages = pagination.totalPages || 1;
+  const pageSize = pagination.pageSize || rows.length || 12;
+  const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
+  const pages = Array.from({ length: totalPages }, (_, index) => index + 1);
+
   return (
     <section className="card">
       <div className="summary">
-        <strong>{pagination.total}</strong> record(s)
+        <span className="summary-count">
+          <strong>{pagination.total}</strong> {pagination.total === 1 ? "record" : "records"}
+        </span>
       </div>
-      <div className="table-wrap">
-        <table>
+      <div className="table-wrap" ref={wrapRef}>
+        <table className={`wide-table${loading && rows.length ? " is-paging" : ""}`}>
+          <colgroup>
+            <col className="col-code" />
+            <col className="col-customer" />
+            <col className="col-remark" />
+            <col className="col-remark" />
+            <col className="col-remark" />
+            <col className="col-actions" />
+          </colgroup>
           <thead>
             <tr>
               <th>CTRLOrgcode</th>
@@ -59,7 +83,7 @@ export default function RecordTable({
             </tr>
           </thead>
           <tbody>
-            {loading ? (
+            {loading && rows.length === 0 ? (
               <tr>
                 <td colSpan="6" className="empty">
                   Loading...
@@ -116,19 +140,31 @@ export default function RecordTable({
         </table>
       </div>
       <div className="pagination">
-        <button type="button" disabled={page <= 1} onClick={() => onPageChange((value) => value - 1)}>
-          Previous
-        </button>
-        <span>
-          Page {pagination.page} / {pagination.totalPages}
-        </span>
-        <button
-          type="button"
-          disabled={page >= pagination.totalPages}
-          onClick={() => onPageChange((value) => value + 1)}
-        >
-          Next
-        </button>
+        <span>{total === 0 ? "No records" : `Showing ${from}–${to} of ${total}`}</span>
+        <div className="pagination-nav">
+          <button type="button" disabled={page <= 1} onClick={() => onPageChange((value) => value - 1)}>
+            Previous
+          </button>
+          <label className="pagination-select">
+            Page
+            <select
+              value={Math.min(page, totalPages)}
+              disabled={totalPages <= 1}
+              onChange={(event) => onPageChange(Number(event.target.value))}
+              aria-label="Select page"
+            >
+              {pages.map((number) => (
+                <option key={number} value={number}>
+                  {number}
+                </option>
+              ))}
+            </select>
+            of {totalPages}
+          </label>
+          <button type="button" disabled={page >= totalPages} onClick={() => onPageChange((value) => value + 1)}>
+            Next
+          </button>
+        </div>
       </div>
     </section>
   );
