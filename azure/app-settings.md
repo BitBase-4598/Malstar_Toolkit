@@ -15,6 +15,7 @@ From a machine logged in with Azure CLI, you can run [`deploy.ps1`](deploy.ps1):
 | `WEBSITES_PORT` | `8080` | Tells App Service which container port to route to |
 | `WEBSITES_ENABLE_APP_SERVICE_STORAGE` | `true` | Persists `/home` across restarts |
 | `DATABASE_PATH` | `/home/data/customer_remark.db` | SQLite file on persistent `/home` |
+| `UPLOAD_DIR` | `/home/data/uploads` | File/SOP uploads on persistent `/home` |
 | `PORT` | `8080` | Gunicorn bind port inside the container |
 | `FLASK_DEBUG` | `false` | Never enable debug in Azure |
 | `CORS_ORIGINS` | *(empty)* | Same-origin; Flask serves the SPA |
@@ -22,9 +23,17 @@ From a machine logged in with Azure CLI, you can run [`deploy.ps1`](deploy.ps1):
 Optional:
 
 | Name | Value | Why |
-|------|--------|-----|
-| `MAX_UPLOAD_MB` | `5` | CSV upload cap |
+| --- | --- | --- |
+| `MAX_UPLOAD_MB` | `5` | CSV / file upload cap |
 | `STATIC_DIR` | `/app/frontend/dist` | Already set in the image |
+| `AZURE_OPENAI_ENDPOINT` | `https://YOUR-RESOURCE.openai.azure.com` | Enables generated Ask answers. Leave empty for keyword-only retrieval |
+| `AZURE_OPENAI_API_KEY` | *(secret)* | Azure OpenAI key. Do not put this in the frontend |
+| `AZURE_OPENAI_CHAT_DEPLOYMENT` | `gpt-4o-mini` | Chat deployment name (not the model catalog name) |
+| `AZURE_OPENAI_API_VERSION` | `2024-06-01` | Optional. Defaults to `2024-06-01` |
+
+Ask works without Azure OpenAI: it searches SOP steps and uploaded DOCX/Excel text (SQLite FTS5) and returns cited excerpts. When the three `AZURE_OPENAI_*` settings above are set, `/api/ask` sends those excerpts to the chat deployment and returns a generated answer plus the same citations.
+
+`AZURE_OPENAI_EMBED_DEPLOYMENT` is not used in this version.
 
 ## Health check
 
@@ -54,7 +63,7 @@ az appservice plan create --name plan-autorating --resource-group rg-autorating 
 
 az webapp create --resource-group rg-autorating --plan plan-autorating --name autorating-web --deployment-container-image-name autoratingacr.azurecr.io/autoratingweb:latest
 
-az webapp config appsettings set --resource-group rg-autorating --name autorating-web --settings WEBSITES_PORT=8080 WEBSITES_ENABLE_APP_SERVICE_STORAGE=true DATABASE_PATH=/home/data/customer_remark.db PORT=8080 FLASK_DEBUG=false CORS_ORIGINS=
+az webapp config appsettings set --resource-group rg-autorating --name autorating-web --settings WEBSITES_PORT=8080 WEBSITES_ENABLE_APP_SERVICE_STORAGE=true DATABASE_PATH=/home/data/customer_remark.db UPLOAD_DIR=/home/data/uploads PORT=8080 FLASK_DEBUG=false CORS_ORIGINS=
 
 az webapp config container set --name autorating-web --resource-group rg-autorating --enable-app-service-storage true
 ```

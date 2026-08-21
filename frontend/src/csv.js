@@ -40,6 +40,53 @@ function parseCsvRows(text) {
   return rows.filter((item) => item.some((value) => String(value || "").trim()));
 }
 
+export function csvFileToDashboardRecords(text) {
+  const rows = parseCsvRows(text);
+  if (!rows.length) {
+    throw new Error("CSV contains no data rows.");
+  }
+  const headers = rows[0].map((header) => String(header || "").replace(/\s+/g, " ").trim().toLowerCase());
+  const required = [
+    ["order number", "orderNumber"],
+    ["shipment number", "shipmentNumber"],
+    ["message id", "messageId"],
+    ["date", "date"],
+    ["email received", "emailReceived"],
+    ["email status", "emailStatus"],
+    ["handled by", "handledBy"],
+    ["handling time", "handlingTime"],
+    ["booking converted time", "bookingConvertedTime"],
+    ["subject", "subject"],
+    ["mailbox", "mailbox"],
+  ];
+  const indexes = {};
+  const missing = [];
+  required.forEach(([header, key]) => {
+    const index = headers.indexOf(header);
+    indexes[key] = index;
+    if (index < 0) {
+      missing.push(header);
+    }
+  });
+  if (missing.length) {
+    throw new Error("CSV must include: " + missing.join(", ") + ".");
+  }
+  const value = (row, key) => (indexes[key] >= 0 ? String(row[indexes[key]] ?? "").trim() : "");
+  return rows.slice(1).map((row) => ({
+    orderNumber: value(row, "orderNumber"),
+    shipmentNumber: value(row, "shipmentNumber"),
+    messageId: value(row, "messageId"),
+    date: value(row, "date"),
+    emailReceived: value(row, "emailReceived"),
+    emailStatus: value(row, "emailStatus"),
+    handledBy: value(row, "handledBy"),
+    handlingTime: value(row, "handlingTime"),
+    bookingConvertedTime: value(row, "bookingConvertedTime"),
+    subject: value(row, "subject"),
+    mailbox: value(row, "mailbox"),
+  }));
+}
+
 export function csvFileToRecords(text) {
   const rows = parseCsvRows(text);
   if (!rows.length) {

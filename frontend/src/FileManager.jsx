@@ -23,6 +23,16 @@ const FileManager = forwardRef(function FileManager({ onNotice, onRefreshLogs },
   const [selectedId, setSelectedId] = useState(null);
   const [preview, setPreview] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const splitRef = useRef(null);
+  const listWidthRef = useRef(420);
+  const [listWidth, setListWidth] = useState(() => {
+    const saved = Number(window.localStorage.getItem("malstar-files-list-width"));
+    return saved >= 240 ? saved : 420;
+  });
+  const [dragging, setDragging] = useState(false);
+  const draggingRef = useRef(false);
+
+  listWidthRef.current = listWidth;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -79,6 +89,11 @@ const FileManager = forwardRef(function FileManager({ onNotice, onRefreshLogs },
 
   useImperativeHandle(ref, () => ({
     openUpload: () => inputRef.current?.click(),
+    openPreview: (id) => {
+      if (id) {
+        showPreview(id);
+      }
+    },
     uploading,
   }));
 
@@ -115,8 +130,37 @@ const FileManager = forwardRef(function FileManager({ onNotice, onRefreshLogs },
     }
   };
 
+  const onSplitPointerDown = (event) => {
+    event.preventDefault();
+    draggingRef.current = true;
+    setDragging(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const onSplitPointerMove = (event) => {
+    if (!draggingRef.current || !splitRef.current) {
+      return;
+    }
+    const rect = splitRef.current.getBoundingClientRect();
+    const max = Math.max(rect.width - 280, 240);
+    const next = Math.min(Math.max(event.clientX - rect.left, 240), max);
+    setListWidth(next);
+  };
+
+  const stopSplitDrag = () => {
+    if (!draggingRef.current) {
+      return;
+    }
+    draggingRef.current = false;
+    setDragging(false);
+    window.localStorage.setItem("malstar-files-list-width", String(listWidthRef.current));
+  };
+
   return (
-    <div className="tool-split">
+    <div
+      ref={splitRef}
+      className={`tool-split files-split${dragging ? " is-resizing" : ""}`}
+    >
       <input
         ref={inputRef}
         hidden
@@ -124,7 +168,7 @@ const FileManager = forwardRef(function FileManager({ onNotice, onRefreshLogs },
         accept=".docx,.xlsx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         onChange={upload}
       />
-      <section className="card">
+      <section className="card file-list-card" style={{ width: `${listWidth}px` }}>
         <div className="summary">
           <span className="summary-count">
             <strong>{rows.length}</strong> {rows.length === 1 ? "file" : "files"}
@@ -214,6 +258,16 @@ const FileManager = forwardRef(function FileManager({ onNotice, onRefreshLogs },
           </table>
         </div>
       </section>
+      <div
+        className="split-handle"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize file list"
+        onPointerDown={onSplitPointerDown}
+        onPointerMove={onSplitPointerMove}
+        onPointerUp={stopSplitDrag}
+        onPointerCancel={stopSplitDrag}
+      />
       <section className="card preview-card">
         <div className="summary">
           <strong>{preview?.file?.originalName || "Preview"}</strong>

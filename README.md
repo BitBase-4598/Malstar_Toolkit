@@ -4,6 +4,17 @@ Search and maintain organization-level customer remarks. Fields: CTRLOrgcode, Cu
 
 Search matches **company name (Customer) only**. Pasted text is stripped to letters automatically. Click a result cell to copy its value.
 
+## Ask (Files + SOPs)
+
+The **Ask** sidebar tool searches structured SOP pages and uploaded `.docx` / `.xlsx` files.
+
+- Saving an SOP or uploading a file updates the SQLite FTS5 index automatically.
+- Use **Rebuild index** if older files were added before this feature.
+- Without Azure OpenAI, Ask returns matching excerpts and citations (opens the SOP or file preview).
+- With `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, and `AZURE_OPENAI_CHAT_DEPLOYMENT` set, Ask generates an answer from those excerpts. See [azure/app-settings.md](azure/app-settings.md).
+
+On the CVM, rebuild the frontend with `VITE_BASE=/remarks/` so assets load under `/remarks/`.
+
 ## Local development
 
 1. Run `run-backend.bat`.

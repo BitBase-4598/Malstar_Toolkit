@@ -4,6 +4,11 @@
 **/*.pyc
 backend/.venv
 backend/customer_remark.db
+backend/*.db-wal
+backend/*.db-shm
+backend/uploads
+backend/malstar_toolkit.log
+backend/_extract_*
 frontend/node_modules
 frontend/dist
 *.md

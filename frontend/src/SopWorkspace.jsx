@@ -34,8 +34,6 @@ const SopWorkspace = forwardRef(function SopWorkspace({ onNotice, onRefreshLogs 
     setMode("edit");
   };
 
-  useImperativeHandle(ref, () => ({ openNew }));
-
   const openView = async (id) => {
     try {
       const result = await api.getSop(id);
@@ -45,6 +43,8 @@ const SopWorkspace = forwardRef(function SopWorkspace({ onNotice, onRefreshLogs 
       onNotice?.({ type: "error", text: error.message });
     }
   };
+
+  useImperativeHandle(ref, () => ({ openNew, openView }));
 
   const openEdit = async (id) => {
     try {

@@ -12,6 +12,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PORT=8080 \
     DATABASE_PATH=/home/data/customer_remark.db \
+    UPLOAD_DIR=/home/data/uploads \
     STATIC_DIR=/app/frontend/dist \
     FLASK_DEBUG=false \
     CORS_ORIGINS=
@@ -23,12 +24,14 @@ RUN apt-get update \
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY backend/app.py .
+COPY backend/app.py backend/config.py backend/db.py backend/util.py backend/logging_util.py ./
+COPY backend/blueprints ./blueprints
+COPY backend/services ./services
 COPY --from=frontend /frontend/dist ./frontend/dist
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN sed -i 's/\r$//' /entrypoint.sh \
     && chmod +x /entrypoint.sh \
-    && mkdir -p /home/data
+    && mkdir -p /home/data /home/data/uploads
 
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
