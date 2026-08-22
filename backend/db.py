@@ -53,11 +53,30 @@ def _create_tables(conn):
             Timestamp TEXT NOT NULL,
             Action TEXT NOT NULL,
             Detail TEXT NOT NULL DEFAULT '',
-            ClientIP TEXT NOT NULL DEFAULT ''
+            ClientIP TEXT NOT NULL DEFAULT '',
+            EventId TEXT NOT NULL DEFAULT '',
+            RequestId TEXT NOT NULL DEFAULT '',
+            Module TEXT NOT NULL DEFAULT '',
+            ActionCode TEXT NOT NULL DEFAULT '',
+            Outcome TEXT NOT NULL DEFAULT '',
+            Severity TEXT NOT NULL DEFAULT '',
+            ResourceType TEXT NOT NULL DEFAULT '',
+            ResourceId TEXT NOT NULL DEFAULT '',
+            Summary TEXT NOT NULL DEFAULT '',
+            UserAgent TEXT NOT NULL DEFAULT ''
         )
     """)
+    _ensure_activity_log_columns(conn)
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_activity_logs_time ON ActivityLogs (Timestamp DESC, ID DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_activity_logs_outcome "
+        "ON ActivityLogs (Outcome, Timestamp DESC, ID DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_activity_logs_module "
+        "ON ActivityLogs (Module, Timestamp DESC, ID DESC)"
     )
     conn.execute("""
         CREATE TABLE IF NOT EXISTS ToolkitFiles (
@@ -209,6 +228,49 @@ def _create_tables(conn):
         pass
 
 
+def _ensure_activity_log_columns(conn):
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(ActivityLogs)")}
+    additions = (
+        ("EventId", "TEXT NOT NULL DEFAULT ''"),
+        ("RequestId", "TEXT NOT NULL DEFAULT ''"),
+        ("Module", "TEXT NOT NULL DEFAULT ''"),
+        ("ActionCode", "TEXT NOT NULL DEFAULT ''"),
+        ("Outcome", "TEXT NOT NULL DEFAULT ''"),
+        ("Severity", "TEXT NOT NULL DEFAULT ''"),
+        ("ResourceType", "TEXT NOT NULL DEFAULT ''"),
+        ("ResourceId", "TEXT NOT NULL DEFAULT ''"),
+        ("Summary", "TEXT NOT NULL DEFAULT ''"),
+        ("UserAgent", "TEXT NOT NULL DEFAULT ''"),
+    )
+    for name, definition in additions:
+        if name not in columns:
+            conn.execute(f"ALTER TABLE ActivityLogs ADD COLUMN {name} {definition}")
+
+
+def _backfill_activity_logs(conn):
+    conn.execute(
+        """
+        UPDATE ActivityLogs
+        SET Outcome='failure', Severity='warning'
+        WHERE Outcome='' AND lower(Action) LIKE '%fail%'
+        """
+    )
+    conn.execute(
+        """
+        UPDATE ActivityLogs
+        SET Outcome='success', Severity='info'
+        WHERE Outcome=''
+        """
+    )
+    conn.execute(
+        """
+        UPDATE ActivityLogs
+        SET Summary=Detail
+        WHERE Summary='' AND Detail!=''
+        """
+    )
+
+
 def _schema_version(conn):
     row = conn.execute("SELECT Version FROM SchemaVersion WHERE ID=1").fetchone()
     return row["Version"] if row else 0
@@ -285,5 +347,9 @@ def migrate():
         if current < 1:
             _run_once_side_effects(conn)
             _set_schema_version(conn, 1)
+        if current < 2:
+            _ensure_activity_log_columns(conn)
+            _backfill_activity_logs(conn)
+            _set_schema_version(conn, 2)
         if current < SCHEMA_VERSION:
             _set_schema_version(conn, SCHEMA_VERSION)

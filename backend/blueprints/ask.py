@@ -2,7 +2,7 @@ from flask import Blueprint, jsonify, request
 
 from config import ASK_MAX_QUESTION, llm_enabled
 from db import get_connection
-from logging_util import log_event
+from logging_util import audit
 from services.rag import (
     chunk_to_citation,
     generate_answer,
@@ -27,7 +27,7 @@ def ask_reindex():
     with get_connection() as conn:
         reindex_all(conn)
         data = rag_status(conn)
-    log_event("Ask index rebuilt", f"chunks={data['chunkCount']}")
+    audit("ask.reindex", summary=f"chunks={data['chunkCount']}")
     return jsonify({"success": True, "message": "Index rebuilt", "data": data})
 
 
@@ -36,6 +36,7 @@ def ask_question():
     data = request.get_json(silent=True) or {}
     question = str(data.get("question") or data.get("q") or "").strip()
     if not question:
+        audit("ask.query", "failure", summary="empty question")
         return jsonify({"success": False, "message": "A question is required."}), 400
     if len(question) > ASK_MAX_QUESTION:
         question = question[:ASK_MAX_QUESTION]
@@ -56,7 +57,12 @@ def ask_question():
                     for index, item in enumerate(citations, start=1)
                 )
             )
-    log_event("Ask", question[:200])
+    audit(
+        "ask.query",
+        outcome="failure" if llm_error else "success",
+        summary=question[:200],
+        extra={"mode": mode, "llmError": llm_error or ""},
+    )
     return jsonify({
         "success": True,
         "data": {

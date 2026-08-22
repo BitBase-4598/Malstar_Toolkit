@@ -4,7 +4,7 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request
 
 from db import get_connection
-from logging_util import log_event
+from logging_util import audit
 from services.leave import leave_to_dict, parse_leave_payload
 from util import now_stamp
 
@@ -36,7 +36,7 @@ def list_leave_plans():
 def create_leave_plan():
     payload, error = parse_leave_payload(request.get_json(silent=True) or {})
     if error:
-        log_event("Leave plan create failed", error)
+        audit("leave.create", "failure", summary=error)
         return jsonify({"success": False, "message": error}), 400
     stamp = now_stamp()
     try:
@@ -58,9 +58,13 @@ def create_leave_plan():
             row = conn.execute("SELECT * FROM LeavePlans WHERE ID=?", (cur.lastrowid,)).fetchone()
     except sqlite3.IntegrityError:
         message = "This person already has a leave plan on that day."
-        log_event("Leave plan create failed", message)
+        audit("leave.create", "failure", summary=message)
         return jsonify({"success": False, "message": message}), 409
-    log_event("Leave plan created", f"{payload['person']} {payload['leaveDate']}")
+    audit(
+        "leave.create",
+        resource_id=row["ID"],
+        summary=f"{payload['person']} {payload['leaveDate']}",
+    )
     return jsonify({"success": True, "message": "Leave plan saved", "data": leave_to_dict(row)}), 201
 
 
@@ -68,12 +72,13 @@ def create_leave_plan():
 def update_leave_plan(plan_id):
     payload, error = parse_leave_payload(request.get_json(silent=True) or {})
     if error:
-        log_event("Leave plan update failed", error)
+        audit("leave.update", "failure", resource_id=plan_id, summary=error)
         return jsonify({"success": False, "message": error}), 400
     try:
         with get_connection() as conn:
             existing = conn.execute("SELECT ID FROM LeavePlans WHERE ID=?", (plan_id,)).fetchone()
             if not existing:
+                audit("leave.update", "failure", resource_id=plan_id, summary="not found")
                 return jsonify({"success": False, "message": "Leave plan not found"}), 404
             conn.execute(
                 """
@@ -93,9 +98,13 @@ def update_leave_plan(plan_id):
             row = conn.execute("SELECT * FROM LeavePlans WHERE ID=?", (plan_id,)).fetchone()
     except sqlite3.IntegrityError:
         message = "This person already has a leave plan on that day."
-        log_event("Leave plan update failed", message)
+        audit("leave.update", "failure", resource_id=plan_id, summary=message)
         return jsonify({"success": False, "message": message}), 409
-    log_event("Leave plan updated", f"id={plan_id} {payload['person']} {payload['leaveDate']}")
+    audit(
+        "leave.update",
+        resource_id=plan_id,
+        summary=f"{payload['person']} {payload['leaveDate']}",
+    )
     return jsonify({"success": True, "message": "Leave plan saved", "data": leave_to_dict(row)})
 
 
@@ -104,7 +113,12 @@ def delete_leave_plan(plan_id):
     with get_connection() as conn:
         row = conn.execute("SELECT Person, LeaveDate FROM LeavePlans WHERE ID=?", (plan_id,)).fetchone()
         if not row:
+            audit("leave.delete", "failure", resource_id=plan_id, summary="not found")
             return jsonify({"success": False, "message": "Leave plan not found"}), 404
         conn.execute("DELETE FROM LeavePlans WHERE ID=?", (plan_id,))
-    log_event("Leave plan deleted", f"id={plan_id} {row['Person']} {row['LeaveDate']}")
+    audit(
+        "leave.delete",
+        resource_id=plan_id,
+        summary=f"{row['Person']} {row['LeaveDate']}",
+    )
     return jsonify({"success": True, "message": "Leave plan deleted"})

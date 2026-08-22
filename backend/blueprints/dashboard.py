@@ -4,7 +4,7 @@ from flask import Blueprint, jsonify, request
 
 from config import DASHBOARD_MAX_ROWS
 from db import get_connection
-from logging_util import log_event
+from logging_util import audit
 from services.dashboard_analytics import (
     DASHBOARD_FIELDS,
     build_dashboard_payload,
@@ -45,11 +45,11 @@ def import_dashboard():
     filename = str(payload.get("filename") or "daily-report.csv").strip() or "daily-report.csv"
     raw_rows = payload.get("records")
     if not isinstance(raw_rows, list):
-        log_event("Dashboard import failed", "JSON records missing")
+        audit("dashboard.import", "failure", summary="JSON records missing")
         return jsonify({"success": False, "message": "No records were sent."}), 400
     if len(raw_rows) > DASHBOARD_MAX_ROWS:
         message = f"CSV is limited to {DASHBOARD_MAX_ROWS} rows."
-        log_event("Dashboard import failed", message)
+        audit("dashboard.import", "failure", summary=message)
         return jsonify({"success": False, "message": message}), 400
     records = []
     errors = []
@@ -62,14 +62,18 @@ def import_dashboard():
             continue
         records.append(record)
     if errors:
-        log_event("Dashboard import failed", f"file={filename} validation errors={len(errors)}")
+        audit(
+            "dashboard.import",
+            "failure",
+            summary=f"file={filename} validation errors={len(errors)}",
+        )
         return jsonify({
             "success": False,
             "message": "CSV validation failed. Nothing was imported.",
             "errors": errors[:100],
         }), 400
     if not records:
-        log_event("Dashboard import failed", f"file={filename} no data rows")
+        audit("dashboard.import", "failure", summary=f"file={filename} no data rows")
         return jsonify({"success": False, "message": "CSV contains no data rows."}), 400
     stamp = now_stamp()
     with get_connection() as conn:
@@ -114,7 +118,7 @@ def import_dashboard():
             (filename[:200], stamp, len(records)),
         )
         data = build_dashboard_payload(conn, "", "")
-    log_event("Dashboard imported", f"file={filename} rows={len(records)}")
+    audit("dashboard.import", summary=f"file={filename} rows={len(records)}")
     return jsonify({
         "success": True,
         "message": "Dashboard updated",

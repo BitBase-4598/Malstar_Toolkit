@@ -11,7 +11,9 @@ export default function App() {
   const [logsLoading, setLogsLoading] = useState(false);
   const [logFilters, setLogFilters] = useState({
     timestamp: "",
+    module: "",
     action: "",
+    outcome: "",
     detail: "",
     clientIp: "",
   });

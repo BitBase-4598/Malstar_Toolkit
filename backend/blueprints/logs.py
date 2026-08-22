@@ -17,30 +17,67 @@ def activity_log_filters():
     action = str(request.args.get("action") or "").strip()
     detail = str(request.args.get("detail") or "").strip()
     client_ip = str(request.args.get("clientIp") or "").strip()
+    module = str(request.args.get("module") or "").strip()
+    outcome = str(request.args.get("outcome") or "").strip().casefold()
+    request_id = str(request.args.get("requestId") or "").strip()
     if timestamp:
         clauses.append("Timestamp LIKE ?")
         params.append(f"%{timestamp}%")
     if action:
-        clauses.append("Action LIKE ?")
-        params.append(f"%{action}%")
+        clauses.append("(Action LIKE ? OR ActionCode LIKE ?)")
+        params.extend([f"%{action}%", f"%{action}%"])
     if detail:
-        clauses.append("Detail LIKE ?")
-        params.append(f"%{detail}%")
+        clauses.append("(Detail LIKE ? OR Summary LIKE ?)")
+        params.extend([f"%{detail}%", f"%{detail}%"])
     if client_ip:
         clauses.append("ClientIP LIKE ?")
         params.append(f"%{client_ip}%")
+    if module:
+        clauses.append("Module = ?")
+        params.append(module)
+    if outcome in ("failure", "exception"):
+        if outcome == "failure":
+            clauses.append("Outcome IN ('failure', 'exception')")
+        else:
+            clauses.append("Outcome = ?")
+            params.append(outcome)
+    elif outcome:
+        clauses.append("Outcome = ?")
+        params.append(outcome)
+    if request_id:
+        clauses.append("RequestId LIKE ?")
+        params.append(f"%{request_id}%")
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     return where, params
 
 
 def activity_log_row(row):
+    keys = row.keys()
+    summary = row["Summary"] if "Summary" in keys and row["Summary"] else row["Detail"]
     return {
         "id": row["ID"],
         "timestamp": row["Timestamp"],
         "action": row["Action"],
-        "detail": row["Detail"],
+        "actionCode": row["ActionCode"] if "ActionCode" in keys else "",
+        "detail": summary,
+        "summary": summary,
         "clientIp": row["ClientIP"],
+        "eventId": row["EventId"] if "EventId" in keys else "",
+        "requestId": row["RequestId"] if "RequestId" in keys else "",
+        "module": row["Module"] if "Module" in keys else "",
+        "outcome": row["Outcome"] if "Outcome" in keys else "",
+        "severity": row["Severity"] if "Severity" in keys else "",
+        "resourceType": row["ResourceType"] if "ResourceType" in keys else "",
+        "resourceId": row["ResourceId"] if "ResourceId" in keys else "",
+        "userAgent": row["UserAgent"] if "UserAgent" in keys else "",
     }
+
+
+LOG_SELECT = """
+    ID, Timestamp, Action, Detail, ClientIP,
+    EventId, RequestId, Module, ActionCode, Outcome, Severity,
+    ResourceType, ResourceId, Summary, UserAgent
+"""
 
 
 @bp.get("/api/activity-logs")
@@ -52,7 +89,7 @@ def list_activity_logs():
         total = conn.execute(f"SELECT COUNT(*) FROM ActivityLogs {where}", params).fetchone()[0]
         rows = conn.execute(
             f"""
-            SELECT ID, Timestamp, Action, Detail, ClientIP
+            SELECT {LOG_SELECT}
             FROM ActivityLogs
             {where}
             ORDER BY ID DESC
@@ -78,7 +115,7 @@ def export_activity_logs():
     with get_connection() as conn:
         rows = conn.execute(
             f"""
-            SELECT Timestamp, Action, Detail, ClientIP
+            SELECT {LOG_SELECT}
             FROM ActivityLogs
             {where}
             ORDER BY ID DESC
@@ -88,9 +125,36 @@ def export_activity_logs():
         ).fetchall()
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["Timestamp", "Action", "Detail", "ClientIP"])
+    writer.writerow([
+        "Timestamp",
+        "Module",
+        "Action",
+        "ActionCode",
+        "Outcome",
+        "Severity",
+        "Detail",
+        "ResourceType",
+        "ResourceId",
+        "ClientIP",
+        "RequestId",
+        "EventId",
+    ])
     for row in rows:
-        writer.writerow([row["Timestamp"], row["Action"], row["Detail"], row["ClientIP"]])
+        item = activity_log_row(row)
+        writer.writerow([
+            item["timestamp"],
+            item["module"],
+            item["action"],
+            item["actionCode"],
+            item["outcome"],
+            item["severity"],
+            item["detail"],
+            item["resourceType"],
+            item["resourceId"],
+            item["clientIp"],
+            item["requestId"],
+            item["eventId"],
+        ])
     csv_text = output.getvalue()
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     return Response(

@@ -22,7 +22,7 @@ from config import (
     RAG_TOP_K,
     llm_enabled,
 )
-from logging_util import APP_LOGGER
+from logging_util import audit
 from services.files_store import cell_to_text, preview_docx, stored_path
 from services.sops import load_sop
 from util import now_stamp
@@ -192,7 +192,12 @@ def index_file(conn, file_id, touch=True):
         else:
             chunks = extract_xlsx_chunks(path, title, file_id)
     except Exception as error:
-        APP_LOGGER.info(f"{now_stamp()} | RAG index failed | file={file_id} {title} | {error}")
+        audit(
+            "file.index",
+            "failure",
+            resource_id=file_id,
+            summary=f"{title}: {error}",
+        )
         chunks = []
     replace_source_chunks(conn, "file", file_id, chunks, touch=touch)
 

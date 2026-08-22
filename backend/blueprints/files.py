@@ -5,7 +5,7 @@ from flask import Blueprint, jsonify, request, send_file
 
 from config import MAX_JSON_UPLOAD_MB
 from db import get_connection
-from logging_util import log_event
+from logging_util import audit
 from services.files_store import (
     file_kind_from_name,
     file_to_dict,
@@ -43,9 +43,13 @@ def list_files():
 def store_uploaded_file(filename, data):
     record, error = save_bytes_as_file(filename, data)
     if error:
-        log_event("File upload failed", error)
+        audit("file.upload", "failure", summary=error)
         return jsonify({"success": False, "message": error}), 400
-    log_event("File uploaded", f"{record['originalName']} ({record['kind']})")
+    audit(
+        "file.upload",
+        resource_id=record["id"],
+        summary=f"{record['originalName']} ({record['kind']})",
+    )
     return jsonify({"success": True, "message": "File uploaded", "data": record}), 201
 
 
@@ -60,13 +64,15 @@ def upload_file():
     filename = str(data.get("filename") or "")
     raw = str(data.get("content") or data.get("contentBase64") or "")
     if not raw:
-        log_event("File upload failed", "no file uploaded")
+        audit("file.upload", "failure", summary="no file uploaded")
         return jsonify({"success": False, "message": "No file was uploaded."}), 400
     try:
         payload = base64.b64decode(raw, validate=False)
     except Exception:
+        audit("file.upload", "failure", summary="invalid base64")
         return jsonify({"success": False, "message": "The file data is not valid base64."}), 400
     if len(payload) > MAX_JSON_UPLOAD_MB * 1024 * 1024:
+        audit("file.upload", "failure", summary=f"JSON upload exceeds {MAX_JSON_UPLOAD_MB} MB")
         return jsonify({
             "success": False,
             "message": f"JSON uploads are limited to {MAX_JSON_UPLOAD_MB} MB. Use a smaller file.",
@@ -108,11 +114,13 @@ def rename_file(file_id):
     data = request.get_json(silent=True) or {}
     name = Path(str(data.get("originalName") or data.get("name") or "")).name.strip()
     if not name:
+        audit("file.rename", "failure", resource_id=file_id, summary="name required")
         return jsonify({"success": False, "message": "A file name is required."}), 400
     kind, suffix = file_kind_from_name(name)
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM ToolkitFiles WHERE ID=?", (file_id,)).fetchone()
         if not row:
+            audit("file.rename", "failure", resource_id=file_id, summary="not found")
             return jsonify({"success": False, "message": "File not found"}), 404
         if kind and kind != row["Kind"]:
             name = f"{Path(name).stem}{Path(row['StoredName']).suffix}"
@@ -127,7 +135,7 @@ def rename_file(file_id):
             (name, file_id),
         )
         updated = conn.execute("SELECT * FROM ToolkitFiles WHERE ID=?", (file_id,)).fetchone()
-    log_event("File renamed", f"id={file_id} {name}")
+    audit("file.rename", resource_id=file_id, summary=name)
     return jsonify({"success": True, "message": "File renamed", "data": file_to_dict(updated)})
 
 
@@ -136,12 +144,19 @@ def delete_file(file_id):
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM ToolkitFiles WHERE ID=?", (file_id,)).fetchone()
         if not row:
+            audit("file.delete", "failure", resource_id=file_id, summary="not found")
             return jsonify({"success": False, "message": "File not found"}), 404
         attached = conn.execute(
             "SELECT SopID FROM SopAttachments WHERE FileID=? LIMIT 1",
             (file_id,),
         ).fetchone()
         if attached:
+            audit(
+                "file.delete",
+                "failure",
+                resource_id=file_id,
+                summary=f"{row['OriginalName']} attached to SOP",
+            )
             return jsonify({
                 "success": False,
                 "message": "This file is attached to an SOP. Detach it first, then delete.",
@@ -152,5 +167,5 @@ def delete_file(file_id):
     path = stored_path(row["StoredName"])
     if path.is_file():
         path.unlink()
-    log_event("File deleted", f"id={file_id} {row['OriginalName']}")
+    audit("file.delete", resource_id=file_id, summary=row["OriginalName"])
     return jsonify({"success": True, "message": "File deleted"})

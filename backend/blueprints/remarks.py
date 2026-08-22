@@ -5,7 +5,7 @@ import sqlite3
 from flask import Blueprint, jsonify, request
 
 from db import get_connection
-from logging_util import log_event
+from logging_util import audit
 from services.remarks import (
     collect_import_payloads,
     parse_payload,
@@ -59,7 +59,7 @@ def list_records():
 def create_record():
     payload, error = parse_payload(request.get_json(silent=True) or {})
     if error:
-        log_event("Create failed", error)
+        audit("record.create", "failure", summary=error)
         return jsonify({"success": False, "message": error}), 400
     try:
         with get_connection() as conn:
@@ -75,15 +75,20 @@ def create_record():
                 "SELECT * FROM CustomerRemarks WHERE ID=?", (cur.lastrowid,)
             ).fetchone()
     except sqlite3.IntegrityError:
-        log_event(
-            "Create failed",
-            f"duplicate {payload['ctrlOrgcode']} / {payload['customer']}",
+        audit(
+            "record.create",
+            "failure",
+            summary=f"duplicate {payload['ctrlOrgcode']} / {payload['customer']}",
         )
         return jsonify({
             "success": False,
             "message": "The CTRLOrgcode and Customer combination already exists.",
         }), 409
-    log_event("Record created", f"{payload['ctrlOrgcode']} / {payload['customer']}")
+    audit(
+        "record.create",
+        resource_id=row["ID"],
+        summary=f"{payload['ctrlOrgcode']} / {payload['customer']}",
+    )
     return jsonify({"success": True, "message": "Record created", "data": row_to_dict(row)}), 201
 
 
@@ -91,7 +96,7 @@ def create_record():
 def update_record(record_id):
     payload, error = parse_payload(request.get_json(silent=True) or {})
     if error:
-        log_event("Update failed", error)
+        audit("record.update", "failure", resource_id=record_id, summary=error)
         return jsonify({"success": False, "message": error}), 400
     try:
         with get_connection() as conn:
@@ -106,21 +111,27 @@ def update_record(record_id):
                 record_values(payload) + (record_id,),
             )
             if cur.rowcount == 0:
-                log_event("Update failed", f"id={record_id} not found")
+                audit("record.update", "failure", resource_id=record_id, summary="not found")
                 return jsonify({"success": False, "message": "Record not found"}), 404
             row = conn.execute(
                 "SELECT * FROM CustomerRemarks WHERE ID=?", (record_id,)
             ).fetchone()
     except sqlite3.IntegrityError:
-        log_event(
-            "Update failed",
-            f"duplicate {payload['ctrlOrgcode']} / {payload['customer']}",
+        audit(
+            "record.update",
+            "failure",
+            resource_id=record_id,
+            summary=f"duplicate {payload['ctrlOrgcode']} / {payload['customer']}",
         )
         return jsonify({
             "success": False,
             "message": "The CTRLOrgcode and Customer combination already exists.",
         }), 409
-    log_event("Record updated", f"id={record_id} {payload['ctrlOrgcode']} / {payload['customer']}")
+    audit(
+        "record.update",
+        resource_id=record_id,
+        summary=f"{payload['ctrlOrgcode']} / {payload['customer']}",
+    )
     return jsonify({"success": True, "message": "Record updated", "data": row_to_dict(row)})
 
 
@@ -130,11 +141,12 @@ def delete_record(record_id):
         row = conn.execute("SELECT * FROM CustomerRemarks WHERE ID=?", (record_id,)).fetchone()
         cur = conn.execute("DELETE FROM CustomerRemarks WHERE ID=?", (record_id,))
     if cur.rowcount == 0:
-        log_event("Delete failed", f"id={record_id} not found")
+        audit("record.delete", "failure", resource_id=record_id, summary="not found")
         return jsonify({"success": False, "message": "Record not found"}), 404
-    log_event(
-        "Record deleted",
-        f"id={record_id} {row['CTRLOrgcode']} / {row['Customer']}",
+    audit(
+        "record.delete",
+        resource_id=record_id,
+        summary=f"{row['CTRLOrgcode']} / {row['Customer']}",
     )
     return jsonify({"success": True, "message": "Record deleted"})
 
@@ -145,23 +157,27 @@ def import_records():
     filename = str(data.get("filename") or "browser.csv")
     raw_rows = data.get("records")
     if not isinstance(raw_rows, list):
-        log_event("CSV import failed", "JSON records missing")
+        audit("record.import", "failure", summary="JSON records missing")
         return jsonify({"success": False, "message": "No records were sent."}), 400
     records, errors, duplicates = collect_import_payloads(raw_rows)
     if errors:
-        log_event("CSV import failed", f"file={filename} validation errors={len(errors)}")
+        audit(
+            "record.import",
+            "failure",
+            summary=f"file={filename} validation errors={len(errors)}",
+        )
         return jsonify({
             "success": False,
             "message": "CSV validation failed. Nothing was imported.",
             "errors": errors[:100],
         }), 400
     if not records:
-        log_event("CSV import failed", f"file={filename} no data rows")
+        audit("record.import", "failure", summary=f"file={filename} no data rows")
         return jsonify({"success": False, "message": "CSV contains no data rows."}), 400
     created, updated = upsert_imported_records(records)
-    log_event(
-        "CSV import completed",
-        f"file={filename} processed={len(records)} created={created} updated={updated} duplicates={duplicates}",
+    audit(
+        "record.import",
+        summary=f"file={filename} processed={len(records)} created={created} updated={updated} duplicates={duplicates}",
     )
     return jsonify({
         "success": True,
@@ -176,12 +192,12 @@ def import_records():
 @bp.post("/api/customer-remarks/import-csv")
 def import_csv():
     if "file" not in request.files:
-        log_event("CSV import failed", "no file uploaded")
+        audit("record.import", "failure", summary="no file uploaded")
         return jsonify({"success": False, "message": "No CSV file was uploaded."}), 400
     file = request.files["file"]
     filename = file.filename or ""
     if not file.filename or not file.filename.lower().endswith(".csv"):
-        log_event("CSV import failed", f"file={filename} not a csv")
+        audit("record.import", "failure", summary=f"file={filename} not a csv")
         return jsonify({"success": False, "message": "Please select a .csv file."}), 400
     try:
         reader = csv.DictReader(io.TextIOWrapper(file.stream, encoding="utf-8-sig", newline=""))
@@ -214,20 +230,24 @@ def import_csv():
         records, errors, duplicates = collect_import_payloads(raw_rows)
 
         if errors:
-            log_event("CSV import failed", f"file={filename} validation errors={len(errors)}")
+            audit(
+                "record.import",
+                "failure",
+                summary=f"file={filename} validation errors={len(errors)}",
+            )
             return jsonify({
                 "success": False,
                 "message": "CSV validation failed. Nothing was imported.",
                 "errors": errors[:100],
             }), 400
         if not records:
-            log_event("CSV import failed", f"file={filename} no data rows")
+            audit("record.import", "failure", summary=f"file={filename} no data rows")
             return jsonify({"success": False, "message": "CSV contains no data rows."}), 400
 
         created, updated = upsert_imported_records(records)
-        log_event(
-            "CSV import completed",
-            f"file={filename} processed={len(records)} created={created} updated={updated} duplicates={duplicates}",
+        audit(
+            "record.import",
+            summary=f"file={filename} processed={len(records)} created={created} updated={updated} duplicates={duplicates}",
         )
         return jsonify({
             "success": True,
@@ -238,11 +258,11 @@ def import_csv():
             "duplicates": duplicates,
         })
     except UnicodeDecodeError:
-        log_event("CSV import failed", f"file={filename} encoding error")
+        audit("record.import", "failure", summary=f"file={filename} encoding error")
         return jsonify({
             "success": False,
             "message": "Please save the CSV with UTF-8 encoding.",
         }), 400
     except csv.Error as error:
-        log_event("CSV import failed", f"file={filename} {error}")
+        audit("record.import", "failure", summary=f"file={filename} {error}")
         return jsonify({"success": False, "message": f"Invalid CSV: {error}"}), 400

@@ -1,6 +1,6 @@
 import os
 
-from flask import Flask, abort, jsonify, send_from_directory
+from flask import Flask, abort, g, jsonify, send_from_directory
 from flask_cors import CORS
 
 from config import CORS_ORIGINS, MAX_UPLOAD_MB, STATIC_DIR
@@ -24,6 +24,7 @@ def create_app():
     from blueprints.logs import bp as logs_bp
     from blueprints.remarks import bp as remarks_bp
     from blueprints.sops import bp as sops_bp
+    from logging_util import APP_LOGGER, assign_request_id, audit
 
     app.register_blueprint(health_bp)
     app.register_blueprint(logs_bp)
@@ -33,6 +34,17 @@ def create_app():
     app.register_blueprint(leave_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(remarks_bp)
+
+    @app.before_request
+    def bind_request_id():
+        assign_request_id()
+
+    @app.after_request
+    def echo_request_id(response):
+        request_id = getattr(g, "request_id", "")
+        if request_id:
+            response.headers["X-Request-ID"] = request_id
+        return response
 
     @app.errorhandler(413)
     def too_large(_):
@@ -49,6 +61,14 @@ def create_app():
         if isinstance(error, HTTPException):
             return error
         if request.path.startswith("/api/"):
+            APP_LOGGER.exception("unhandled api exception")
+            audit(
+                "server.exception",
+                outcome="exception",
+                summary=f"{type(error).__name__}: {error}",
+                extra={"path": request.path, "method": request.method},
+                exc_info=True,
+            )
             return jsonify({
                 "success": False,
                 "message": "The server could not complete this request.",
