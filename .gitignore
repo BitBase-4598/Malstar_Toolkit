@@ -12,3 +12,4 @@ __pycache__/
 backend/malstar_toolkit.log
 backend/malstar_toolkit.log.*
 backend/uploads/
+*.xlsx

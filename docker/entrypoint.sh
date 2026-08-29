@@ -1,6 +1,5 @@
 #!/bin/sh
 set -e
-mkdir -p "$(dirname "${DATABASE_PATH:-/home/data/customer_remark.db}")"
 mkdir -p "${UPLOAD_DIR:-/home/data/uploads}"
 exec gunicorn \
   --bind "0.0.0.0:${PORT:-8080}" \

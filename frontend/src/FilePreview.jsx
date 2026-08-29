@@ -1,13 +1,76 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+function previewSrc(url) {
+  if (!url) {
+    return "";
+  }
+  if (/^https?:\/\//i.test(url)) {
+    return url;
+  }
+  const base = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
+  return `${base}${url.startsWith("/") ? url : `/${url}`}`;
+}
 
 export default function FilePreview({ preview, loading }) {
   const [sheet, setSheet] = useState(0);
+  const [imageOpen, setImageOpen] = useState(false);
+
+  useEffect(() => {
+    setImageOpen(false);
+  }, [preview?.url, preview?.file?.id]);
+
+  useEffect(() => {
+    if (!imageOpen) {
+      return undefined;
+    }
+    const onKey = (event) => {
+      if (event.key === "Escape") {
+        setImageOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [imageOpen]);
 
   if (loading) {
     return <p className="preview-empty">Loading preview...</p>;
   }
   if (!preview) {
     return <p className="preview-empty">Select a file to preview.</p>;
+  }
+  if (preview.kind === "image") {
+    const name = preview.file?.originalName || "Picture";
+    const src = previewSrc(preview.url);
+    return (
+      <>
+        <button
+          type="button"
+          className="preview-image-wrap"
+          onClick={() => setImageOpen(true)}
+          title="Click to enlarge"
+        >
+          <img className="preview-image" src={src} alt={name} />
+        </button>
+        {imageOpen ? (
+          <div
+            className="overlay preview-image-overlay"
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) {
+                setImageOpen(false);
+              }
+            }}
+          >
+            <img
+              className="preview-image-large"
+              src={src}
+              alt={name}
+              onClick={() => setImageOpen(false)}
+            />
+          </div>
+        ) : null}
+      </>
+    );
   }
   if (preview.kind === "docx") {
     return (

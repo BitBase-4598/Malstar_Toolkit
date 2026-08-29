@@ -11,7 +11,6 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PORT=8080 \
-    DATABASE_PATH=/home/data/customer_remark.db \
     UPLOAD_DIR=/home/data/uploads \
     STATIC_DIR=/app/frontend/dist \
     FLASK_DEBUG=false \

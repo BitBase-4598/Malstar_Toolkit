@@ -9,6 +9,7 @@ from logging_util import audit
 from services.files_store import (
     file_kind_from_name,
     file_to_dict,
+    image_mime_type,
     preview_docx,
     preview_xlsx,
     save_bytes_as_file,
@@ -80,32 +81,70 @@ def upload_file():
     return store_uploaded_file(filename, payload)
 
 
-@bp.get("/api/files/<int:file_id>/preview")
-def preview_file(file_id):
+def _file_row_or_error(file_id):
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM ToolkitFiles WHERE ID=?", (file_id,)).fetchone()
     if not row:
-        return jsonify({"success": False, "message": "File not found"}), 404
+        return None, (jsonify({"success": False, "message": "File not found"}), 404)
     path = stored_path(row["StoredName"])
     if not path.is_file():
-        return jsonify({"success": False, "message": "File is missing on disk"}), 404
+        return None, (jsonify({"success": False, "message": "File is missing on disk"}), 404)
+    return (row, path), None
+
+
+@bp.get("/api/files/<int:file_id>/preview")
+def preview_file(file_id):
+    loaded, error = _file_row_or_error(file_id)
+    if error:
+        return error
+    row, path = loaded
+    kind = row["Kind"]
     try:
-        preview = preview_docx(path) if row["Kind"] == "docx" else preview_xlsx(path)
+        if kind == "docx":
+            preview = preview_docx(path)
+        elif kind == "xlsx":
+            preview = preview_xlsx(path)
+        elif kind == "image":
+            preview = {
+                "kind": "image",
+                "url": f"/api/files/{file_id}/content",
+            }
+        else:
+            return jsonify({
+                "success": False,
+                "message": "Preview is not available for this file type.",
+            }), 400
     except Exception as error:
         return jsonify({"success": False, "message": f"Could not preview this file. {error}"}), 400
     preview["file"] = file_to_dict(row)
     return jsonify({"success": True, "data": preview})
 
 
+@bp.get("/api/files/<int:file_id>/content")
+def file_content(file_id):
+    loaded, error = _file_row_or_error(file_id)
+    if error:
+        return error
+    row, path = loaded
+    if row["Kind"] != "image":
+        return jsonify({
+            "success": False,
+            "message": "Inline preview is only available for pictures.",
+        }), 400
+    return send_file(
+        path,
+        mimetype=image_mime_type(row["StoredName"]),
+        as_attachment=False,
+        download_name=row["OriginalName"],
+    )
+
+
 @bp.get("/api/files/<int:file_id>")
 def download_file(file_id):
-    with get_connection() as conn:
-        row = conn.execute("SELECT * FROM ToolkitFiles WHERE ID=?", (file_id,)).fetchone()
-    if not row:
-        return jsonify({"success": False, "message": "File not found"}), 404
-    path = stored_path(row["StoredName"])
-    if not path.is_file():
-        return jsonify({"success": False, "message": "File is missing on disk"}), 404
+    loaded, error = _file_row_or_error(file_id)
+    if error:
+        return error
+    row, path = loaded
     return send_file(path, as_attachment=True, download_name=row["OriginalName"])
 
 

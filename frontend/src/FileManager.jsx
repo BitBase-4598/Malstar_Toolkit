@@ -165,7 +165,7 @@ const FileManager = forwardRef(function FileManager({ onNotice, onRefreshLogs },
         ref={inputRef}
         hidden
         type="file"
-        accept=".docx,.xlsx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        accept=".docx,.xlsx,.png,.jpg,.jpeg,.webp,.gif,image/png,image/jpeg,image/webp,image/gif,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         onChange={upload}
       />
       <section className="card file-list-card" style={{ width: `${listWidth}px` }}>
@@ -203,7 +203,7 @@ const FileManager = forwardRef(function FileManager({ onNotice, onRefreshLogs },
               ) : rows.length === 0 ? (
                 <tr>
                   <td colSpan="5" className="empty">
-                    No files yet. Upload a .docx or .xlsx file.
+                    No files yet. Upload a .docx, .xlsx, or picture (PNG, JPEG, WebP, GIF).
                   </td>
                 </tr>
               ) : (

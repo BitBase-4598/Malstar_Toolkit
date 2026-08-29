@@ -188,6 +188,90 @@ def _create_tables(conn):
         )
     """)
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS Cases (
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            Status TEXT NOT NULL DEFAULT 'pending_review',
+            StartTime TEXT NOT NULL DEFAULT '',
+            CompletionTime TEXT NOT NULL DEFAULT '',
+            Email TEXT NOT NULL DEFAULT '',
+            Name TEXT NOT NULL DEFAULT '',
+            HBL TEXT NOT NULL DEFAULT '',
+            WronglyIdentified TEXT NOT NULL DEFAULT '',
+            Incorrect TEXT NOT NULL DEFAULT '',
+            Corrected TEXT NOT NULL DEFAULT '',
+            CauseOfError TEXT NOT NULL DEFAULT '',
+            ReceivedDate TEXT NOT NULL DEFAULT '',
+            AdjustedHBL TEXT NOT NULL DEFAULT '',
+            GscPic TEXT NOT NULL DEFAULT '',
+            Week TEXT NOT NULL DEFAULT '',
+            Date TEXT NOT NULL DEFAULT '',
+            Category TEXT NOT NULL DEFAULT '',
+            Description TEXT NOT NULL DEFAULT '',
+            Action TEXT NOT NULL DEFAULT '',
+            CreatedAt TEXT NOT NULL,
+            UpdatedAt TEXT NOT NULL
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_cases_status ON Cases (Status, UpdatedAt DESC, ID DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_cases_hbl ON Cases (HBL)"
+    )
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS CaseFiles (
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            CaseID INTEGER NOT NULL,
+            OriginalName TEXT NOT NULL,
+            StoredName TEXT NOT NULL UNIQUE,
+            Kind TEXT NOT NULL,
+            Size INTEGER NOT NULL DEFAULT 0,
+            UploadedAt TEXT NOT NULL,
+            FOREIGN KEY (CaseID) REFERENCES Cases(ID) ON DELETE CASCADE
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_case_files_case ON CaseFiles (CaseID, ID DESC)"
+    )
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS LclShipments (
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            ShipmentID TEXT NOT NULL DEFAULT '',
+            Direction TEXT NOT NULL DEFAULT '',
+            Year TEXT NOT NULL DEFAULT '',
+            MonthName TEXT NOT NULL DEFAULT '',
+            YearMonth TEXT NOT NULL DEFAULT '',
+            JobBranch TEXT NOT NULL DEFAULT '',
+            DestCtry TEXT NOT NULL DEFAULT '',
+            CountryName TEXT NOT NULL DEFAULT '',
+            Customer TEXT NOT NULL DEFAULT '',
+            IsBosch INTEGER NOT NULL DEFAULT 0,
+            Weight REAL,
+            Volume REAL,
+            DimensionRaw TEXT NOT NULL DEFAULT '',
+            Pieces REAL,
+            DimL REAL,
+            DimW REAL,
+            DimH REAL,
+            Chargeable REAL
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_lcl_year ON LclShipments (Year)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_lcl_month ON LclShipments (MonthName)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_lcl_branch ON LclShipments (JobBranch)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_lcl_direction ON LclShipments (Direction)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_lcl_dest ON LclShipments (DestCtry)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_lcl_bosch ON LclShipments (IsBosch)")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS LclImportMeta (
+            ID INTEGER PRIMARY KEY CHECK (ID = 1),
+            Filename TEXT NOT NULL DEFAULT '',
+            ImportedAt TEXT NOT NULL DEFAULT '',
+            ExportCount INTEGER NOT NULL DEFAULT 0,
+            ImportCount INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS SchemaVersion (
             ID INTEGER PRIMARY KEY CHECK (ID = 1),
             Version INTEGER NOT NULL
@@ -351,5 +435,9 @@ def migrate():
             _ensure_activity_log_columns(conn)
             _backfill_activity_logs(conn)
             _set_schema_version(conn, 2)
+        if current < 3:
+            _set_schema_version(conn, 3)
+        if current < 4:
+            _set_schema_version(conn, 4)
         if current < SCHEMA_VERSION:
             _set_schema_version(conn, SCHEMA_VERSION)

@@ -28,10 +28,4 @@ export const logsApi = {
     }
     return response.blob();
   },
-  recordLog: (action, detail = "") =>
-    request(`${API_ROOT}/activity-logs`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, detail }),
-    }).catch(() => {}),
 };

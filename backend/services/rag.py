@@ -181,7 +181,9 @@ def index_file(conn, file_id, touch=True):
         return
     chunks = []
     try:
-        if row["Kind"] == "docx":
+        if row["Kind"] == "image":
+            chunks = []
+        elif row["Kind"] == "docx":
             text = extract_docx_text(path)
             for index, piece in enumerate(chunk_text(text), start=1):
                 chunks.append({
@@ -189,8 +191,10 @@ def index_file(conn, file_id, touch=True):
                     "locator": f"section {index}",
                     "body": f"{title}: {piece}",
                 })
-        else:
+        elif row["Kind"] == "xlsx":
             chunks = extract_xlsx_chunks(path, title, file_id)
+        else:
+            chunks = []
     except Exception as error:
         audit(
             "file.index",

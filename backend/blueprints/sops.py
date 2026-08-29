@@ -16,23 +16,41 @@ def list_sops():
         if q:
             rows = conn.execute(
                 """
-                SELECT * FROM Sops
-                WHERE Title LIKE ? OR Owner LIKE ? OR Revision LIKE ?
-                ORDER BY UpdatedAt DESC, ID DESC
+                SELECT
+                    Sops.*,
+                    COALESCE(steps.cnt, 0) AS StepCount,
+                    COALESCE(files.cnt, 0) AS FileCount
+                FROM Sops
+                LEFT JOIN (
+                    SELECT SopID, COUNT(*) AS cnt FROM SopSteps GROUP BY SopID
+                ) steps ON steps.SopID = Sops.ID
+                LEFT JOIN (
+                    SELECT SopID, COUNT(*) AS cnt FROM SopAttachments GROUP BY SopID
+                ) files ON files.SopID = Sops.ID
+                WHERE Sops.Title LIKE ? OR Sops.Owner LIKE ? OR Sops.Revision LIKE ?
+                ORDER BY Sops.UpdatedAt DESC, Sops.ID DESC
                 """,
                 (f"%{q}%", f"%{q}%", f"%{q}%"),
             ).fetchall()
         else:
-            rows = conn.execute("SELECT * FROM Sops ORDER BY UpdatedAt DESC, ID DESC").fetchall()
-        data = []
-        for row in rows:
-            step_count = conn.execute(
-                "SELECT COUNT(*) FROM SopSteps WHERE SopID=?", (row["ID"],)
-            ).fetchone()[0]
-            file_count = conn.execute(
-                "SELECT COUNT(*) FROM SopAttachments WHERE SopID=?", (row["ID"],)
-            ).fetchone()[0]
-            data.append({
+            rows = conn.execute(
+                """
+                SELECT
+                    Sops.*,
+                    COALESCE(steps.cnt, 0) AS StepCount,
+                    COALESCE(files.cnt, 0) AS FileCount
+                FROM Sops
+                LEFT JOIN (
+                    SELECT SopID, COUNT(*) AS cnt FROM SopSteps GROUP BY SopID
+                ) steps ON steps.SopID = Sops.ID
+                LEFT JOIN (
+                    SELECT SopID, COUNT(*) AS cnt FROM SopAttachments GROUP BY SopID
+                ) files ON files.SopID = Sops.ID
+                ORDER BY Sops.UpdatedAt DESC, Sops.ID DESC
+                """
+            ).fetchall()
+        data = [
+            {
                 "id": row["ID"],
                 "title": row["Title"],
                 "purpose": row["Purpose"],
@@ -41,9 +59,11 @@ def list_sops():
                 "status": row["Status"],
                 "createdAt": row["CreatedAt"],
                 "updatedAt": row["UpdatedAt"],
-                "stepCount": step_count,
-                "attachmentCount": file_count,
-            })
+                "stepCount": row["StepCount"],
+                "attachmentCount": row["FileCount"],
+            }
+            for row in rows
+        ]
     return jsonify({"success": True, "data": data})
 
 

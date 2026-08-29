@@ -1,3 +1,6 @@
+# Do not use this script for the live MALSTAR-Toolkit Web App.
+# That app is GitHub/Oryx code deploy + Azure Database for PostgreSQL.
+# See azure/app-settings.md.
 param(
     [string]$ResourceGroup = "rg-autorating",
     [string]$Location = "eastasia",

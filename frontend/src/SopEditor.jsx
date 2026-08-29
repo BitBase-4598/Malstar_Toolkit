@@ -192,7 +192,7 @@ export default function SopEditor({ sop, saving, onCancel, onSubmit, onNotice, o
             <strong>Attachments</strong>
             <label className="ghost upload-label">
               {uploading ? "Uploading..." : "Upload and attach"}
-              <input hidden type="file" accept=".docx,.xlsx" onChange={uploadAttachment} disabled={saving || uploading} />
+              <input hidden type="file" accept=".docx,.xlsx,.png,.jpg,.jpeg,.webp,.gif,image/png,image/jpeg,image/webp,image/gif" onChange={uploadAttachment} disabled={saving || uploading} />
             </label>
           </div>
           <div className="attach-list">

@@ -22,7 +22,15 @@ function RecordsActions({ recordsRef, recordsImporting }) {
   );
 }
 
-function DashboardActions({ dashRef, dashImporting }) {
+function DashboardActions({ dashRef, dashImporting, dashPage, lclRef, lclImporting }) {
+  if (dashPage === "lcl") {
+    return (
+      <button className="primary" type="button" onClick={() => lclRef.current?.openImport()} disabled={lclImporting}>
+        <Upload size={16} />
+        {lclImporting ? "Importing..." : "Re-import"}
+      </button>
+    );
+  }
   return (
     <button className="primary" type="button" onClick={() => dashRef.current?.openUpload()} disabled={dashImporting}>
       <Upload size={16} />

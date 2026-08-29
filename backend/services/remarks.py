@@ -62,13 +62,14 @@ def upsert_imported_records(records):
                     """
                     UPDATE CustomerRemarks
                     SET CustomerLetters=?, Remark1=?, Remark2=?, Remark3=?,
-                        UpdateTime=CURRENT_TIMESTAMP WHERE ID=?
+                        UpdateTime=? WHERE ID=?
                     """,
                     (
                         payload["customerLetters"],
                         payload["remark1"],
                         payload["remark2"],
                         payload["remark3"],
+                        now_stamp(),
                         existing["ID"],
                     ),
                 )

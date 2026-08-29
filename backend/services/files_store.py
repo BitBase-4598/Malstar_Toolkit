@@ -6,7 +6,14 @@ import mammoth
 from flask import abort
 from openpyxl import load_workbook
 
-from config import ALLOWED_FILE_KINDS, MAX_UPLOAD_MB, PREVIEW_COLS, PREVIEW_ROWS, UPLOAD_DIR
+from config import (
+    ALLOWED_FILE_KINDS,
+    IMAGE_MIME_TYPES,
+    MAX_UPLOAD_MB,
+    PREVIEW_COLS,
+    PREVIEW_ROWS,
+    UPLOAD_DIR,
+)
 from db import get_connection
 from util import now_stamp
 
@@ -19,6 +26,26 @@ def ensure_upload_dir():
 def file_kind_from_name(filename):
     suffix = Path(filename or "").suffix.lower()
     return ALLOWED_FILE_KINDS.get(suffix), suffix
+
+
+def image_mime_type(filename):
+    suffix = Path(filename or "").suffix.lower()
+    return IMAGE_MIME_TYPES.get(suffix, "application/octet-stream")
+
+
+def looks_like_image(data, suffix):
+    if not data or len(data) < 12:
+        return False
+    suffix = (suffix or "").lower()
+    if suffix == ".png":
+        return data.startswith(b"\x89PNG\r\n\x1a\n")
+    if suffix in (".jpg", ".jpeg"):
+        return data.startswith(b"\xff\xd8\xff")
+    if suffix == ".gif":
+        return data.startswith(b"GIF87a") or data.startswith(b"GIF89a")
+    if suffix == ".webp":
+        return data.startswith(b"RIFF") and data[8:12] == b"WEBP"
+    return False
 
 
 def stored_path(stored_name):
@@ -89,21 +116,59 @@ def preview_xlsx(path):
     return {"kind": "xlsx", "sheets": sheets}
 
 
-def save_bytes_as_file(original_name, data):
-    from services.rag import index_file
-
+def validate_upload_bytes(original_name, data):
     kind, suffix = file_kind_from_name(original_name)
     if not kind:
-        return None, "Please upload a .docx or .xlsx file."
+        return None, "Please upload a .docx, .xlsx, or picture (PNG, JPEG, WebP, GIF)."
     if not data:
         return None, "The uploaded file is empty."
+    if kind == "image" and not looks_like_image(data, suffix):
+        return None, "That file is not a valid PNG, JPEG, WebP, or GIF image."
     if len(data) > MAX_UPLOAD_MB * 1024 * 1024:
         return None, f"File exceeds the {MAX_UPLOAD_MB} MB limit."
     display_name = Path(original_name).name.strip() or f"upload{suffix}"
     stored_name = f"{uuid.uuid4().hex}{suffix}"
+    return {
+        "kind": kind,
+        "suffix": suffix,
+        "display_name": display_name,
+        "stored_name": stored_name,
+        "size": len(data),
+    }, None
+
+
+def write_upload_bytes(stored_name, data):
     dest = stored_path(stored_name)
     tmp = dest.with_name(dest.name + ".tmp")
     tmp.write_bytes(data)
+    try:
+        tmp.replace(dest)
+    except Exception:
+        if tmp.exists():
+            tmp.unlink()
+        raise
+    return dest
+
+
+def build_file_preview(kind, path, image_url, file_dict):
+    if kind == "docx":
+        preview = preview_docx(path)
+    elif kind == "xlsx":
+        preview = preview_xlsx(path)
+    elif kind == "image":
+        preview = {"kind": "image", "url": image_url}
+    else:
+        return None, "Preview is not available for this file type."
+    preview["file"] = file_dict
+    return preview, None
+
+
+def save_bytes_as_file(original_name, data):
+    from services.rag import index_file
+
+    meta, error = validate_upload_bytes(original_name, data)
+    if error:
+        return None, error
     stamp = now_stamp()
     try:
         with get_connection() as conn:
@@ -112,16 +177,22 @@ def save_bytes_as_file(original_name, data):
                 INSERT INTO ToolkitFiles (OriginalName, StoredName, Kind, Size, UploadedAt, UpdatedAt)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (display_name, stored_name, kind, len(data), stamp, stamp),
+                (
+                    meta["display_name"],
+                    meta["stored_name"],
+                    meta["kind"],
+                    meta["size"],
+                    stamp,
+                    stamp,
+                ),
             )
             file_id = cur.lastrowid
-            tmp.replace(dest)
+            write_upload_bytes(meta["stored_name"], data)
             row = conn.execute("SELECT * FROM ToolkitFiles WHERE ID=?", (file_id,)).fetchone()
             index_file(conn, row["ID"])
         return file_to_dict(row), None
     except Exception:
-        if tmp.exists():
-            tmp.unlink()
-        if dest.exists() and dest.stat().st_size == len(data):
+        dest = stored_path(meta["stored_name"])
+        if dest.exists() and dest.stat().st_size == meta["size"]:
             pass
         raise

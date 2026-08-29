@@ -18,6 +18,18 @@ PREVIEW_COLS = 30
 ALLOWED_FILE_KINDS = {
     ".docx": "docx",
     ".xlsx": "xlsx",
+    ".png": "image",
+    ".jpg": "image",
+    ".jpeg": "image",
+    ".webp": "image",
+    ".gif": "image",
+}
+IMAGE_MIME_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
 }
 RAG_CHUNK_SIZE = 600
 RAG_CHUNK_OVERLAP = 80
@@ -25,6 +37,11 @@ RAG_TOP_K = 8
 RAG_EXCERPT = 420
 ASK_MAX_QUESTION = 800
 DASHBOARD_MAX_ROWS = 5000
+LCL_XLSX_PATH = _path(
+    "LCL_XLSX_PATH",
+    Path(r"C:\Users\Administrator\Desktop\LCL_Volume_Analysis - 202405 - 20260818.xlsx"),
+)
+CASES_MAX_IMPORT_ROWS = int(os.environ.get("CASES_MAX_IMPORT_ROWS", "5000"))
 DASHBOARD_MISSING = {"", "—", "-", "–", "n/a", "na", "none", "null"}
 AZURE_OPENAI_ENDPOINT = os.environ.get("AZURE_OPENAI_ENDPOINT", "").strip().rstrip("/")
 AZURE_OPENAI_API_KEY = os.environ.get("AZURE_OPENAI_API_KEY", "").strip()
@@ -38,7 +55,7 @@ CORS_ORIGINS = [
     ).split(",")
     if origin.strip()
 ]
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 4
 
 
 def resolve_static_dir():

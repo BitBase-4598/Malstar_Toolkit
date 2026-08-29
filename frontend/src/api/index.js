@@ -5,6 +5,7 @@ import { leaveApi } from "./leave";
 import { logsApi } from "./logs";
 import { askApi } from "./ask";
 import { dashboardApi } from "./dashboard";
+import { lclApi } from "./lcl";
 
 export { RECORDS_PAGE_SIZE };
 
@@ -16,4 +17,5 @@ export const api = {
   ...logsApi,
   ...askApi,
   ...dashboardApi,
+  ...lclApi,
 };

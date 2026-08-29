@@ -1,5 +1,5 @@
-import sqlite3
 from datetime import datetime
+import sqlite3
 
 from flask import Blueprint, jsonify, request
 
@@ -25,7 +25,7 @@ def list_leave_plans():
             """
             SELECT * FROM LeavePlans
             WHERE LeaveDate >= ? AND LeaveDate < ?
-            ORDER BY LeaveDate, Person COLLATE NOCASE, ID
+            ORDER BY LeaveDate, LOWER(Person), ID
             """,
             (start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")),
         ).fetchall()

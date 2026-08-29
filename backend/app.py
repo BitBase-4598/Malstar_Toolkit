@@ -17,10 +17,12 @@ def create_app():
         CORS(app, resources={r"/api/*": {"origins": CORS_ORIGINS}})
 
     from blueprints.ask import bp as ask_bp
+    from blueprints.cases import bp as cases_bp
     from blueprints.dashboard import bp as dashboard_bp
     from blueprints.files import bp as files_bp
     from blueprints.health import bp as health_bp
     from blueprints.leave import bp as leave_bp
+    from blueprints.lcl import bp as lcl_bp
     from blueprints.logs import bp as logs_bp
     from blueprints.remarks import bp as remarks_bp
     from blueprints.sops import bp as sops_bp
@@ -30,8 +32,10 @@ def create_app():
     app.register_blueprint(logs_bp)
     app.register_blueprint(files_bp)
     app.register_blueprint(sops_bp)
+    app.register_blueprint(cases_bp)
     app.register_blueprint(ask_bp)
     app.register_blueprint(leave_bp)
+    app.register_blueprint(lcl_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(remarks_bp)
 
@@ -83,6 +87,17 @@ def create_app():
                 "message": "MALSTAR_Toolkit API is running. Frontend build not found.",
             })
         return send_from_directory(STATIC_DIR, "index.html")
+
+    def send_lcl_page():
+        if (STATIC_DIR / "lcl.html").is_file():
+            return send_from_directory(STATIC_DIR, "lcl.html")
+        abort(404)
+
+    @app.get("/lcl")
+    @app.get("/lcl/")
+    @app.get("/lcl.html")
+    def lcl_page():
+        return send_lcl_page()
 
     @app.get("/<path:asset_path>")
     def spa_or_static(asset_path):

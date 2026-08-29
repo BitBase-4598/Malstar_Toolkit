@@ -17,6 +17,7 @@ const MODULES = [
   { value: "files", label: "Files" },
   { value: "sops", label: "SOPs" },
   { value: "dashboard", label: "Dashboard" },
+  { value: "lcl", label: "LCL" },
   { value: "leave", label: "Leave" },
   { value: "ask", label: "Ask" },
   { value: "server", label: "Server" },

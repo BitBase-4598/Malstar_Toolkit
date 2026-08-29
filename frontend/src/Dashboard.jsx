@@ -130,7 +130,24 @@ function HourChart({ items }) {
   );
 }
 
+const DASH_TABLE_PAGE_SIZE = 50;
+
 function DataTable({ rows, maxProcessOrder }) {
+  const [page, setPage] = useState(1);
+  const total = rows.length;
+  const totalPages = Math.max(1, Math.ceil(total / DASH_TABLE_PAGE_SIZE) || 1);
+  const firstId = rows[0]?.id;
+
+  useEffect(() => {
+    setPage(1);
+  }, [total, firstId]);
+
+  const safePage = Math.min(page, totalPages);
+  const from = total === 0 ? 0 : (safePage - 1) * DASH_TABLE_PAGE_SIZE + 1;
+  const to = Math.min(safePage * DASH_TABLE_PAGE_SIZE, total);
+  const visible = rows.slice((safePage - 1) * DASH_TABLE_PAGE_SIZE, safePage * DASH_TABLE_PAGE_SIZE);
+  const pages = Array.from({ length: totalPages }, (_, index) => index + 1);
+
   return (
     <section className="card dash-data">
       <div className="summary">
@@ -139,7 +156,7 @@ function DataTable({ rows, maxProcessOrder }) {
           <p className="dash-section-note">Complete rows for the selected date range</p>
         </div>
         <span className="dash-count-chip">
-          {rows.length} {rows.length === 1 ? "row" : "rows"}
+          {total} {total === 1 ? "row" : "rows"}
         </span>
       </div>
       <div className="table-wrap">
@@ -162,14 +179,14 @@ function DataTable({ rows, maxProcessOrder }) {
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 ? (
+            {visible.length === 0 ? (
               <tr>
                 <td colSpan="13" className="empty">
                   No bookings in this date range.
                 </td>
               </tr>
             ) : (
-              rows.map((row) => (
+              visible.map((row) => (
                 <tr key={row.id} className={row.orderNumber && row.orderNumber === maxProcessOrder ? "selected" : ""}>
                   <td>
                     <strong>{row.orderNumber || "—"}</strong>
@@ -193,6 +210,33 @@ function DataTable({ rows, maxProcessOrder }) {
             )}
           </tbody>
         </table>
+      </div>
+      <div className="pagination">
+        <span>{total === 0 ? "No bookings" : `Showing ${from}–${to} of ${total}`}</span>
+        <div className="pagination-nav">
+          <button type="button" disabled={safePage <= 1} onClick={() => setPage((value) => value - 1)}>
+            Previous
+          </button>
+          <label className="pagination-select">
+            Page
+            <select
+              value={safePage}
+              disabled={totalPages <= 1}
+              onChange={(event) => setPage(Number(event.target.value))}
+              aria-label="Select bookings page"
+            >
+              {pages.map((number) => (
+                <option key={number} value={number}>
+                  {number}
+                </option>
+              ))}
+            </select>
+            of {totalPages}
+          </label>
+          <button type="button" disabled={safePage >= totalPages} onClick={() => setPage((value) => value + 1)}>
+            Next
+          </button>
+        </div>
       </div>
     </section>
   );

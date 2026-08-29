@@ -1,17 +1,36 @@
 services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: malstar
+      POSTGRES_PASSWORD: malstar
+      POSTGRES_DB: malstar
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U malstar -d malstar"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   web:
     build: .
     ports:
       - "8080:8080"
     environment:
       PORT: "8080"
-      DATABASE_PATH: /home/data/customer_remark.db
+      DATABASE_URL: postgresql://malstar:malstar@postgres:5432/malstar
       UPLOAD_DIR: /home/data/uploads
       STATIC_DIR: /app/frontend/dist
       FLASK_DEBUG: "false"
       CORS_ORIGINS: ""
     volumes:
-      - sqlite-data:/home/data
+      - upload-data:/home/data
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
       interval: 30s
@@ -20,4 +39,5 @@ services:
       start_period: 15s
 
 volumes:
-  sqlite-data:
+  pg-data:
+  upload-data:

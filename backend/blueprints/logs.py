@@ -21,16 +21,16 @@ def activity_log_filters():
     outcome = str(request.args.get("outcome") or "").strip().casefold()
     request_id = str(request.args.get("requestId") or "").strip()
     if timestamp:
-        clauses.append("Timestamp LIKE ?")
+        clauses.append("LOWER(Timestamp) LIKE LOWER(?)")
         params.append(f"%{timestamp}%")
     if action:
-        clauses.append("(Action LIKE ? OR ActionCode LIKE ?)")
+        clauses.append("(LOWER(Action) LIKE LOWER(?) OR LOWER(ActionCode) LIKE LOWER(?))")
         params.extend([f"%{action}%", f"%{action}%"])
     if detail:
-        clauses.append("(Detail LIKE ? OR Summary LIKE ?)")
+        clauses.append("(LOWER(Detail) LIKE LOWER(?) OR LOWER(Summary) LIKE LOWER(?))")
         params.extend([f"%{detail}%", f"%{detail}%"])
     if client_ip:
-        clauses.append("ClientIP LIKE ?")
+        clauses.append("LOWER(ClientIP) LIKE LOWER(?)")
         params.append(f"%{client_ip}%")
     if module:
         clauses.append("Module = ?")
@@ -45,7 +45,7 @@ def activity_log_filters():
         clauses.append("Outcome = ?")
         params.append(outcome)
     if request_id:
-        clauses.append("RequestId LIKE ?")
+        clauses.append("LOWER(RequestId) LIKE LOWER(?)")
         params.append(f"%{request_id}%")
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     return where, params
