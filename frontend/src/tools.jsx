@@ -1,28 +1,32 @@
-import { CalendarDays, ClipboardList, FileText, FolderOpen, LayoutDashboard, MessageCircle, Plus, RefreshCw, ScrollText, Upload } from "lucide-react";
+import { CalendarDays, ClipboardList, Download, FileText, FolderOpen, Inbox, LayoutDashboard, MessageCircle, Plus, RefreshCw, ScrollText, Upload } from "lucide-react";
 import LeaveForecast from "./LeaveForecast";
 import Dashboard from "./Dashboard";
 import RecordsWorkspace from "./RecordsWorkspace";
+import FeedbackWorkspace from "./FeedbackWorkspace";
 import FileManager from "./FileManager";
 import SopWorkspace from "./SopWorkspace";
 import AskWorkspace from "./AskWorkspace";
 import ActivityLog from "./ActivityLog";
 
-function RecordsActions({ recordsRef, recordsImporting }) {
+function SearchActions({ recordsRef, recordsImporting, searchTab }) {
+  const catalogTab = searchTab === "icb" || searchTab === "unlocode";
   return (
     <>
-      <button className="ghost" type="button" onClick={() => recordsRef.current?.openUpload()} disabled={recordsImporting}>
+      <button className={catalogTab ? "primary" : "ghost"} type="button" onClick={() => recordsRef.current?.openUpload()} disabled={recordsImporting}>
         <Upload size={16} />
         {recordsImporting ? "Importing..." : "Import CSV"}
       </button>
-      <button className="primary" type="button" onClick={() => recordsRef.current?.openNew()}>
-        <Plus size={16} />
-        Add record
-      </button>
+      {catalogTab ? null : (
+        <button className="primary" type="button" onClick={() => recordsRef.current?.openNew()}>
+          <Plus size={16} />
+          Add record
+        </button>
+      )}
     </>
   );
 }
 
-function DashboardActions({ dashRef, dashImporting, dashPage, lclRef, lclImporting }) {
+function DashboardActions({ dashRef, dashImporting, dashPage, lclRef, lclImporting, gcaRef, gcaImporting }) {
   if (dashPage === "lcl") {
     return (
       <button className="primary" type="button" onClick={() => lclRef.current?.openImport()} disabled={lclImporting}>
@@ -31,11 +35,38 @@ function DashboardActions({ dashRef, dashImporting, dashPage, lclRef, lclImporti
       </button>
     );
   }
+  if (dashPage === "gca") {
+    return (
+      <button className="primary" type="button" onClick={() => gcaRef.current?.openImport()} disabled={gcaImporting}>
+        <Upload size={16} />
+        {gcaImporting ? "Importing..." : "Re-import"}
+      </button>
+    );
+  }
   return (
     <button className="primary" type="button" onClick={() => dashRef.current?.openUpload()} disabled={dashImporting}>
       <Upload size={16} />
       {dashImporting ? "Uploading..." : "Upload CSV"}
     </button>
+  );
+}
+
+function FeedbackActions({ feedbackRef, feedbackImporting }) {
+  return (
+    <>
+      <button className="ghost" type="button" onClick={() => feedbackRef.current?.downloadTemplate()}>
+        <Download size={16} />
+        Download template
+      </button>
+      <button className="ghost" type="button" onClick={() => feedbackRef.current?.openUpload()} disabled={feedbackImporting}>
+        <Upload size={16} />
+        {feedbackImporting ? "Importing..." : "Import CSV"}
+      </button>
+      <button className="primary" type="button" onClick={() => feedbackRef.current?.openNew()}>
+        <Plus size={16} />
+        New feedback
+      </button>
+    </>
   );
 }
 
@@ -91,7 +122,16 @@ export const TOOLS = [
     layer: "Search tool",
     icon: FileText,
     Workspace: RecordsWorkspace,
-    Actions: RecordsActions,
+    Actions: SearchActions,
+  },
+  {
+    id: "feedback",
+    label: "Feedback",
+    title: "Feedback",
+    layer: "Case tool",
+    icon: Inbox,
+    Workspace: FeedbackWorkspace,
+    Actions: FeedbackActions,
   },
   {
     id: "files",

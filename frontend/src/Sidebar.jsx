@@ -1,23 +1,9 @@
 import { TOOLS } from "./tools";
 
-function starPoints(cx, cy, spikes, outerRadius, innerRadius) {
-  const points = [];
-  const step = Math.PI / spikes;
-  let rotation = -Math.PI / 2;
-  for (let i = 0; i < spikes * 2; i += 1) {
-    const radius = i % 2 === 0 ? outerRadius : innerRadius;
-    points.push(`${cx + Math.cos(rotation) * radius},${cy + Math.sin(rotation) * radius}`);
-    rotation += step;
-  }
-  return points.join(" ");
-}
+const FAVICON_SRC = `${(import.meta.env.BASE_URL || "/").replace(/\/$/, "")}/favicon.png`;
 
 function MaerskStar() {
-  return (
-    <svg className="star" viewBox="0 0 32 32" aria-hidden="true">
-      <polygon fill="currentColor" points={starPoints(16, 16, 7, 14, 6)} />
-    </svg>
-  );
+  return <img className="star" src={FAVICON_SRC} alt="" width={32} height={32} />;
 }
 
 export default function Sidebar({ section, onSectionChange }) {

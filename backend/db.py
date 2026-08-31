@@ -11,6 +11,9 @@ def get_connection():
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA cache_size=-32768")
+    conn.execute("PRAGMA temp_store=MEMORY")
+    conn.execute("PRAGMA mmap_size=134217728")
     return conn
 
 
@@ -138,6 +141,14 @@ def _create_tables(conn):
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_leave_plans_date ON LeavePlans (LeaveDate)")
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS LeavePeople (
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            Email TEXT NOT NULL DEFAULT '',
+            Name TEXT NOT NULL UNIQUE
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_leave_people_email ON LeavePeople (Email)")
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS DashboardMeta (
             ID INTEGER PRIMARY KEY CHECK (ID = 1),
             Filename TEXT NOT NULL DEFAULT '',
@@ -258,10 +269,13 @@ def _create_tables(conn):
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_lcl_year ON LclShipments (Year)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_lcl_month ON LclShipments (MonthName)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_lcl_year_month ON LclShipments (Year, MonthName)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_lcl_branch ON LclShipments (JobBranch)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_lcl_direction ON LclShipments (Direction)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_lcl_dest ON LclShipments (DestCtry)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_lcl_dest_name ON LclShipments (DestCtry, CountryName)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_lcl_bosch ON LclShipments (IsBosch)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_lcl_customer ON LclShipments (Customer)")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS LclImportMeta (
             ID INTEGER PRIMARY KEY CHECK (ID = 1),
@@ -269,6 +283,116 @@ def _create_tables(conn):
             ImportedAt TEXT NOT NULL DEFAULT '',
             ExportCount INTEGER NOT NULL DEFAULT 0,
             ImportCount INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS IcbStations (
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            Country TEXT NOT NULL DEFAULT '',
+            Location TEXT NOT NULL DEFAULT '',
+            Branch TEXT NOT NULL DEFAULT '',
+            Unloco TEXT NOT NULL DEFAULT '',
+            GroupCode TEXT NOT NULL DEFAULT '',
+            GroupName TEXT NOT NULL DEFAULT '',
+            AgentCode TEXT NOT NULL DEFAULT '',
+            IcbCode TEXT NOT NULL DEFAULT '',
+            Notes TEXT NOT NULL DEFAULT '',
+            Direction TEXT NOT NULL DEFAULT ''
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_icb_country ON IcbStations (Country)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_icb_branch ON IcbStations (Branch)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_icb_unloco ON IcbStations (Unloco)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_icb_agent ON IcbStations (AgentCode)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_icb_code ON IcbStations (IcbCode)")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS IcbImportMeta (
+            ID INTEGER PRIMARY KEY CHECK (ID = 1),
+            Filename TEXT NOT NULL DEFAULT '',
+            ImportedAt TEXT NOT NULL DEFAULT '',
+            RowCount INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS Unlocodes (
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            PortName TEXT NOT NULL DEFAULT '',
+            UnCode TEXT NOT NULL DEFAULT '',
+            CountryCode TEXT NOT NULL DEFAULT '',
+            CountryName TEXT NOT NULL DEFAULT '',
+            Category TEXT NOT NULL DEFAULT '',
+            Flags TEXT NOT NULL DEFAULT '[]',
+            SearchText TEXT NOT NULL DEFAULT ''
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_unloco_code ON Unlocodes (UnCode)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_unloco_country ON Unlocodes (CountryCode)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_unloco_search ON Unlocodes (SearchText)")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS UnlocoImportMeta (
+            ID INTEGER PRIMARY KEY CHECK (ID = 1),
+            Filename TEXT NOT NULL DEFAULT '',
+            ImportedAt TEXT NOT NULL DEFAULT '',
+            RowCount INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS GcaBookings (
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            BookingDate TEXT NOT NULL DEFAULT '',
+            SequenceNo TEXT NOT NULL DEFAULT '',
+            OrderId TEXT NOT NULL DEFAULT '',
+            BookingId TEXT NOT NULL DEFAULT '',
+            Name TEXT NOT NULL DEFAULT '',
+            Status TEXT NOT NULL DEFAULT '',
+            Remark TEXT NOT NULL DEFAULT '',
+            Uid TEXT NOT NULL DEFAULT '',
+            Scm TEXT NOT NULL DEFAULT '',
+            Hbl TEXT NOT NULL DEFAULT '',
+            HblKey TEXT NOT NULL DEFAULT '',
+            Lane TEXT NOT NULL DEFAULT '',
+            Branch TEXT NOT NULL DEFAULT '',
+            Category TEXT NOT NULL DEFAULT '',
+            IsAi INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_gca_bookings_date ON GcaBookings (BookingDate)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_gca_bookings_lane ON GcaBookings (Lane)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_gca_bookings_hbl ON GcaBookings (HblKey)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_gca_bookings_branch ON GcaBookings (Branch)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_gca_bookings_status ON GcaBookings (Status)")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS GcaFeedback (
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            Hbl TEXT NOT NULL DEFAULT '',
+            HblKey TEXT NOT NULL DEFAULT '',
+            AdjustedHbl TEXT NOT NULL DEFAULT '',
+            WronglyIdentified TEXT NOT NULL DEFAULT '',
+            Incorrect TEXT NOT NULL DEFAULT '',
+            Corrected TEXT NOT NULL DEFAULT '',
+            Cause TEXT NOT NULL DEFAULT '',
+            GscPic TEXT NOT NULL DEFAULT '',
+            Category TEXT NOT NULL DEFAULT '',
+            Description TEXT NOT NULL DEFAULT '',
+            Action TEXT NOT NULL DEFAULT '',
+            FeedbackDate TEXT NOT NULL DEFAULT '',
+            Week TEXT NOT NULL DEFAULT '',
+            Email TEXT NOT NULL DEFAULT '',
+            Name TEXT NOT NULL DEFAULT '',
+            Lane TEXT NOT NULL DEFAULT ''
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_gca_feedback_hbl ON GcaFeedback (HblKey)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_gca_feedback_date ON GcaFeedback (FeedbackDate)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_gca_feedback_lane ON GcaFeedback (Lane)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_gca_feedback_cat ON GcaFeedback (Category)")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS GcaImportMeta (
+            ID INTEGER PRIMARY KEY CHECK (ID = 1),
+            Filename TEXT NOT NULL DEFAULT '',
+            ImportedAt TEXT NOT NULL DEFAULT '',
+            BookingCount INTEGER NOT NULL DEFAULT 0,
+            FeedbackCount INTEGER NOT NULL DEFAULT 0
         )
     """)
     conn.execute("""

@@ -19,12 +19,12 @@ function query(params) {
 
 export const lclApi = {
   lclFilters: () => request(`${API_ROOT}/lcl/filters`),
+  lclDashboard: (params) => request(`${API_ROOT}/lcl/dashboard${query(params)}`),
   lclSummary: (params) => request(`${API_ROOT}/lcl/summary${query(params)}`),
   lclMap: (params) => request(`${API_ROOT}/lcl/map${query(params)}`),
-  importLcl: () =>
-    request(`${API_ROOT}/lcl/import`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-    }),
+  importLcl: (file) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request(`${API_ROOT}/lcl/import`, { method: "POST", body: form });
+  },
 };

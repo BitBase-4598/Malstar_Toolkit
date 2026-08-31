@@ -6,6 +6,13 @@ import { TOOLS, TOOL_BY_ID } from "./tools";
 import Dashboard from "./Dashboard";
 
 const LclDashboard = lazy(() => import("./LclDashboard"));
+const GcaDashboard = lazy(() => import("./GcaDashboard"));
+
+const DASH_PAGES = [
+  { id: "ops", label: "MALSTAR_Ops" },
+  { id: "lcl", label: "LCL Volume" },
+  { id: "gca", label: "GCA Hypercare" },
+];
 
 export default function App() {
   const [notice, setNotice] = useState({ type: "", text: "" });
@@ -28,14 +35,19 @@ export default function App() {
   const askRef = useRef();
   const dashRef = useRef();
   const lclRef = useRef();
+  const gcaRef = useRef();
   const recordsRef = useRef();
+  const feedbackRef = useRef();
   const pendingCitation = useRef(null);
   const [askReindexing, setAskReindexing] = useState(false);
   const [dashImporting, setDashImporting] = useState(false);
   const [lclImporting, setLclImporting] = useState(false);
+  const [gcaImporting, setGcaImporting] = useState(false);
   const [dashPage, setDashPage] = useState("ops");
   const [dashPagesVisited, setDashPagesVisited] = useState({ ops: true });
   const [recordsImporting, setRecordsImporting] = useState(false);
+  const [feedbackImporting, setFeedbackImporting] = useState(false);
+  const [searchTab, setSearchTab] = useState("remarks");
 
   const refreshLogs = useCallback(async () => {
     setLogsLoading(true);
@@ -82,6 +94,12 @@ export default function App() {
     setDashPagesVisited((current) => (current[next] ? current : { ...current, [next]: true }));
   };
 
+  useEffect(() => {
+    if (section === "dashboard") {
+      import("./LclDashboard");
+    }
+  }, [section]);
+
   const changeSection = (next) => {
     setSection(next);
     setVisited((current) => (current[next] ? current : { ...current, [next]: true }));
@@ -115,11 +133,16 @@ export default function App() {
   const actionProps = {
     recordsRef,
     recordsImporting,
+    searchTab,
+    feedbackRef,
+    feedbackImporting,
     dashRef,
     dashImporting,
     dashPage,
     lclRef,
     lclImporting,
+    gcaRef,
+    gcaImporting,
     filesRef,
     sopsRef,
     askRef,
@@ -145,6 +168,11 @@ export default function App() {
     }
     if (tool.id === "records") {
       props.onImportingChange = setRecordsImporting;
+      props.searchTab = searchTab;
+      props.onSearchTabChange = setSearchTab;
+    }
+    if (tool.id === "feedback") {
+      props.onImportingChange = setFeedbackImporting;
     }
     if (tool.id === "ask") {
       props.onOpenCitation = openCitation;
@@ -156,6 +184,7 @@ export default function App() {
   const workspaceRef = {
     dashboard: dashRef,
     records: recordsRef,
+    feedback: feedbackRef,
     files: filesRef,
     sops: sopsRef,
     ask: askRef,
@@ -169,16 +198,25 @@ export default function App() {
           <div className="topbar-copy">
             <p className="topbar-kicker">{current?.layer || "MALSTAR_Toolkit"}</p>
             {section === "dashboard" ? (
-              <label className="topbar-title-select">
-                <select
-                  value={dashPage}
-                  onChange={(event) => changeDashPage(event.target.value)}
-                  aria-label="Dashboard page"
-                >
-                  <option value="ops">MALSTAR_Ops</option>
-                  <option value="lcl">LCL Volume</option>
-                </select>
-              </label>
+              <div className="topbar-page-switch" role="tablist" aria-label="Dashboard page">
+                {DASH_PAGES.map((page) => (
+                  <button
+                    key={page.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={dashPage === page.id}
+                    className={dashPage === page.id ? "primary" : "ghost"}
+                    onMouseEnter={() => {
+                      if (page.id === "lcl") {
+                        import("./LclDashboard");
+                      }
+                    }}
+                    onClick={() => changeDashPage(page.id)}
+                  >
+                    {page.label}
+                  </button>
+                ))}
+              </div>
             ) : (
               <h2>{current?.title || "MALSTAR_Toolkit"}</h2>
             )}
@@ -225,6 +263,19 @@ export default function App() {
                             onNotice={setNotice}
                             onRefreshLogs={refreshLogs}
                             onImportingChange={setLclImporting}
+                          />
+                        </Suspense>
+                      </div>
+                    ) : null}
+                    {dashPagesVisited.gca ? (
+                      <div className={`dash-sub${dashPage === "gca" ? " active" : ""}`} hidden={dashPage !== "gca"}>
+                        <Suspense fallback={<p className="preview-empty">Loading GCA Hypercare…</p>}>
+                          <GcaDashboard
+                            ref={gcaRef}
+                            embedded
+                            onNotice={setNotice}
+                            onRefreshLogs={refreshLogs}
+                            onImportingChange={setGcaImporting}
                           />
                         </Suspense>
                       </div>

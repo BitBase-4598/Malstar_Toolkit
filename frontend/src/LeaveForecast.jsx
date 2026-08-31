@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Pencil, Save, Trash2, X } from "lucide-react";
 import { api } from "./api";
+import FieldSelect from "./FieldSelect";
 import { holidayInfo, isOffDay } from "./chinaHolidays";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -8,6 +9,7 @@ const LEAVE_TYPES = [
   { value: "annual", label: "Annual" },
   { value: "sick", label: "Sick" },
   { value: "wfh", label: "WFH" },
+  { value: "half_day", label: "Half day" },
   { value: "other", label: "Other" },
 ];
 const STATUSES = [
@@ -67,12 +69,115 @@ function typeLabel(value) {
   return LEAVE_TYPES.find((item) => item.value === value)?.label || value;
 }
 
+function matchPerson(query, names) {
+  const text = String(query || "").trim().toLowerCase();
+  if (!text) {
+    return "";
+  }
+  const exact = names.find((name) => name.toLowerCase() === text);
+  if (exact) {
+    return exact;
+  }
+  const starts = names.filter((name) => name.toLowerCase().startsWith(text));
+  if (starts.length === 1) {
+    return starts[0];
+  }
+  const contains = names.filter((name) => name.toLowerCase().includes(text));
+  return contains.length === 1 ? contains[0] : "";
+}
+
+function PersonPicker({ names, value, onChange, disabled }) {
+  const wrapRef = useRef(null);
+  const [open, setOpen] = useState(false);
+  const [highlight, setHighlight] = useState(0);
+  const matches = names.filter((name) => name.toLowerCase().includes(String(value || "").trim().toLowerCase()));
+
+  useEffect(() => {
+    const onDoc = (event) => {
+      if (!wrapRef.current?.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+
+  const pick = (name) => {
+    onChange(name);
+    setOpen(false);
+  };
+
+  const onKeyDown = (event) => {
+    if (!open && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+      setOpen(true);
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setHighlight((current) => Math.min(current + 1, Math.max(matches.length - 1, 0)));
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setHighlight((current) => Math.max(current - 1, 0));
+    } else if (event.key === "Enter" && open && matches[highlight]) {
+      event.preventDefault();
+      pick(matches[highlight]);
+    } else if (event.key === "Escape") {
+      setOpen(false);
+    }
+  };
+
+  return (
+    <div className="person-picker" ref={wrapRef}>
+      <input
+        required
+        autoComplete="off"
+        value={value}
+        disabled={disabled}
+        placeholder="Type to find a name"
+        onFocus={() => {
+          setOpen(true);
+          setHighlight(0);
+        }}
+        onChange={(event) => {
+          onChange(event.target.value);
+          setOpen(true);
+          setHighlight(0);
+        }}
+        onKeyDown={onKeyDown}
+        aria-autocomplete="list"
+        aria-expanded={open}
+      />
+      {open ? (
+        <div className="person-picker-menu" role="listbox">
+          {matches.length === 0 ? (
+            <p className="person-picker-empty">No matching name</p>
+          ) : (
+            matches.map((name, index) => (
+              <button
+                key={name}
+                type="button"
+                role="option"
+                className={index === highlight ? "active" : ""}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => pick(name)}
+              >
+                {name}
+              </button>
+            ))
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function LeaveForecast({ onNotice, onRefreshLogs }) {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
   const [selected, setSelected] = useState(todayIso());
   const [plans, setPlans] = useState([]);
+  const [people, setPeople] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -91,8 +196,12 @@ export default function LeaveForecast({ onNotice, onRefreshLogs }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await api.listLeavePlans(year, month + 1);
-      setPlans(result.data || []);
+      const [planResult, peopleResult] = await Promise.all([
+        api.listLeavePlans(year, month + 1),
+        api.listLeavePeople(),
+      ]);
+      setPlans(planResult.data || []);
+      setPeople(peopleResult.data || []);
     } catch (error) {
       onNotice?.({ type: "error", text: error.message });
     } finally {
@@ -129,6 +238,13 @@ export default function LeaveForecast({ onNotice, onRefreshLogs }) {
   }, [plans]);
 
   const dayPlans = plans.filter((plan) => plan.leaveDate === selected);
+  const personOptions = useMemo(() => {
+    const names = people.map((item) => item.name).filter(Boolean);
+    if (form.person && !names.some((name) => name.toLowerCase() === form.person.toLowerCase())) {
+      return [form.person, ...names];
+    }
+    return names;
+  }, [people, form.person]);
   const cells = monthCells(year, month);
   const today = todayIso();
 
@@ -158,9 +274,14 @@ export default function LeaveForecast({ onNotice, onRefreshLogs }) {
 
   const save = async (event) => {
     event.preventDefault();
+    const person = matchPerson(form.person, personOptions) || form.person.trim();
+    if (personOptions.length && !personOptions.some((name) => name.toLowerCase() === person.toLowerCase())) {
+      onNotice?.({ type: "error", text: "Select a name from the list." });
+      return;
+    }
     setSaving(true);
     try {
-      const payload = { ...form, leaveDate: selected };
+      const payload = { ...form, person, leaveDate: selected };
       const result = editing
         ? await api.updateLeavePlan(editing.id, payload)
         : await api.createLeavePlan(payload);
@@ -334,34 +455,41 @@ export default function LeaveForecast({ onNotice, onRefreshLogs }) {
             <h3>{editing ? "Edit leave plan" : "Add leave plan"}</h3>
             <label>
               Person *
-              <input
-                required
-                value={form.person}
-                onChange={update("person")}
-                disabled={saving}
-                placeholder="Name"
-              />
+              {personOptions.length ? (
+                <PersonPicker
+                  names={personOptions}
+                  value={form.person}
+                  onChange={(person) => setForm((current) => ({ ...current, person }))}
+                  disabled={saving}
+                />
+              ) : (
+                <input
+                  required
+                  value={form.person}
+                  onChange={update("person")}
+                  disabled={saving}
+                  placeholder="Name"
+                />
+              )}
             </label>
             <div className="leave-form-row">
               <label>
                 Leave type
-                <select value={form.leaveType} onChange={update("leaveType")} disabled={saving}>
-                  {LEAVE_TYPES.map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
+                <FieldSelect
+                  value={form.leaveType}
+                  options={LEAVE_TYPES}
+                  onChange={(leaveType) => setForm((current) => ({ ...current, leaveType }))}
+                  disabled={saving}
+                />
               </label>
               <label>
                 Status
-                <select value={form.status} onChange={update("status")} disabled={saving}>
-                  {STATUSES.map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
+                <FieldSelect
+                  value={form.status}
+                  options={STATUSES}
+                  onChange={(status) => setForm((current) => ({ ...current, status }))}
+                  disabled={saving}
+                />
               </label>
             </div>
             <div className="leave-form-actions">

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Download } from "lucide-react";
 import { api } from "./api";
+import FieldSelect from "./FieldSelect";
 
 const emptyFilters = {
   timestamp: "",
@@ -18,6 +19,10 @@ const MODULES = [
   { value: "sops", label: "SOPs" },
   { value: "dashboard", label: "Dashboard" },
   { value: "lcl", label: "LCL" },
+  { value: "icb", label: "ICB" },
+  { value: "unloco", label: "UNLOCODE" },
+  { value: "gca", label: "GCA" },
+  { value: "cases", label: "Feedback" },
   { value: "leave", label: "Leave" },
   { value: "ask", label: "Ask" },
   { value: "server", label: "Server" },
@@ -126,25 +131,30 @@ export default function ActivityLog({ entries, loading, filters, onFiltersChange
           placeholder="Filter timestamp"
           aria-label="Filter timestamp"
         />
-        <select value={draft.module} onChange={update("module")} aria-label="Filter module">
-          {MODULES.map((item) => (
-            <option key={item.value || "all"} value={item.value}>
-              {item.label}
-            </option>
-          ))}
-        </select>
+        <FieldSelect
+          value={draft.module}
+          options={MODULES}
+          searchable
+          onChange={(module) => setDraft((current) => ({ ...current, module }))}
+          ariaLabel="Filter module"
+        />
         <input
           value={draft.action}
           onChange={update("action")}
           placeholder="Filter action"
           aria-label="Filter action"
         />
-        <select value={draft.outcome} onChange={update("outcome")} aria-label="Filter outcome">
-          <option value="">All outcomes</option>
-          <option value="failure">Failures only</option>
-          <option value="success">Success</option>
-          <option value="exception">Exception</option>
-        </select>
+        <FieldSelect
+          value={draft.outcome}
+          options={[
+            { value: "", label: "All outcomes" },
+            { value: "failure", label: "Failures only" },
+            { value: "success", label: "Success" },
+            { value: "exception", label: "Exception" },
+          ]}
+          onChange={(outcome) => setDraft((current) => ({ ...current, outcome }))}
+          ariaLabel="Filter outcome"
+        />
         <input
           value={draft.detail}
           onChange={update("detail")}

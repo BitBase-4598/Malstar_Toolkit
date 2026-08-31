@@ -41,6 +41,15 @@ LCL_XLSX_PATH = _path(
     "LCL_XLSX_PATH",
     Path(r"C:\Users\Administrator\Desktop\LCL_Volume_Analysis - 202405 - 20260818.xlsx"),
 )
+LCL_MAX_UPLOAD_MB = int(os.environ.get("LCL_MAX_UPLOAD_MB", "128"))
+GCA_XLSX_PATH = _path(
+    "GCA_XLSX_PATH",
+    Path(r"C:\Users\Administrator\Desktop\GCA LCL Project Analysis (1).xlsx"),
+)
+UNLOCODE_CSV_PATH = _path(
+    "UNLOCODE_CSV_PATH",
+    Path(r"C:\Users\Administrator\Desktop\UNLOCODE.csv"),
+)
 CASES_MAX_IMPORT_ROWS = int(os.environ.get("CASES_MAX_IMPORT_ROWS", "5000"))
 DASHBOARD_MISSING = {"", "—", "-", "–", "n/a", "na", "none", "null"}
 AZURE_OPENAI_ENDPOINT = os.environ.get("AZURE_OPENAI_ENDPOINT", "").strip().rstrip("/")
@@ -55,7 +64,7 @@ CORS_ORIGINS = [
     ).split(",")
     if origin.strip()
 ]
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def resolve_static_dir():

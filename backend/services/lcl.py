@@ -1,9 +1,12 @@
 import re
+import threading
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 
-from config import LCL_XLSX_PATH
+from io import BytesIO
+
+from config import LCL_MAX_UPLOAD_MB
 from db import get_connection
 from services.lcl_centroids import COUNTRY_CENTROIDS, COUNTRY_NAMES
 from util import now_stamp
@@ -30,7 +33,10 @@ MONTH_ORDER = (
     "July", "August", "September", "October", "November", "December",
 )
 
-DEFAULT_XLSX = Path(LCL_XLSX_PATH)
+_CACHE_LOCK = threading.Lock()
+_FILTER_CACHE = None
+_DASHBOARD_CACHE = {}
+_DASHBOARD_CACHE_LIMIT = 40
 
 DIM_RE = re.compile(
     r"^\s*([\d.]+)\s*[xX×]\s*([\d.]+)\s*[xX×]\s*([\d.]+)\s*[xX×]\s*([\d.]+)\s*$"
@@ -199,16 +205,24 @@ def import_cache(zip_file, definition_name, records_name, direction, conn, batch
     return inserted
 
 
-def import_lcl_workbook():
-    source = Path(DEFAULT_XLSX)
-    if not source.is_file():
-        return None, f"Workbook not found: {source}"
-    if source.suffix.lower() != ".xlsx":
+def import_lcl_workbook(filename=None, data=None):
+    if data is None:
+        return None, "No file was uploaded."
+    name = Path(str(filename or "lcl.xlsx")).name
+    if not name.lower().endswith(".xlsx"):
         return None, "Please select the LCL .xlsx workbook."
+    if not data:
+        return None, "The uploaded file is empty."
+    if len(data) > LCL_MAX_UPLOAD_MB * 1024 * 1024:
+        return None, f"Upload exceeds the {LCL_MAX_UPLOAD_MB} MB limit."
     stamp = now_stamp()
     export_count = 0
     import_count = 0
-    with zipfile.ZipFile(source) as archive:
+    try:
+        archive = zipfile.ZipFile(BytesIO(data))
+    except zipfile.BadZipFile:
+        return None, "The file is not a valid Excel workbook."
+    try:
         names = set(archive.namelist())
         if "xl/pivotCache/pivotCacheDefinition1.xml" not in names:
             return None, "This workbook has no LCL pivot cache."
@@ -237,10 +251,14 @@ def import_lcl_workbook():
                 INSERT INTO LclImportMeta (ID, Filename, ImportedAt, ExportCount, ImportCount)
                 VALUES (1, ?, ?, ?, ?)
                 """,
-                (source.name, stamp, export_count, import_count),
+                (name[:200], stamp, export_count, import_count),
             )
+            conn.execute("ANALYZE LclShipments")
+    finally:
+        archive.close()
+    clear_lcl_cache()
     return {
-        "filename": source.name,
+        "filename": name[:200],
         "importedAt": stamp,
         "exportCount": export_count,
         "importCount": import_count,
@@ -250,6 +268,36 @@ def import_lcl_workbook():
 
 def split_csv_param(value):
     return [part.strip() for part in str(value or "").split(",") if part.strip()]
+
+
+def clear_lcl_cache():
+    global _FILTER_CACHE
+    with _CACHE_LOCK:
+        _FILTER_CACHE = None
+        _DASHBOARD_CACHE.clear()
+
+
+def _filter_key(args):
+    def parts(name):
+        return tuple(sorted(split_csv_param((args or {}).get(name))))
+
+    return (
+        parts("year"),
+        parts("month"),
+        parts("branch"),
+        parts("direction"),
+        parts("country"),
+        parts("bosch"),
+    )
+
+
+def _store_dashboard(key, payload):
+    with _CACHE_LOCK:
+        if key in _DASHBOARD_CACHE:
+            _DASHBOARD_CACHE.pop(key, None)
+        elif len(_DASHBOARD_CACHE) >= _DASHBOARD_CACHE_LIMIT:
+            _DASHBOARD_CACHE.pop(next(iter(_DASHBOARD_CACHE)))
+        _DASHBOARD_CACHE[key] = payload
 
 
 def build_filters(args):
@@ -269,10 +317,12 @@ def build_filters(args):
     add_in("JobBranch", split_csv_param(args.get("branch")))
     add_in("Direction", split_csv_param(args.get("direction")))
     add_in("DestCtry", [item.upper() for item in split_csv_param(args.get("country"))])
-    bosch = str(args.get("bosch") or "all").strip().lower()
-    if bosch in ("yes", "1", "true"):
+    bosch_vals = {part.strip().lower() for part in split_csv_param(args.get("bosch"))}
+    yes = bool(bosch_vals & {"yes", "1", "true"})
+    no = bool(bosch_vals & {"no", "0", "false"})
+    if yes and not no:
         clauses.append("IsBosch=1")
-    elif bosch in ("no", "0", "false"):
+    elif no and not yes:
         clauses.append("IsBosch=0")
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     return where, params
@@ -290,6 +340,10 @@ def distinct_values(conn, column):
 
 
 def list_filter_options():
+    global _FILTER_CACHE
+    with _CACHE_LOCK:
+        if _FILTER_CACHE is not None:
+            return _FILTER_CACHE
     with get_connection() as conn:
         months = distinct_values(conn, "MonthName")
         months.sort(key=lambda name: MONTH_ORDER.index(name) if name in MONTH_ORDER else 99)
@@ -306,7 +360,7 @@ def list_filter_options():
                 """
             ).fetchall()
         ]
-        return {
+        data = {
             "years": distinct_values(conn, "Year"),
             "months": months,
             "branches": distinct_values(conn, "JobBranch"),
@@ -320,6 +374,9 @@ def list_filter_options():
                 "total": (meta["ExportCount"] + meta["ImportCount"]) if meta else 0,
             },
         }
+    with _CACHE_LOCK:
+        _FILTER_CACHE = data
+    return data
 
 
 def round_or_none(value, digits=2):
@@ -331,36 +388,10 @@ def round_or_none(value, digits=2):
 def build_summary(args):
     where, params = build_filters(args)
     with get_connection() as conn:
-        kpi = conn.execute(
-            f"""
-            SELECT
-                COUNT(*) AS shipments,
-                COUNT(DISTINCT ShipmentID) AS shipmentIds,
-                SUM(IsBosch) AS bosch,
-                AVG(Volume) AS avgVolume,
-                AVG(Weight) AS avgWeight,
-                AVG(Chargeable) AS avgChargeable,
-                AVG(Pieces) AS avgPieces,
-                AVG(DimL) AS avgL,
-                AVG(DimW) AS avgW,
-                AVG(DimH) AS avgH
-            FROM LclShipments
-            {where}
-            """,
-            params,
-        ).fetchone()
-        months = conn.execute(
-            f"""
-            SELECT MonthName AS label, COUNT(*) AS count, AVG(Volume) AS avgVolume
-            FROM LclShipments
-            {where}
-            GROUP BY MonthName
-            """,
-            params,
-        ).fetchall()
         year_months = conn.execute(
             f"""
-            SELECT Year AS year, MonthName AS month, COUNT(*) AS count
+            SELECT Year AS year, MonthName AS month, COUNT(*) AS count,
+                   SUM(IsBosch) AS bosch, SUM(Volume) AS volumeSum, COUNT(Volume) AS volumeN
             FROM LclShipments
             {where}
             GROUP BY Year, MonthName
@@ -378,52 +409,55 @@ def build_summary(args):
             """,
             params,
         ).fetchall()
-        month_counts = []
+    shipments = sum(row["count"] or 0 for row in year_months)
+    bosch = sum(row["bosch"] or 0 for row in year_months)
+    volume_sum = sum(row["volumeSum"] or 0 for row in year_months)
+    volume_n = sum(row["volumeN"] or 0 for row in year_months)
+    month_totals = {}
+    for row in year_months:
+        name = row["month"]
+        if name:
+            month_totals[name] = month_totals.get(name, 0) + (row["count"] or 0)
+    month_counts = []
+    for name in MONTH_ORDER:
+        count = month_totals.get(name)
+        if count:
+            month_counts.append({"label": name, "count": count, "avgVolume": None})
+    active_months = [item["count"] for item in month_counts if item["count"]]
+    monthly_avg = round(sum(active_months) / len(active_months), 1) if active_months else 0
+    years = sorted({str(row["year"]) for row in year_months if row["year"]}, reverse=False)
+    by_year_month = []
+    for year in years:
+        values = []
         for name in MONTH_ORDER:
-            match = next((row for row in months if row["label"] == name), None)
-            if match:
-                month_counts.append({
-                    "label": name,
-                    "count": match["count"],
-                    "avgVolume": round_or_none(match["avgVolume"], 3),
-                })
-        active_months = [item["count"] for item in month_counts if item["count"]]
-        monthly_avg = round(sum(active_months) / len(active_months), 1) if active_months else 0
-        shipments = kpi["shipments"] or 0
-        bosch = kpi["bosch"] or 0
-        years = sorted({str(row["year"]) for row in year_months if row["year"]}, reverse=False)
-        by_year_month = []
-        for year in years:
-            values = []
-            for name in MONTH_ORDER:
-                match = next(
-                    (row for row in year_months if str(row["year"]) == year and row["month"] == name),
-                    None,
-                )
-                values.append(match["count"] if match else None)
-            by_year_month.append({"year": year, "values": values})
-        return {
-            "kpis": {
-                "shipments": shipments,
-                "shipmentIds": kpi["shipmentIds"] or 0,
-                "bosch": bosch,
-                "boschShare": round((bosch / shipments) * 100, 1) if shipments else 0,
-                "avgVolume": round_or_none(kpi["avgVolume"], 3),
-                "avgWeight": round_or_none(kpi["avgWeight"], 1),
-                "avgChargeable": round_or_none(kpi["avgChargeable"], 3),
-                "avgPieces": round_or_none(kpi["avgPieces"], 2),
-                "avgL": round_or_none(kpi["avgL"], 1),
-                "avgW": round_or_none(kpi["avgW"], 1),
-                "avgH": round_or_none(kpi["avgH"], 1),
-                "monthlyAvgBills": monthly_avg,
-            },
-            "byMonth": month_counts,
-            "byYearMonth": {
-                "months": list(MONTH_ORDER),
-                "years": by_year_month,
-            },
-            "byCustomer": [{"label": row["label"], "count": row["count"]} for row in customers],
-        }
+            match = next(
+                (row for row in year_months if str(row["year"]) == year and row["month"] == name),
+                None,
+            )
+            values.append(match["count"] if match else None)
+        by_year_month.append({"year": year, "values": values})
+    return {
+        "kpis": {
+            "shipments": shipments,
+            "shipmentIds": shipments,
+            "bosch": bosch,
+            "boschShare": round((bosch / shipments) * 100, 1) if shipments else 0,
+            "avgVolume": round_or_none(volume_sum / volume_n, 3) if volume_n else None,
+            "avgWeight": None,
+            "avgChargeable": None,
+            "avgPieces": None,
+            "avgL": None,
+            "avgW": None,
+            "avgH": None,
+            "monthlyAvgBills": monthly_avg,
+        },
+        "byMonth": month_counts,
+        "byYearMonth": {
+            "months": list(MONTH_ORDER),
+            "years": by_year_month,
+        },
+        "byCustomer": [{"label": row["label"], "count": row["count"]} for row in customers],
+    }
 
 
 BRANCH_COORDS = {
@@ -494,7 +528,7 @@ def build_arrows(conn, where, params, hub):
     return arrows
 
 
-def build_map(args):
+def build_map(args, include_arrows=True):
     where, params = build_filters(args)
     hub = hub_coords(args)
     with get_connection() as conn:
@@ -508,7 +542,7 @@ def build_map(args):
             """,
             params,
         ).fetchall()
-        arrows = build_arrows(conn, where, params, hub)
+        arrows = build_arrows(conn, where, params, hub) if include_arrows else []
     points = []
     for row in rows:
         iso2 = str(row["iso2"] or "").upper()[:2]
@@ -524,3 +558,19 @@ def build_map(args):
             "lng": lng,
         })
     return {"points": points, "arrows": arrows}
+
+
+def build_dashboard(args):
+    key = _filter_key(args)
+    with _CACHE_LOCK:
+        cached = _DASHBOARD_CACHE.get(key)
+    if cached is not None:
+        return cached
+    include_arrows = bool(split_csv_param((args or {}).get("direction")))
+    payload = {
+        "filters": list_filter_options(),
+        "summary": build_summary(args),
+        "map": build_map(args, include_arrows=include_arrows),
+    }
+    _store_dashboard(key, payload)
+    return payload

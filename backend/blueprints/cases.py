@@ -1,8 +1,11 @@
+from io import BytesIO
+
 from flask import Blueprint, jsonify, request, send_file
 
 from db import get_connection
 from logging_util import audit
 from services.cases import (
+    TEMPLATE_CSV,
     case_file_disk_names,
     case_heading,
     create_case,
@@ -73,6 +76,17 @@ def import_cases_route():
         "skipped": skipped,
         "errors": result["errors"],
     })
+
+
+@bp.get("/api/cases/template")
+def cases_template():
+    buffer = BytesIO(TEMPLATE_CSV.encode("utf-8-sig"))
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name="feedback-template.csv",
+        mimetype="text/csv",
+    )
 
 
 @bp.get("/api/cases/<int:case_id>")

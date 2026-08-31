@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ArrowDown, ArrowUp, Plus, Save, Trash2, X } from "lucide-react";
 import { api } from "./api";
+import FieldSelect from "./FieldSelect";
 
 const emptySop = {
   title: "",
@@ -140,10 +141,15 @@ export default function SopEditor({ sop, saving, onCancel, onSubmit, onNotice, o
           </label>
           <label>
             Status
-            <select value={form.status} onChange={update("status")} disabled={saving}>
-              <option value="draft">Draft</option>
-              <option value="active">Active</option>
-            </select>
+            <FieldSelect
+              value={form.status}
+              options={[
+                { value: "draft", label: "Draft" },
+                { value: "active", label: "Active" },
+              ]}
+              onChange={(status) => setForm((current) => ({ ...current, status }))}
+              disabled={saving}
+            />
           </label>
           <label className="wide">
             Purpose

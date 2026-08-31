@@ -5,10 +5,20 @@ from flask import Blueprint, jsonify, request
 
 from db import get_connection
 from logging_util import audit
-from services.leave import leave_to_dict, parse_leave_payload
+from services.leave import (
+    ensure_leave_people,
+    leave_change_summary,
+    leave_to_dict,
+    parse_leave_payload,
+)
 from util import now_stamp
 
 bp = Blueprint("leave", __name__)
+
+
+@bp.get("/api/leave-people")
+def list_leave_people_route():
+    return jsonify({"success": True, "data": ensure_leave_people()})
 
 
 @bp.get("/api/leave-plans")
@@ -63,7 +73,13 @@ def create_leave_plan():
     audit(
         "leave.create",
         resource_id=row["ID"],
-        summary=f"{payload['person']} {payload['leaveDate']}",
+        summary=leave_change_summary(payload),
+        extra={
+            "person": payload["person"],
+            "leaveType": payload["leaveType"],
+            "status": payload["status"],
+            "leaveDate": payload["leaveDate"],
+        },
     )
     return jsonify({"success": True, "message": "Leave plan saved", "data": leave_to_dict(row)}), 201
 
@@ -103,7 +119,13 @@ def update_leave_plan(plan_id):
     audit(
         "leave.update",
         resource_id=plan_id,
-        summary=f"{payload['person']} {payload['leaveDate']}",
+        summary=leave_change_summary(payload),
+        extra={
+            "person": payload["person"],
+            "leaveType": payload["leaveType"],
+            "status": payload["status"],
+            "leaveDate": payload["leaveDate"],
+        },
     )
     return jsonify({"success": True, "message": "Leave plan saved", "data": leave_to_dict(row)})
 
@@ -111,14 +133,24 @@ def update_leave_plan(plan_id):
 @bp.delete("/api/leave-plans/<int:plan_id>")
 def delete_leave_plan(plan_id):
     with get_connection() as conn:
-        row = conn.execute("SELECT Person, LeaveDate FROM LeavePlans WHERE ID=?", (plan_id,)).fetchone()
+        row = conn.execute(
+            "SELECT Person, LeaveDate, LeaveType, Status FROM LeavePlans WHERE ID=?",
+            (plan_id,),
+        ).fetchone()
         if not row:
             audit("leave.delete", "failure", resource_id=plan_id, summary="not found")
             return jsonify({"success": False, "message": "Leave plan not found"}), 404
         conn.execute("DELETE FROM LeavePlans WHERE ID=?", (plan_id,))
+    deleted = {
+        "person": row["Person"],
+        "leaveDate": row["LeaveDate"],
+        "leaveType": row["LeaveType"],
+        "status": row["Status"],
+    }
     audit(
         "leave.delete",
         resource_id=plan_id,
-        summary=f"{row['Person']} {row['LeaveDate']}",
+        summary=leave_change_summary(deleted),
+        extra=deleted,
     )
     return jsonify({"success": True, "message": "Leave plan deleted"})

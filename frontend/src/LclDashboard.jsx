@@ -1,6 +1,8 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { api } from "./api";
+import FieldSelect from "./FieldSelect";
 import LclMap from "./LclMap";
+import useElementSize from "./useElementSize";
 
 function starPoints(cx, cy, spikes, outerRadius, innerRadius) {
   const points = [];
@@ -24,37 +26,27 @@ function formatNumber(value, digits = 0) {
   });
 }
 
-function ChipRow({ label, options, value, onChange, getKey, getText }) {
-  const selected = Array.isArray(value) ? value : value ? [value] : [];
-  const toggle = (key) => {
-    if (selected.includes(key)) {
-      onChange(selected.filter((item) => item !== key));
-      return;
-    }
-    onChange([...selected, key]);
-  };
+function FilterSelect({ label, options, value, onChange, getKey, getText }) {
+  const selected = Array.isArray(value) ? value.map(String) : value ? [String(value)] : [];
+  const items = [
+    { value: "", label: "All" },
+    ...options.map((option) => ({
+      value: String(getKey(option)),
+      label: getText(option),
+    })),
+  ];
   return (
-    <div className="lcl-filter-row">
-      <span>{label}</span>
-      <div className="filter-chips lcl-chips">
-        <button type="button" className={selected.length === 0 ? "active" : ""} onClick={() => onChange([])}>
-          All
-        </button>
-        {options.map((option) => {
-          const key = getKey(option);
-          return (
-            <button
-              key={key}
-              type="button"
-              className={selected.includes(key) ? "active" : ""}
-              onClick={() => toggle(key)}
-            >
-              {getText(option)}
-            </button>
-          );
-        })}
-      </div>
-    </div>
+    <label className="lcl-filter-select">
+      {label}
+      <FieldSelect
+        multiple
+        value={selected}
+        options={items}
+        placeholder="All"
+        searchable={options.length > 8}
+        onChange={onChange}
+      />
+    </label>
   );
 }
 
@@ -159,25 +151,40 @@ function monthAverages(years) {
 }
 
 function YearMonthTrend({ data }) {
+  const boxRef = useRef(null);
+  const size = useElementSize(boxRef);
   const years = data?.years || [];
-  const width = 360;
-  const height = 168;
-  const pad = { top: 12, right: 8, bottom: 22, left: 36 };
   const averages = monthAverages(years);
   if (!years.length) {
     return <p className="dash-section-note">No year-month trend for the current filters.</p>;
   }
+  const width = size.width || 360;
+  const height = size.height || 168;
   const max = Math.max(
     ...years.flatMap((item) => item.values.filter((value) => value != null)),
     ...averages.filter((value) => value != null),
     1
   );
+  const pad = {
+    top: 14,
+    right: 10,
+    bottom: 24,
+    left: Math.max(36, Math.round(max).toLocaleString().length * 7 + 10),
+  };
   const innerW = width - pad.left - pad.right;
   const innerH = height - pad.top - pad.bottom;
   const step = innerW / 11;
   return (
     <div className="lcl-trend">
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Average trend by year and month">
+      <div className="lcl-trend-plot" ref={boxRef}>
+      <svg
+        width="100%"
+        height="100%"
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="xMidYMid meet"
+        role="img"
+        aria-label="Average trend by year and month"
+      >
         {[0.25, 0.5, 0.75, 1].map((frac) => {
           const y = pad.top + innerH * (1 - frac);
           return (
@@ -229,6 +236,7 @@ function YearMonthTrend({ data }) {
           0
         </text>
       </svg>
+      </div>
       <ul className="lcl-trend-legend">
         {years.map((item, index) => (
           <li key={item.year}>
@@ -245,15 +253,18 @@ function YearMonthTrend({ data }) {
   );
 }
 
+const EMPTY_FILTERS = {
+  direction: [],
+  year: [],
+  month: [],
+  branch: [],
+  country: [],
+  bosch: [],
+};
+
 const LclDashboard = forwardRef(function LclDashboard({ embedded = false, onNotice, onRefreshLogs, onImportingChange }, ref) {
-  const [filters, setFilters] = useState({
-    direction: [],
-    year: [],
-    month: [],
-    branch: [],
-    country: [],
-    bosch: [],
-  });
+  const inputRef = useRef();
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [options, setOptions] = useState({
     years: [],
     months: [],
@@ -270,14 +281,13 @@ const LclDashboard = forwardRef(function LclDashboard({ embedded = false, onNoti
   const [notice, setNotice] = useState("");
 
   const query = useMemo(() => {
-    const bosch = filters.bosch.length === 1 ? filters.bosch[0] : "";
     return {
       direction: filters.direction,
       year: filters.year,
       month: filters.month,
       branch: filters.branch,
       country: filters.country,
-      bosch,
+      bosch: filters.bosch,
     };
   }, [filters]);
 
@@ -304,12 +314,13 @@ const LclDashboard = forwardRef(function LclDashboard({ embedded = false, onNoti
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [summaryResult, mapResult] = await Promise.all([
-        api.lclSummary(query),
-        api.lclMap(query),
-      ]);
-      setSummary(summaryResult.data || null);
-      const mapData = mapResult.data;
+      const result = await api.lclDashboard(query);
+      const data = result.data || {};
+      if (data.filters) {
+        setOptions(data.filters);
+      }
+      setSummary(data.summary || null);
+      const mapData = data.map;
       setMapPoints(Array.isArray(mapData) ? mapData : mapData?.points || []);
       setMapArrows(Array.isArray(mapData) ? [] : mapData?.arrows || []);
       if (!embedded) {
@@ -327,27 +338,31 @@ const LclDashboard = forwardRef(function LclDashboard({ embedded = false, onNoti
   }, [query, embedded, onNotice]);
 
   useEffect(() => {
-    loadFilters();
-  }, [loadFilters]);
-
-  useEffect(() => {
+    const hasFilters = Object.values(query).some((value) => (Array.isArray(value) ? value.length : value));
     const timer = setTimeout(() => {
       load();
-    }, 200);
+    }, hasFilters ? 160 : 0);
     return () => clearTimeout(timer);
-  }, [load]);
+  }, [load, query]);
 
   useEffect(() => {
     onImportingChange?.(importing);
   }, [importing, onImportingChange]);
 
-  const runImport = useCallback(async () => {
+  const openImport = () => inputRef.current?.click();
+
+  const runImport = useCallback(async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
     setImporting(true);
     if (!embedded) {
       setNotice("Importing LCL workbook. This can take a few minutes…");
     }
     try {
-      const result = await api.importLcl();
+      const result = await api.importLcl(file);
       const text = result.message || "Import complete";
       if (embedded) {
         onNotice?.({ type: "success", text });
@@ -368,7 +383,9 @@ const LclDashboard = forwardRef(function LclDashboard({ embedded = false, onNoti
     }
   }, [embedded, load, loadFilters, onNotice, onRefreshLogs]);
 
-  useImperativeHandle(ref, () => ({ openImport: runImport, importing }));
+  useImperativeHandle(ref, () => ({ openImport, importing }));
+
+  const resetFilters = () => setFilters(EMPTY_FILTERS);
 
   const kpis = summary?.kpis;
   const meta = options.meta || {};
@@ -383,7 +400,14 @@ const LclDashboard = forwardRef(function LclDashboard({ embedded = false, onNoti
   );
 
   return (
-    <div className={`lcl-page${embedded ? " is-embedded" : ""}`}>
+    <div className={`lcl-page${embedded ? " is-embedded" : ""}${loading ? " is-loading" : ""}`}>
+      <input
+        ref={inputRef}
+        hidden
+        type="file"
+        accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        onChange={runImport}
+      />
       {embedded ? null : (
       <header className="lcl-topbar">
         <div className="lcl-brand">
@@ -401,7 +425,7 @@ const LclDashboard = forwardRef(function LclDashboard({ embedded = false, onNoti
               ? `${meta.total.toLocaleString()} shipments · ${meta.filename || "workbook"}`
               : "No LCL data loaded yet"}
           </span>
-          <button type="button" className="primary" onClick={runImport} disabled={importing}>
+          <button type="button" className="primary" onClick={openImport} disabled={importing}>
             {importing ? "Importing…" : empty ? "Import workbook" : "Re-import"}
           </button>
         </div>
@@ -410,139 +434,151 @@ const LclDashboard = forwardRef(function LclDashboard({ embedded = false, onNoti
 
       {!embedded && notice ? <p className={`lcl-notice${notice.toLowerCase().includes("fail") || notice.toLowerCase().includes("not found") ? " is-error" : ""}`}>{notice}</p> : null}
 
-      <div className="lcl-filters">
-        <ChipRow
-          label="Direction"
-          options={options.directions || []}
-          value={filters.direction}
-          onChange={(direction) => setFilters((current) => ({ ...current, direction }))}
-          getKey={(item) => item}
-          getText={(item) => item}
-        />
-        <ChipRow
-          label="Year"
-          options={options.years || []}
-          value={filters.year}
-          onChange={(year) => setFilters((current) => ({ ...current, year }))}
-          getKey={(item) => item}
-          getText={(item) => item}
-        />
-        <ChipRow
-          label="Month"
-          options={options.months || []}
-          value={filters.month}
-          onChange={(month) => setFilters((current) => ({ ...current, month }))}
-          getKey={(item) => item}
-          getText={(item) => item}
-        />
-        <ChipRow
-          label="Job branch"
-          options={options.branches || []}
-          value={filters.branch}
-          onChange={(branch) => setFilters((current) => ({ ...current, branch }))}
-          getKey={(item) => item}
-          getText={(item) => item}
-        />
-        <ChipRow
-          label="Country"
-          options={options.countries || []}
-          value={filters.country}
-          onChange={(country) => setFilters((current) => ({ ...current, country }))}
-          getKey={(item) => item.code}
-          getText={(item) => item.name ? `${item.name} (${item.code})` : item.code}
-        />
-        <ChipRow
-          label="Bosch"
-          options={[
-            { code: "yes", name: "Yes" },
-            { code: "no", name: "No" },
-          ]}
-          value={filters.bosch}
-          onChange={(bosch) => setFilters((current) => ({ ...current, bosch }))}
-          getKey={(item) => item.code}
-          getText={(item) => item.name}
-        />
-      </div>
-
       {loading && !summary ? (
         <p className="lcl-empty">Loading LCL summary…</p>
       ) : empty ? (
         <p className="lcl-empty">Import the Desktop LCL workbook to populate this dashboard.</p>
       ) : (
-        <div className="dash-layout lcl-body">
-          <div className="lcl-overview">
-            <div className="dash-kpis lcl-kpis">
-              <article className="dash-kpi">
-                <span>Shipments</span>
-                <strong className="dash-kpi-count">{formatNumber(kpis?.shipments)}</strong>
-                <em>{formatNumber(kpis?.shipmentIds)} distinct IDs</em>
-              </article>
-            </div>
-            <section className="card">
+        <>
+          <div className="lcl-map-row">
+            <aside className="lcl-filter-panel">
+              <strong>Filters</strong>
+              <FilterSelect
+                label="Direction"
+                options={options.directions || []}
+                value={filters.direction}
+                onChange={(direction) => setFilters((current) => ({ ...current, direction }))}
+                getKey={(item) => item}
+                getText={(item) => item}
+              />
+              <FilterSelect
+                label="Year"
+                options={options.years || []}
+                value={filters.year}
+                onChange={(year) => setFilters((current) => ({ ...current, year }))}
+                getKey={(item) => item}
+                getText={(item) => item}
+              />
+              <FilterSelect
+                label="Month"
+                options={options.months || []}
+                value={filters.month}
+                onChange={(month) => setFilters((current) => ({ ...current, month }))}
+                getKey={(item) => item}
+                getText={(item) => item}
+              />
+              <FilterSelect
+                label="Job branch"
+                options={options.branches || []}
+                value={filters.branch}
+                onChange={(branch) => setFilters((current) => ({ ...current, branch }))}
+                getKey={(item) => item}
+                getText={(item) => item}
+              />
+              <FilterSelect
+                label="Country"
+                options={options.countries || []}
+                value={filters.country}
+                onChange={(country) => setFilters((current) => ({ ...current, country }))}
+                getKey={(item) => item.code}
+                getText={(item) => (item.name ? `${item.name} (${item.code})` : item.code)}
+              />
+              <FilterSelect
+                label="Bosch"
+                options={[
+                  { code: "yes", name: "Yes" },
+                  { code: "no", name: "No" },
+                ]}
+                value={filters.bosch}
+                onChange={(bosch) => setFilters((current) => ({ ...current, bosch }))}
+                getKey={(item) => item.code}
+                getText={(item) => item.name}
+              />
+              <button type="button" className="ghost" onClick={resetFilters} disabled={!filtersActive}>
+                Reset
+              </button>
+            </aside>
+            <section className="card lcl-globe-card">
               <div className="summary">
                 <div>
-                  <strong>By month</strong>
-                  <p className="dash-section-note">Shipment counts with yearly average</p>
+                  <strong>Destination map</strong>
+                  <p className="dash-section-note">
+                    Bubble size is shipment volume by dest country.
+                    {filters.direction.length
+                      ? " Arrows show export out and import in for the selected direction."
+                      : filtersActive
+                        ? " Map zooms to the filtered dest countries."
+                        : " Apply a filter to zoom into the data area."}
+                    {filters.country.length ? ` Filtered to ${filters.country.join(", ")}.` : ""}
+                  </p>
                 </div>
+                <span className="dash-count-chip">{mapPoints.length} countries</span>
               </div>
-              <div className="dash-chart-body dash-chart-hours">
-                <MonthChart items={summary?.byMonth || []} />
-              </div>
-            </section>
-            <section className="card">
-              <div className="summary">
-                <div>
-                  <strong>Average trend</strong>
-                  <p className="dash-section-note">By year by month</p>
-                </div>
-              </div>
-              <div className="dash-chart-body">
-                <YearMonthTrend data={summary?.byYearMonth} />
-              </div>
+              <LclMap
+                points={mapPoints}
+                arrows={mapArrows}
+                selected={filters.country}
+                showArrows={filters.direction.length > 0}
+                zoomToData={filtersActive}
+                onSelect={(country) =>
+                  setFilters((current) => {
+                    const selected = current.country.includes(country)
+                      ? current.country.filter((item) => item !== country)
+                      : [...current.country, country];
+                    return { ...current, country: selected };
+                  })
+                }
+              />
             </section>
           </div>
 
-          <section className="card lcl-customers">
-            <div className="summary">
-              <div>
-                <strong>Top customers</strong>
-                <p className="dash-section-note">Shipment Controlling Party</p>
+          <div className="dash-layout lcl-body">
+            <div className="lcl-overview">
+              <div className="dash-kpis lcl-kpis">
+                <article className="dash-kpi">
+                  <span>Shipments</span>
+                  <strong className="dash-kpi-count">{formatNumber(kpis?.shipments)}</strong>
+                  <em>{formatNumber(kpis?.shipmentIds)} distinct IDs</em>
+                </article>
               </div>
-              <span className="dash-count-chip">{summary?.byCustomer?.length || 0}</span>
+              <section className="card">
+                <div className="summary">
+                  <div>
+                    <strong>By month</strong>
+                    <p className="dash-section-note">Shipment counts with yearly average</p>
+                  </div>
+                </div>
+                <div className="dash-chart-body dash-chart-hours">
+                  <MonthChart items={summary?.byMonth || []} />
+                </div>
+              </section>
+              <section className="card">
+                <div className="summary">
+                  <div>
+                    <strong>Average trend</strong>
+                    <p className="dash-section-note">By year by month</p>
+                  </div>
+                </div>
+                <div className="dash-chart-body">
+                  <YearMonthTrend data={summary?.byYearMonth} />
+                </div>
+              </section>
             </div>
-            <div className="dash-chart-body">
-              <BarList items={summary?.byCustomer || []} />
-            </div>
-          </section>
 
-          <section className="card lcl-globe-card">
-            <div className="summary">
-              <div>
-                <strong>Destination map</strong>
-                <p className="dash-section-note">
-                  Bubble size is shipment volume by dest country.
-                  {filtersActive ? " Arrows show export out and import in for the current filters." : " Apply a filter to show direction arrows."}
-                  {filters.country.length ? ` Filtered to ${filters.country.join(", ")}.` : ""}
-                </p>
+            <section className="card lcl-customers">
+              <div className="summary">
+                <div>
+                  <strong>Top customers</strong>
+                  <p className="dash-section-note">Shipment Controlling Party</p>
+                </div>
+                <span className="dash-count-chip">{summary?.byCustomer?.length || 0}</span>
               </div>
-              <span className="dash-count-chip">{mapPoints.length} countries</span>
-            </div>
-            <LclMap
-              points={mapPoints}
-              arrows={mapArrows}
-              selected={filters.country}
-              showArrows={filtersActive}
-              onSelect={(country) =>
-                setFilters((current) => {
-                  const selected = current.country.includes(country)
-                    ? current.country.filter((item) => item !== country)
-                    : [...current.country, country];
-                  return { ...current, country: selected };
-                })
-              }
-            />
-          </section>
-        </div>
+              <div className="dash-chart-body">
+                <BarList items={summary?.byCustomer || []} />
+              </div>
+            </section>
+          </div>
+        </>
       )}
     </div>
   );

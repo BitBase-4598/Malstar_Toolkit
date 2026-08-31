@@ -9,6 +9,9 @@ TMP = Path(tempfile.mkdtemp())
 os.environ["DATABASE_PATH"] = str(TMP / "test.db")
 os.environ["UPLOAD_DIR"] = str(TMP / "uploads")
 os.environ["LOG_PATH"] = str(TMP / "test.log")
+os.environ["GCA_XLSX_PATH"] = str(TMP / "missing-gca.xlsx")
+os.environ["LCL_XLSX_PATH"] = str(TMP / "missing-lcl.xlsx")
+os.environ["UNLOCODE_CSV_PATH"] = str(TMP / "missing-unlocode.csv")
 sys.path.insert(0, str(ROOT))
 
 from flask import Flask
@@ -54,7 +57,7 @@ def test_migrate_schema_version_once():
     with get_connection() as conn:
         version = conn.execute("SELECT Version FROM SchemaVersion WHERE ID=1").fetchone()[0]
         count = conn.execute("SELECT COUNT(*) FROM CustomerRemarks").fetchone()[0]
-    assert version == 4
+    assert version == 5
     assert count == 3
     migrate()
     with get_connection() as conn:
@@ -81,6 +84,8 @@ def test_api_health_leave_dashboard():
     health = client.get("/api/health")
     assert health.status_code == 200
     assert health.get_json()["success"] is True
+    people = client.get("/api/leave-people")
+    assert people.status_code == 200
     leave = client.get("/api/leave-plans?year=2026&month=8")
     assert leave.status_code == 200
     dashboard = client.get("/api/dashboard")
@@ -89,6 +94,18 @@ def test_api_health_leave_dashboard():
     lcl_filters = client.get("/api/lcl/filters")
     assert lcl_filters.status_code == 200
     assert "years" in lcl_filters.get_json()["data"]
+    lcl_dash = client.get("/api/lcl/dashboard")
+    assert lcl_dash.status_code == 200
+    lcl_data = lcl_dash.get_json()["data"]
+    assert "summary" in lcl_data
+    assert "map" in lcl_data
+    icb = client.get("/api/icb")
+    assert icb.status_code == 200
+    unloco = client.get("/api/unlocode")
+    assert unloco.status_code == 200
+    gca = client.get("/api/gca/summary")
+    assert gca.status_code == 200
+    assert "kpis" in gca.get_json()["data"]
 
 
 def test_audit_writes_sqlite_and_json():
@@ -185,16 +202,17 @@ def test_cases_crud_and_status():
     missing = client.post("/api/cases", json={"name": "Only name"})
     assert missing.status_code == 400
     created = client.post("/api/cases", json={
-        "name": "Shenzhen review",
-        "hbl": "HBL123",
-        "category": "Wrong rate",
+        "category": "Human Error",
+        "description": "POR was read as Guangzhou",
     })
     assert created.status_code == 201
     body = created.get_json()["data"]
     assert body["status"] == "pending_review"
-    assert body["name"] == "Shenzhen review"
+    assert body["category"] == "Human Error"
+    assert body["description"] == "POR was read as Guangzhou"
+    assert body["hbl"] == ""
     case_id = body["id"]
-    listed = client.get("/api/cases?q=HBL123").get_json()["data"]
+    listed = client.get("/api/cases?q=Guangzhou").get_json()["data"]
     assert any(item["id"] == case_id for item in listed)
     patched = client.patch(f"/api/cases/{case_id}/status", json={"status": "closed"})
     assert patched.status_code == 200
@@ -214,7 +232,10 @@ def test_case_file_upload_png_xlsx():
     from app import app
 
     client = app.test_client()
-    created = client.post("/api/cases", json={"name": "Attach demo", "hbl": "HBL-FILE"}).get_json()["data"]
+    created = client.post("/api/cases", json={
+        "category": "Defects",
+        "description": "Attach demo",
+    }).get_json()["data"]
     case_id = created["id"]
     png = bytes.fromhex(
         "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
@@ -256,8 +277,8 @@ def test_case_import_and_locked_update():
     client = app.test_client()
     csv_bytes = (
         "Name,HBL#,Email,Start time,Category,Description\n"
-        "COSCO,HBL1,a@b.com,2026-08-01 09:00,Wrong rate,Needs check\n"
-        ",MISSINGHBL,skip@x.com,2026-08-01 09:00,Wrong rate,\n"
+        "COSCO,HBL1,a@b.com,2026-08-01 09:00,Human Error,Needs check\n"
+        ",MISSINGHBL,skip@x.com,2026-08-01 09:00,Human Error,\n"
     ).encode("utf-8")
     first = client.post(
         "/api/cases/import",
@@ -280,7 +301,7 @@ def test_case_import_and_locked_update():
     assert second.get_json()["skipped"] >= 1
     updated = client.put(f"/api/cases/{case_id}", json={
         "status": "reviewed",
-        "category": "Surcharge",
+        "category": "Defects",
         "description": "Checked",
         "name": "HACKED",
         "email": "evil@x.com",
@@ -292,7 +313,7 @@ def test_case_import_and_locked_update():
     assert data["email"] == "a@b.com"
     assert data["hbl"] == "HBL1"
     assert data["status"] == "reviewed"
-    assert data["category"] == "Surcharge"
+    assert data["category"] == "Defects"
     assert data["description"] == "Checked"
     rejected = client.put(f"/api/cases/{case_id}", json={"category": "Not a real category"})
     assert rejected.status_code == 400
@@ -309,8 +330,8 @@ def test_case_import_xlsx():
     client = app.test_client()
     workbook = Workbook()
     sheet = workbook.active
-    sheet.append(["Name", "HBL#", "Start time", "Category"])
-    sheet.append(["ONE", "HBLX", "2026-08-02 10:00", "Free time"])
+    sheet.append(["Name", "HBL#", "Start time", "Category", "Description"])
+    sheet.append(["ONE", "HBLX", "2026-08-02 10:00", "System Enhancements", "Hub mismatch"])
     buffer = BytesIO()
     workbook.save(buffer)
     result = client.post(
@@ -322,7 +343,161 @@ def test_case_import_xlsx():
     assert result.get_json()["imported"] == 1
     row = client.get("/api/cases?q=HBLX").get_json()["data"][0]
     assert row["name"] == "ONE"
-    assert row["category"] == "Free time"
+    assert row["category"] == "System Enhancements"
+    assert row["description"] == "Hub mismatch"
+
+
+def test_case_template_download():
+    migrate()
+    from app import app
+
+    client = app.test_client()
+    response = client.get("/api/cases/template")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "Category,Description" in body
+    assert "Human Error" in body
+
+
+def test_leave_name_mapping_and_half_day():
+    from io import BytesIO
+
+    from openpyxl import Workbook
+
+    from services.leave import replace_leave_people_from_workbook
+
+    migrate()
+    from app import app
+
+    client = app.test_client()
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Name Mapping"
+    sheet.append(["Handled By", "Name"])
+    sheet.append(["wenjie.yan@maersk.com", "Wenjie Yan"])
+    sheet.append(["qing.huang@lns.maersk.com", "Qing Huang"])
+    sheet.append(["jeff.yang@lns.maersk.com", "Jeff Yang"])
+    sheet.append(["ailsa.he@lns.maersk.com", "Ailsa He"])
+    sheet.append(["Human Error", None])
+    buffer = BytesIO()
+    workbook.save(buffer)
+    result, error = replace_leave_people_from_workbook(buffer.getvalue())
+    assert error is None
+    listed = client.get("/api/leave-people").get_json()["data"]
+    names = [row["name"] for row in listed]
+    assert "Jane Li" in names
+    assert "Wenjie Yan" in names
+    assert "Qing Huang" in names
+    assert "Jeff Yang" not in names
+    assert "Ailsa He" not in names
+    created = client.post("/api/leave-plans", json={
+        "person": "Wenjie Yan",
+        "leaveDate": "2026-08-12",
+        "leaveType": "half day",
+        "status": "planned",
+    })
+    assert created.status_code == 201
+    assert created.get_json()["data"]["leaveType"] == "half_day"
+    logs = client.get("/api/activity-logs?module=leave").get_json()["data"]
+    assert any("Wenjie Yan" in (row.get("summary") or "") and "Half day" in (row.get("summary") or "") for row in logs)
+    edited = client.put(f"/api/leave-plans/{created.get_json()['data']['id']}", json={
+        "person": "Jane Li",
+        "leaveDate": "2026-08-12",
+        "leaveType": "annual",
+        "status": "confirmed",
+    })
+    assert edited.status_code == 200
+    removed = client.delete(f"/api/leave-plans/{created.get_json()['data']['id']}")
+    assert removed.status_code == 200
+    logs = client.get("/api/activity-logs?module=leave").get_json()["data"]
+    assert len(logs) >= 3
+    rejected = client.post("/api/leave-plans", json={
+        "person": "Wenjie Yan",
+        "leaveDate": "2026-08-13",
+        "leaveType": "vacation",
+        "status": "planned",
+    })
+    assert rejected.status_code == 400
+
+
+def test_replace_cases_from_gca_workbook():
+    from io import BytesIO
+
+    from openpyxl import Workbook
+
+    from db import get_connection
+    from services.cases import replace_cases_from_gca_workbook
+
+    migrate()
+    from app import app
+
+    client = app.test_client()
+    client.post("/api/cases", json={"category": "Defects", "description": "seed to replace"})
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "AreaFeedbackList"
+    sheet.append([
+        "Start time", "Name", "HBL#", "Wrongly identify field", "Incorrect", "Corrected",
+        "GSC PIC", "Week", "Date", "Category", "Description", "Action",
+    ])
+    sheet.append([
+        "2026-03-01 09:15:00", "COSCO", "SZX1234567", "POR", "Guangzhou", "Shenzhen",
+        0, "#N/A", "2026-03-01", "Human error", "Wrong POR", "Fixed",
+    ])
+    sheet.append([
+        "2026-03-02 10:00:00", "Test user", "HBLTEST", "POD", "A", "B",
+        "PIC", 12, "2026-03-02", "Test", "Ignore this", "",
+    ])
+    sheet.append([
+        "2026-03-03 11:00:00", "ONE", "HBLFALLBACK", "Commodity", "Toys", "Electronics",
+        "Ann", 13, "2026-03-03", "Defects", "", "",
+    ])
+    eur = workbook.create_sheet("AreaFeedbackList_EUR")
+    eur.append(["HBL#", "Category", "Description", "Date"])
+    eur.append(["EURHBL001", "System Enhancements", "EUR lane note", "2026-03-04"])
+    buffer = BytesIO()
+    workbook.save(buffer)
+    result, error = replace_cases_from_gca_workbook(buffer.getvalue())
+    assert error is None
+    assert result["imported"] == 3
+    assert result["skipped"] == 1
+    listed = client.get("/api/cases").get_json()["data"]
+    assert len(listed) == 3
+    by_hbl = {row["hbl"]: row for row in listed}
+    assert "seed to replace" not in {row["description"] for row in listed}
+    assert by_hbl["SZX1234567"]["category"] == "Human Error"
+    assert by_hbl["SZX1234567"]["gscPic"] == ""
+    assert by_hbl["SZX1234567"]["week"] == ""
+    assert by_hbl["HBLFALLBACK"]["description"] == "Commodity. Toys → Electronics"
+    assert by_hbl["EURHBL001"]["category"] == "System Enhancements"
+
+
+def test_lcl_import_requires_xlsx():
+    from io import BytesIO
+    from zipfile import ZipFile
+
+    migrate()
+    from app import app
+
+    client = app.test_client()
+    missing = client.post("/api/lcl/import")
+    assert missing.status_code == 400
+    csv_file = client.post(
+        "/api/lcl/import",
+        data={"file": (BytesIO(b"not excel"), "lcl.csv")},
+        content_type="multipart/form-data",
+    )
+    assert csv_file.status_code == 400
+    buffer = BytesIO()
+    with ZipFile(buffer, "w") as archive:
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+    fake = client.post(
+        "/api/lcl/import",
+        data={"file": (BytesIO(buffer.getvalue()), "lcl.xlsx")},
+        content_type="multipart/form-data",
+    )
+    assert fake.status_code == 400
+    assert "pivot cache" in fake.get_json()["message"].lower()
 
 
 def test_lcl_dimension_and_summary():
@@ -363,6 +538,157 @@ def test_lcl_dimension_and_summary():
     assert "DE" in codes
     assert "NL" in codes
     assert mapped["arrows"]
+
+
+def test_icb_csv_import_and_search():
+    from io import BytesIO
+
+    migrate()
+    from app import app
+
+    csv_bytes = (
+        "Country,Location,CW1 Branch,CW1 UNLOCO Code (Consol),CW1 Group Code,CW1 Group Name,CW1 Agent Code,ICB Code\n"
+        "Denmark ,Aarhus ,AAR,DKAAR,GR-AAR-FES,Denmark Export Sea (MAE),DAMDENAAR,DAMDENAAR\n"
+        'México,Mexico,MX1,"MXLZC\nMXZLO",GR-MX1-FES,Mexico Station Export LCL (MAE),DAMLOGMEX,DAMLOGMEX\n'
+        "Bangladesh,Dhaka,DAC,BDCGP,GR-DAC-FIS,Bangladesh Import Sea (MAE),APMGLODAC,APMGLODAC\n"
+        "Chile,Santiago,SC1,CLSAI,GR-SC1-FES,Santiago Export Sea,MAELOGVAP,MAELOGVAP (as customer)\n"
+    ).encode("utf-8")
+    client = app.test_client()
+    imported = client.post(
+        "/api/icb/import",
+        data={"file": (BytesIO(csv_bytes), "ICB.csv")},
+        content_type="multipart/form-data",
+    )
+    assert imported.status_code == 200
+    body = imported.get_json()
+    assert body["success"] is True
+    assert body["data"]["rowCount"] == 4
+    aar = client.get("/api/icb?q=AAR").get_json()
+    assert aar["pagination"]["total"] == 1
+    assert aar["data"][0]["branch"] == "AAR"
+    assert aar["data"][0]["icbCode"] == "DAMDENAAR"
+    mexico = client.get("/api/icb?q=MXLZC").get_json()["data"][0]
+    assert "MXLZC" in mexico["unloco"]
+    assert "MXZLO" in mexico["unloco"]
+    assert "\n" not in mexico["unloco"]
+    inbound = client.get("/api/icb?q=Dhaka").get_json()["data"][0]
+    assert inbound["direction"] == "import"
+    chile = client.get("/api/icb?q=MAELOGVAP").get_json()["data"][0]
+    assert chile["icbCode"] == "MAELOGVAP"
+    assert "as customer" in chile["notes"]
+
+
+def test_unloco_csv_import_and_search():
+    from io import BytesIO
+
+    migrate()
+    from app import app
+
+    csv_bytes = (
+        "Rl PortName,UN Code,Rl Rn NKCountryCode,Country name,LCL Category,"
+        "Is Ocean Primary Code,Rl IsActive,Rl IsSystem,Rl HasAirport,Rl HasSeaport,"
+        "Rl HasRail,Rl HasRoad,Rl HasPost,Rl HasCustomsLodge,Rl HasUnload,Rl HasStore,"
+        "Rl HasTerminal,Rl HasDischarge,Rl HasOutport,Rl HasBorderCrossing\n"
+        "Lannion,FRLAI,FR,France,Door,TRUE,TRUE,TRUE,TRUE,TRUE,FALSE,FALSE,FALSE,FALSE,FALSE,FALSE,FALSE,FALSE,FALSE,FALSE\n"
+        "Aarhus,DKAAR,DK,Denmark,Port,TRUE,TRUE,TRUE,FALSE,TRUE,FALSE,TRUE,FALSE,FALSE,FALSE,FALSE,FALSE,FALSE,FALSE,FALSE\n"
+    ).encode("utf-8")
+    client = app.test_client()
+    imported = client.post(
+        "/api/unlocode/import",
+        data={"file": (BytesIO(csv_bytes), "UNLOCODE.csv")},
+        content_type="multipart/form-data",
+    )
+    assert imported.status_code == 200
+    body = imported.get_json()
+    assert body["success"] is True
+    assert body["data"]["rowCount"] == 2
+    found = client.get("/api/unlocode?q=FRLAI").get_json()
+    assert found["pagination"]["total"] == 1
+    row = found["data"][0]
+    assert row["unCode"] == "FRLAI"
+    assert row["portName"] == "Lannion"
+    airport = next(flag for flag in row["flags"] if flag["id"] == "hasAirport")
+    seaport = next(flag for flag in row["flags"] if flag["id"] == "hasSeaport")
+    road = next(flag for flag in row["flags"] if flag["id"] == "hasRoad")
+    assert airport["on"] is True
+    assert seaport["on"] is True
+    assert road["on"] is False
+    denmark = client.get("/api/unlocode?q=Aarhus").get_json()["data"][0]
+    assert denmark["unCode"] == "DKAAR"
+    by_country = client.get("/api/unlocode?q=France").get_json()
+    assert by_country["pagination"]["total"] == 1
+    assert by_country["data"][0]["unCode"] == "FRLAI"
+    by_code = client.get("/api/unlocode?q=DK").get_json()
+    assert by_code["data"][0]["unCode"] == "DKAAR"
+    category_only = client.get("/api/unlocode?q=Door").get_json()
+    assert category_only["pagination"]["total"] == 0
+
+
+def test_gca_xlsx_import_summary_and_hbl_join():
+    from datetime import datetime
+    from io import BytesIO
+
+    from openpyxl import Workbook
+
+    migrate()
+    from app import app
+
+    workbook = Workbook()
+    sz1 = workbook.active
+    sz1.title = "SZ1"
+    sz1.append(["Date", "#", "Order ID", "Booking ID", "Name", "Status", "Remark", "UID", "SCM", "HBL", "HBL#"])
+    sz1.append([datetime(2026, 8, 1), 1, "OD1", "B1", "Alice", "Converted", None, "U1", "Bosch", None, "SZ10000001"])
+    sz1.append([datetime(2026, 8, 2), 2, "OD2", "B2", "Bob", "Cancelled", "missing POR", "U2", None, None, "SZ10000002"])
+    eur = workbook.create_sheet("SZ EUR")
+    eur.append(["Date", "#", "Order ID", "Booking ID", "Name", "Status", "Remark", "UID", "SCM", "HBL", "HBL#"])
+    eur.append([datetime(2026, 8, 1), 1, "OD3", "B3", "Cara", "Converted", None, "U3", None, None, "SZ10000003"])
+    feedback = workbook.create_sheet("AreaFeedbackList")
+    feedback.append([
+        "Id", "Start time", "Email", "Name", "HBL#", "Wrongly identify field", "Incorrect ", "Corrected",
+        "Cause of Error (Optional)", "GSC PIC", "Date", "Category",
+    ])
+    feedback.append([
+        1, datetime(2026, 8, 1, 9, 0), "a@b.com", "Planner", "26SZ10000001",
+        "[Party] - Shipper", "old", "new", "Misunderstanding", "Alice", datetime(2026, 8, 1), "Human error",
+    ])
+    feedback.append([
+        2, datetime(2026, 8, 1, 9, 5), "a@b.com", "Planner", "TEST",
+        "[Pre-fix Branch]", "SH1", "SZ1", "Test", 0, datetime(2026, 8, 1), "Test",
+    ])
+    eur_fb = workbook.create_sheet("AreaFeedbackList_EUR")
+    eur_fb.append([
+        "Id", "Name", "HBL#", "Wrongly identify field", "Incorrect ", "Corrected",
+        "Cause of Error (Optional)", "GSC PIC", "Date", "Category",
+    ])
+    eur_fb.append([
+        1, "Xie", "26SZ10000003", "[Service Information] - Incoterm", "FOB", "EXW",
+        "Misunderstanding", "Cara", datetime(2026, 8, 1), "Defects",
+    ])
+    buffer = BytesIO()
+    workbook.save(buffer)
+    client = app.test_client()
+    imported = client.post(
+        "/api/gca/import",
+        data={"file": (BytesIO(buffer.getvalue()), "gca.xlsx")},
+        content_type="multipart/form-data",
+    )
+    assert imported.status_code == 200
+    assert imported.get_json()["data"]["bookingCount"] == 3
+    assert imported.get_json()["data"]["feedbackCount"] == 3
+    summary = client.get("/api/gca/summary").get_json()["data"]
+    assert summary["kpis"]["received"] == 3
+    assert summary["kpis"]["converted"] == 2
+    assert summary["kpis"]["cancelled"] == 1
+    assert summary["kpis"]["feedbackCount"] == 2
+    europe = client.get("/api/gca/summary?lane=europe").get_json()["data"]
+    assert europe["kpis"]["received"] == 1
+    bookings = client.get("/api/gca/bookings?q=OD1").get_json()["data"]
+    assert bookings[0]["hbl"] == "SZ10000001"
+    assert bookings[0]["feedbackCount"] == 1
+    joined = client.get("/api/gca/feedback?q=SZ10000001").get_json()["data"]
+    assert joined[0]["hblKey"] == "SZ10000001"
+    assert joined[0]["orderId"] == "OD1"
+    assert joined[0]["category"] == "Human Error"
 
 
 if __name__ == "__main__":

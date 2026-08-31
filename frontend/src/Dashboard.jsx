@@ -1,5 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { api } from "./api";
+import FieldSelect from "./FieldSelect";
 
 const DONUT_COLORS = ["#42b0d5", "#00243d", "#0077b2", "#4c4c4c", "#77c6e0"];
 
@@ -219,18 +220,15 @@ function DataTable({ rows, maxProcessOrder }) {
           </button>
           <label className="pagination-select">
             Page
-            <select
-              value={safePage}
+            <FieldSelect
+              compact
+              value={String(safePage)}
               disabled={totalPages <= 1}
-              onChange={(event) => setPage(Number(event.target.value))}
-              aria-label="Select bookings page"
-            >
-              {pages.map((number) => (
-                <option key={number} value={number}>
-                  {number}
-                </option>
-              ))}
-            </select>
+              searchable={totalPages > 8}
+              options={pages.map((number) => ({ value: String(number), label: String(number) }))}
+              onChange={(next) => setPage(Number(next))}
+              ariaLabel="Select bookings page"
+            />
             of {totalPages}
           </label>
           <button type="button" disabled={safePage >= totalPages} onClick={() => setPage((value) => value + 1)}>

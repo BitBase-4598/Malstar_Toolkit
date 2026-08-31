@@ -3,15 +3,16 @@ import os
 from flask import Flask, abort, g, jsonify, send_from_directory
 from flask_cors import CORS
 
-from config import CORS_ORIGINS, MAX_UPLOAD_MB, STATIC_DIR
+from config import CORS_ORIGINS, LCL_MAX_UPLOAD_MB, MAX_UPLOAD_MB, STATIC_DIR
 from db import migrate
 
 
 def create_app():
     migrate()
     app = Flask(__name__, static_folder=None)
-    app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
-    app.config["MAX_FORM_MEMORY_SIZE"] = MAX_UPLOAD_MB * 1024 * 1024
+    upload_cap_mb = max(MAX_UPLOAD_MB, LCL_MAX_UPLOAD_MB)
+    app.config["MAX_CONTENT_LENGTH"] = upload_cap_mb * 1024 * 1024
+    app.config["MAX_FORM_MEMORY_SIZE"] = upload_cap_mb * 1024 * 1024
     app.config["MAX_FORM_PARTS"] = 10000
     if CORS_ORIGINS:
         CORS(app, resources={r"/api/*": {"origins": CORS_ORIGINS}})
@@ -20,7 +21,10 @@ def create_app():
     from blueprints.cases import bp as cases_bp
     from blueprints.dashboard import bp as dashboard_bp
     from blueprints.files import bp as files_bp
+    from blueprints.gca import bp as gca_bp
     from blueprints.health import bp as health_bp
+    from blueprints.icb import bp as icb_bp
+    from blueprints.unloco import bp as unloco_bp
     from blueprints.leave import bp as leave_bp
     from blueprints.lcl import bp as lcl_bp
     from blueprints.logs import bp as logs_bp
@@ -37,6 +41,9 @@ def create_app():
     app.register_blueprint(leave_bp)
     app.register_blueprint(lcl_bp)
     app.register_blueprint(dashboard_bp)
+    app.register_blueprint(icb_bp)
+    app.register_blueprint(unloco_bp)
+    app.register_blueprint(gca_bp)
     app.register_blueprint(remarks_bp)
 
     @app.before_request
@@ -54,7 +61,7 @@ def create_app():
     def too_large(_):
         return jsonify({
             "success": False,
-            "message": f"Upload exceeds the {MAX_UPLOAD_MB} MB limit.",
+            "message": f"Upload exceeds the {max(MAX_UPLOAD_MB, LCL_MAX_UPLOAD_MB)} MB limit.",
         }), 413
 
     @app.errorhandler(Exception)
@@ -116,7 +123,26 @@ def create_app():
 app = create_app()
 
 
+def _warm_lcl_cache():
+    try:
+        from services.lcl import build_dashboard
+        build_dashboard({})
+    except Exception:
+        pass
+
+
+def _warm_unloco():
+    try:
+        from services.unloco import ensure_unloco_loaded
+        ensure_unloco_loaded()
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
+    import threading
+    threading.Thread(target=_warm_lcl_cache, daemon=True).start()
+    threading.Thread(target=_warm_unloco, daemon=True).start()
     host = os.environ.get("FLASK_HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", os.environ.get("FLASK_PORT", "5000")))
     debug = os.environ.get("FLASK_DEBUG", "false").lower() in ("1", "true", "yes")

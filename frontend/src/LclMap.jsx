@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { WORLD_COUNTRIES, WORLD_HEIGHT, WORLD_WIDTH } from "./worldCountries";
 
 const LAND = "#1b455c";
@@ -23,14 +23,126 @@ function bubbleRadius(count, max) {
   return 3.5 + Math.sqrt(count / Math.max(max, 1)) * 26;
 }
 
-function curvePath(from, to) {
+function curveControl(from, to) {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   const len = Math.hypot(dx, dy) || 1;
   const bulge = Math.min(48, len * 0.18);
-  const cx = (from.x + to.x) / 2 - (dy / len) * bulge;
-  const cy = (from.y + to.y) / 2 + (dx / len) * bulge;
-  return `M ${from.x} ${from.y} Q ${cx} ${cy} ${to.x} ${to.y}`;
+  return {
+    x: (from.x + to.x) / 2 - (dy / len) * bulge,
+    y: (from.y + to.y) / 2 + (dx / len) * bulge,
+  };
+}
+
+function curvePath(from, to) {
+  const mid = curveControl(from, to);
+  return `M ${from.x} ${from.y} Q ${mid.x} ${mid.y} ${to.x} ${to.y}`;
+}
+
+const ASPECT = WORLD_WIDTH / WORLD_HEIGHT;
+const WORLD_VIEW = { x: 0, y: 0, w: WORLD_WIDTH, h: WORLD_HEIGHT };
+
+function expand(box, x, y) {
+  box.minX = Math.min(box.minX, x);
+  box.minY = Math.min(box.minY, y);
+  box.maxX = Math.max(box.maxX, x);
+  box.maxY = Math.max(box.maxY, y);
+}
+
+function fitDataView(points, arrows, zoomToData, maxCount) {
+  if (!zoomToData) {
+    return WORLD_VIEW;
+  }
+  const box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  for (const item of points || []) {
+    const { x, y } = project(item.lat, item.lng);
+    const radius = bubbleRadius(item.count, maxCount) + 10;
+    expand(box, x - radius, y - radius);
+    expand(box, x + radius, y + radius);
+  }
+  for (const arrow of arrows || []) {
+    const from = project(arrow.fromLat, arrow.fromLng);
+    const to = project(arrow.toLat, arrow.toLng);
+    const mid = curveControl(from, to);
+    expand(box, from.x, from.y);
+    expand(box, to.x, to.y);
+    expand(box, mid.x, mid.y);
+  }
+  if (!Number.isFinite(box.minX)) {
+    return WORLD_VIEW;
+  }
+  const pad = 40;
+  const minX = box.minX - pad;
+  const minY = box.minY - pad;
+  const maxX = box.maxX + pad;
+  const maxY = box.maxY + pad;
+  let w = Math.max(maxX - minX, 220);
+  let h = Math.max(maxY - minY, 220 / ASPECT);
+  if (w / h > ASPECT) {
+    h = w / ASPECT;
+  } else {
+    w = h * ASPECT;
+  }
+  w = Math.min(w, WORLD_WIDTH);
+  h = Math.min(h, WORLD_HEIGHT);
+  if (w > WORLD_WIDTH * 0.92) {
+    return WORLD_VIEW;
+  }
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  let x = cx - w / 2;
+  let y = cy - h / 2;
+  x = Math.min(Math.max(x, 0), WORLD_WIDTH - w);
+  y = Math.min(Math.max(y, 0), WORLD_HEIGHT - h);
+  return { x, y, w, h };
+}
+
+function viewsClose(a, b) {
+  return (
+    Math.abs(a.x - b.x) < 0.3 &&
+    Math.abs(a.y - b.y) < 0.3 &&
+    Math.abs(a.w - b.w) < 0.3 &&
+    Math.abs(a.h - b.h) < 0.3
+  );
+}
+
+function useAnimatedViewBox(target, duration = 620) {
+  const [view, setView] = useState(WORLD_VIEW);
+  const currentRef = useRef(WORLD_VIEW);
+  const frameRef = useRef(0);
+
+  useEffect(() => {
+    const from = currentRef.current;
+    if (viewsClose(from, target)) {
+      currentRef.current = target;
+      setView(target);
+      return undefined;
+    }
+    cancelAnimationFrame(frameRef.current);
+    const started = performance.now();
+    const tick = (now) => {
+      const t = Math.min(1, (now - started) / duration);
+      const ease = 1 - (1 - t) ** 3;
+      const next = {
+        x: from.x + (target.x - from.x) * ease,
+        y: from.y + (target.y - from.y) * ease,
+        w: from.w + (target.w - from.w) * ease,
+        h: from.h + (target.h - from.h) * ease,
+      };
+      currentRef.current = next;
+      setView(next);
+      if (t < 1) {
+        frameRef.current = requestAnimationFrame(tick);
+      } else {
+        currentRef.current = target;
+        setView(target);
+      }
+    };
+    frameRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frameRef.current);
+  }, [target, duration]);
+
+  return view;
 }
 
 function selectedSet(selected) {
@@ -40,7 +152,7 @@ function selectedSet(selected) {
   return new Set(selected ? [selected] : []);
 }
 
-export default function LclMap({ points, arrows, selected, onSelect, showArrows }) {
+export default function LclMap({ points, arrows, selected, onSelect, showArrows, zoomToData }) {
   const [tooltip, setTooltip] = useState(null);
   const [hoverIso, setHoverIso] = useState("");
   const active = selectedSet(selected);
@@ -54,7 +166,15 @@ export default function LclMap({ points, arrows, selected, onSelect, showArrows 
     () => [...(points || [])].sort((a, b) => b.count - a.count),
     [points]
   );
-  const visibleArrows = showArrows ? arrows || [] : [];
+  const visibleArrows = useMemo(
+    () => (showArrows ? arrows || [] : []),
+    [showArrows, arrows]
+  );
+  const targetView = useMemo(
+    () => fitDataView(points, visibleArrows, zoomToData, max),
+    [points, visibleArrows, zoomToData, max]
+  );
+  const view = useAnimatedViewBox(targetView);
 
   const showTip = (event, item, iso2, extra) => {
     if (!item && !iso2) {
@@ -83,7 +203,8 @@ export default function LclMap({ points, arrows, selected, onSelect, showArrows 
   return (
     <div className="lcl-map">
       <svg
-        viewBox={`0 0 ${WORLD_WIDTH} ${WORLD_HEIGHT}`}
+        viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
+        preserveAspectRatio="xMidYMid meet"
         role="img"
         aria-label="Destination world map of shipment volume"
         onMouseLeave={() => {
@@ -118,6 +239,7 @@ export default function LclMap({ points, arrows, selected, onSelect, showArrows 
               fill={isActive ? LAND_ACTIVE : LAND}
               stroke={isActive ? BUBBLE : "#00243d"}
               strokeWidth={isActive ? 1.4 : 0.4}
+              vectorEffect="non-scaling-stroke"
               style={{ cursor: "pointer" }}
               onMouseMove={(event) => showTip(event, item, country.iso2)}
               onClick={() => activate(country.iso2)}

@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, request
 
 from logging_util import audit
-from services.lcl import build_map, build_summary, import_lcl_workbook, list_filter_options
+from services.lcl import build_dashboard, build_map, build_summary, import_lcl_workbook, list_filter_options
 
 bp = Blueprint("lcl", __name__)
 
@@ -9,6 +9,11 @@ bp = Blueprint("lcl", __name__)
 @bp.get("/api/lcl/filters")
 def lcl_filters():
     return jsonify({"success": True, "data": list_filter_options()})
+
+
+@bp.get("/api/lcl/dashboard")
+def lcl_dashboard():
+    return jsonify({"success": True, "data": build_dashboard(request.args)})
 
 
 @bp.get("/api/lcl/summary")
@@ -23,7 +28,12 @@ def lcl_map():
 
 @bp.post("/api/lcl/import")
 def lcl_import():
-    result, error = import_lcl_workbook()
+    if "file" not in request.files:
+        audit("lcl.import", "failure", summary="no file uploaded")
+        return jsonify({"success": False, "message": "No file was uploaded."}), 400
+    file = request.files["file"]
+    filename = file.filename or "lcl.xlsx"
+    result, error = import_lcl_workbook(filename, file.read())
     if error:
         audit("lcl.import", "failure", summary=error)
         return jsonify({"success": False, "message": error}), 400

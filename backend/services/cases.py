@@ -17,12 +17,26 @@ from util import now_stamp
 STATUSES = ("pending_review", "reviewed", "closed")
 
 CATEGORIES = (
-    "Wrong rate",
-    "Surcharge",
-    "HBL amendment",
-    "Commodity",
-    "Free time",
-    "Duplicate HBL",
+    "Human Error",
+    "Commercial knowledge & Operation Process Rules Updates",
+    "System Enhancements",
+    "Defects",
+    "Invalid Feedback",
+    "Process ambiguity reclarification",
+)
+
+CATEGORY_ALIASES = {
+    "human error": "Human Error",
+    "commercial knowledge & operation process rules updates": "Commercial knowledge & Operation Process Rules Updates",
+    "system enhancements": "System Enhancements",
+    "defects": "Defects",
+    "invalid feedback": "Invalid Feedback",
+    "process ambiguity reclarification": "Process ambiguity reclarification",
+}
+
+TEMPLATE_CSV = (
+    "Category,Description\n"
+    "Human Error,Example: POR was read as Guangzhou\n"
 )
 
 IMPORT_HEADERS = {
@@ -86,12 +100,15 @@ def parse_status(value, default="pending_review"):
     return status, None
 
 
-def parse_category(value, *, current=None):
+def parse_category(value, *, current=None, required=False):
     text = str(value or "").strip()
     if not text:
+        if required:
+            return None, "Category is required."
         return "", None
-    if text in CATEGORIES or (current is not None and text == current):
-        return text, None
+    mapped = CATEGORY_ALIASES.get(text.casefold(), text)
+    if mapped in CATEGORIES or (current is not None and text == current):
+        return mapped if mapped in CATEGORIES else text, None
     return None, "Category is not in the allowed list."
 
 
@@ -101,23 +118,21 @@ def empty_text_fields():
 
 def parse_case_create(data):
     data = data or {}
-    name = str(data.get("name") or "").strip()
-    hbl = str(data.get("hbl") or "").strip()
-    if not name:
-        return None, "Name is required."
-    if not hbl:
-        return None, "HBL# is required."
+    category, error = parse_category(data.get("category"), required=True)
+    if error:
+        return None, error
+    description = str(data.get("description") or "").strip()
+    if not description:
+        return None, "Description is required."
     status, error = parse_status(data.get("status"))
     if error:
         return None, error
-    category, error = parse_category(data.get("category"))
-    if error:
-        return None, error
     payload = empty_text_fields()
-    payload["name"] = name
-    payload["hbl"] = hbl
+    payload["name"] = str(data.get("name") or "").strip()
+    payload["hbl"] = str(data.get("hbl") or "").strip()
+    payload["email"] = str(data.get("email") or "").strip()
     payload["category"] = category
-    payload["description"] = str(data.get("description") or "").strip()
+    payload["description"] = description
     payload["status"] = status
     return payload, None
 
@@ -220,11 +235,13 @@ def load_case(conn, case_id):
 
 def create_case(conn, payload):
     stamp = now_stamp()
+    created = str(payload.get("createdAt") or stamp)
+    updated = str(payload.get("updatedAt") or created)
     columns = ", ".join(["Status"] + [column for _key, column in TEXT_FIELDS] + ["CreatedAt", "UpdatedAt"])
     placeholders = ", ".join(["?"] * (3 + len(TEXT_FIELDS)))
     cur = conn.execute(
         f"INSERT INTO Cases ({columns}) VALUES ({placeholders})",
-        [payload["status"], *_payload_column_values(payload), stamp, stamp],
+        [payload["status"], *_payload_column_values(payload), created, updated],
     )
     return load_case(conn, cur.lastrowid)
 
@@ -345,7 +362,8 @@ def decode_json_upload(raw):
 def case_heading(record):
     if not record:
         return ""
-    return f"#{record['id']} · {record['name']} · {record['hbl']}"
+    category = record.get("category") or "Feedback"
+    return f"#{record['id']} · {category}"
 
 
 def normalize_import_header(value):
@@ -365,8 +383,8 @@ def map_import_headers(headers):
 
 def import_duplicate_key(payload):
     return (
-        str(payload.get("name") or "").strip(),
-        str(payload.get("hbl") or "").strip(),
+        str(payload.get("category") or "").strip(),
+        str(payload.get("description") or "").strip(),
         str(payload.get("startTime") or "").strip(),
     )
 
@@ -385,8 +403,8 @@ def parse_csv_import_rows(data):
     if not reader.fieldnames:
         return None, "CSV header row is missing."
     mapping = map_import_headers(reader.fieldnames)
-    if "name" not in mapping or "hbl" not in mapping:
-        return None, "Missing Name or HBL# column."
+    if "category" not in mapping or "description" not in mapping:
+        return None, "Missing Category or Description column."
     rows = []
     for index, row in enumerate(reader, start=2):
         if not any(str(value or "").strip() for value in row.values()):
@@ -406,8 +424,8 @@ def parse_xlsx_import_rows(data):
             return None, "Excel header row is missing."
         headers = [cell_to_text(cell) for cell in header_row]
         mapping = map_import_headers(headers)
-        if "name" not in mapping or "hbl" not in mapping:
-            return None, "Missing Name or HBL# column."
+        if "category" not in mapping or "description" not in mapping:
+            return None, "Missing Category or Description column."
         index_by_key = {key: headers.index(header) for key, header in mapping.items()}
         rows = []
         for index, row in enumerate(iterator, start=2):
@@ -447,19 +465,24 @@ def import_cases_file(filename, data):
     with get_connection() as conn:
         seen = {
             (
-                str(row["Name"] or "").strip(),
-                str(row["HBL"] or "").strip(),
+                str(row["Category"] or "").strip(),
+                str(row["Description"] or "").strip(),
                 str(row["StartTime"] or "").strip(),
             )
-            for row in conn.execute("SELECT Name, HBL, StartTime FROM Cases").fetchall()
+            for row in conn.execute("SELECT Category, Description, StartTime FROM Cases").fetchall()
         }
         for index, payload in rows:
-            name_value = payload["name"]
-            hbl_value = payload["hbl"]
-            if not name_value or not hbl_value:
+            category, error = parse_category(payload.get("category"), required=True)
+            description = str(payload.get("description") or "").strip()
+            if error or not description:
                 skipped += 1
-                errors.append({"row": index, "message": "Name and HBL# are required."})
+                errors.append({
+                    "row": index,
+                    "message": error or "Category and Description are required.",
+                })
                 continue
+            payload["category"] = category
+            payload["description"] = description
             key = import_duplicate_key(payload)
             if key in seen:
                 skipped += 1
@@ -472,3 +495,102 @@ def import_cases_file(filename, data):
         "skipped": skipped,
         "errors": errors[:100],
     }, None
+
+
+def _fallback_description(item):
+    from services.gca import cell_text
+
+    wrongly = cell_text(item.get("wronglyIdentified"))
+    incorrect = cell_text(item.get("incorrect"))
+    corrected = cell_text(item.get("corrected"))
+    bits = []
+    if wrongly:
+        bits.append(wrongly)
+    if incorrect and corrected:
+        bits.append(f"{incorrect} → {corrected}")
+    elif incorrect:
+        bits.append(incorrect)
+    elif corrected:
+        bits.append(corrected)
+    return ". ".join(bits)
+
+
+def gca_feedback_row_to_case_payload(item):
+    from services.gca import SKIP_FEEDBACK_CATEGORIES, cell_date, cell_text, normalize_category
+
+    category = normalize_category(item.get("category"))
+    if category.casefold() in SKIP_FEEDBACK_CATEGORIES:
+        return None
+    mapped, error = parse_category(category, required=True)
+    if error:
+        return None
+    description = cell_text(item.get("description")) or _fallback_description(item)
+    if not description:
+        return None
+    payload = empty_text_fields()
+    payload["startTime"] = cell_text(item.get("startTime"))
+    payload["completionTime"] = cell_text(item.get("completionTime"))
+    payload["email"] = cell_text(item.get("email"))
+    payload["name"] = cell_text(item.get("name"))
+    payload["hbl"] = cell_text(item.get("hbl"))
+    payload["wronglyIdentified"] = cell_text(item.get("wronglyIdentified"))
+    payload["incorrect"] = cell_text(item.get("incorrect"))
+    payload["corrected"] = cell_text(item.get("corrected"))
+    payload["causeOfError"] = cell_text(item.get("cause") or item.get("causeOfError"))
+    payload["receivedDate"] = cell_date(item.get("receivedDate"))
+    payload["adjustedHbl"] = cell_text(item.get("adjustedHbl"))
+    payload["gscPic"] = cell_text(item.get("gscPic"))
+    payload["week"] = cell_text(item.get("week"))
+    payload["date"] = cell_date(item.get("date")) or cell_date(item.get("receivedDate"))
+    payload["category"] = mapped
+    payload["description"] = description
+    payload["action"] = cell_text(item.get("action"))
+    payload["status"] = "pending_review"
+    created = payload["startTime"] or payload["date"] or payload["receivedDate"]
+    if created:
+        payload["createdAt"] = created
+    return payload
+
+
+def replace_cases_from_gca_workbook(data):
+    from services.gca import FEEDBACK_HEADERS, FEEDBACK_SHEETS, read_sheet_rows
+
+    if not data:
+        return None, "No file was uploaded."
+    try:
+        workbook = load_workbook(BytesIO(data), read_only=True, data_only=True)
+    except Exception:
+        return None, "The file is not a valid Excel workbook."
+    payloads = []
+    skipped = 0
+    found = []
+    try:
+        for sheet_name in FEEDBACK_SHEETS:
+            rows, error = read_sheet_rows(workbook, sheet_name, FEEDBACK_HEADERS)
+            if error:
+                continue
+            found.append(sheet_name)
+            for item in rows:
+                payload = gca_feedback_row_to_case_payload(item)
+                if payload is None:
+                    skipped += 1
+                    continue
+                payloads.append(payload)
+    finally:
+        workbook.close()
+    if not found:
+        return None, "Workbook is missing Area feedback sheets."
+    if not payloads:
+        return None, "Workbook contains no Area feedback rows to import."
+    with get_connection() as conn:
+        stored = [
+            row["StoredName"]
+            for row in conn.execute("SELECT StoredName FROM CaseFiles").fetchall()
+        ]
+        conn.execute("DELETE FROM CaseFiles")
+        conn.execute("DELETE FROM Cases")
+        conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('Cases', 'CaseFiles')")
+        for payload in payloads:
+            create_case(conn, payload)
+    unlink_stored_files(stored)
+    return {"imported": len(payloads), "skipped": skipped, "sheets": found}, None

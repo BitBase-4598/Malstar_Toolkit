@@ -15,7 +15,10 @@ function stripLclPreloadFromIndex() {
         if (!file.endsWith("/index.html") && file !== "index.html") {
           return html;
         }
-        return html.replace(/\s*<link rel="modulepreload"[^>]*lcl-[^>]*>/g, "");
+        return html
+          .replace(/\s*<link rel="modulepreload"[^>]*lcl-[^>]*>/g, "")
+          .replace(/\s*<link rel="modulepreload"[^>]*Gca[^>]*>/g, "")
+          .replace(/\s*<link rel="modulepreload"[^>]*gca-[^>]*>/g, "");
       },
     },
   };
