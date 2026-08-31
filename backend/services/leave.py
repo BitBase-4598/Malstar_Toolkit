@@ -24,7 +24,7 @@ LEAVE_PEOPLE = (
     "Wenjie Yan",
     "Yolanda Feng",
 )
-LEAVE_PEOPLE_LOOKUP = {name.casefold(): name for name in LEAVE_PEOPLE}
+LEAVE_PEOPLE_EXCLUDE = {"jeff yang", "ailsa he"}
 
 
 def leave_to_dict(row):
@@ -71,14 +71,19 @@ def leave_change_summary(payload):
 
 
 def apply_people_overrides(people):
-    emails = {}
+    by_key = {}
     for item in people or []:
         name = str(item.get("name") or "").strip()
         key = name.casefold()
-        if key not in LEAVE_PEOPLE_LOOKUP or key in emails:
+        if not name or key in LEAVE_PEOPLE_EXCLUDE:
             continue
-        emails[key] = str(item.get("email") or "").strip()
-    return [{"email": emails.get(name.casefold(), ""), "name": name} for name in LEAVE_PEOPLE]
+        if key not in by_key:
+            by_key[key] = {"email": str(item.get("email") or "").strip(), "name": name[:120]}
+    for name in LEAVE_PEOPLE:
+        key = name.casefold()
+        if key not in by_key:
+            by_key[key] = {"email": "", "name": name}
+    return sorted(by_key.values(), key=lambda item: item["name"].casefold())
 
 
 def person_to_dict(row):
@@ -162,9 +167,10 @@ def stored_leave_people_names():
 
 def ensure_leave_people():
     stored = stored_leave_people_names()
-    stored_keys = [name.casefold() for name in stored]
-    wanted_keys = [name.casefold() for name in LEAVE_PEOPLE]
-    if stored_keys == wanted_keys:
+    stored_keys = {name.casefold() for name in stored}
+    needed = {name.casefold() for name in LEAVE_PEOPLE}
+    has_excluded = bool(stored_keys & LEAVE_PEOPLE_EXCLUDE)
+    if needed <= stored_keys and not has_excluded:
         return list_leave_people()
     path = GCA_XLSX_PATH
     if path.is_file():

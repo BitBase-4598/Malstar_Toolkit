@@ -378,6 +378,7 @@ def test_leave_name_mapping_and_half_day():
     sheet.append(["qing.huang@lns.maersk.com", "Qing Huang"])
     sheet.append(["jeff.yang@lns.maersk.com", "Jeff Yang"])
     sheet.append(["ailsa.he@lns.maersk.com", "Ailsa He"])
+    sheet.append(["celia.liu@lns.maersk.com", "Celia Liu"])
     sheet.append(["Human Error", None])
     buffer = BytesIO()
     workbook.save(buffer)
@@ -385,7 +386,9 @@ def test_leave_name_mapping_and_half_day():
     assert error is None
     listed = client.get("/api/leave-people").get_json()["data"]
     names = [row["name"] for row in listed]
-    assert names == list(LEAVE_PEOPLE)
+    assert set(LEAVE_PEOPLE).issubset(names)
+    assert "Celia Liu" in names
+    assert "Jane Li" in names
     assert "Jeff Yang" not in names
     assert "Ailsa He" not in names
     created = client.post("/api/leave-plans", json={

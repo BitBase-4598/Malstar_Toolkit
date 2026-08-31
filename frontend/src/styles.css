@@ -1878,7 +1878,7 @@ tbody tr.selected td {
   left: 0;
   right: 0;
   top: calc(100% + 4px);
-  max-height: 220px;
+  max-height: min(70vh, 420px);
   overflow: auto;
   padding: 4px;
   background: var(--maersk-white);
