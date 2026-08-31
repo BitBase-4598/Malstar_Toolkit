@@ -28,6 +28,11 @@ KEEP_FIELDS = {
     "Country Full Name": "country_name",
 }
 
+RAW_SHEET_NAMES = {"raw", "rawdata", "raw data"}
+KEEP_FIELDS_NORM = {
+    re.sub(r"[^a-z0-9]+", " ", name.casefold()).strip(): key for name, key in KEEP_FIELDS.items()
+}
+
 MONTH_ORDER = (
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December",
@@ -45,6 +50,30 @@ DIM_RE = re.compile(
 
 def local_tag(tag):
     return tag.split("}", 1)[-1] if "}" in tag else tag
+
+
+def normalize_header(value):
+    return re.sub(r"[^a-z0-9]+", " ", str(value or "").strip().casefold()).strip()
+
+
+def map_header(name):
+    text = str(name or "").strip()
+    if text in KEEP_FIELDS:
+        return KEEP_FIELDS[text]
+    return KEEP_FIELDS_NORM.get(normalize_header(text))
+
+
+def col_letters_to_index(ref):
+    letters = []
+    for ch in str(ref or ""):
+        if ch.isalpha():
+            letters.append(ch)
+        else:
+            break
+    n = 0
+    for ch in letters:
+        n = n * 26 + (ord(ch.upper()) - 64)
+    return max(n - 1, 0)
 
 
 def parse_dimension(raw):
@@ -205,6 +234,133 @@ def import_cache(zip_file, definition_name, records_name, direction, conn, batch
     return inserted
 
 
+def find_raw_sheet_path(archive):
+    try:
+        workbook = ET.fromstring(archive.read("xl/workbook.xml"))
+        rels = ET.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
+    except KeyError:
+        return None
+    targets = {}
+    for rel in rels:
+        if local_tag(rel.tag) != "Relationship":
+            continue
+        targets[rel.get("Id")] = rel.get("Target")
+    for sheet in workbook.iter():
+        if local_tag(sheet.tag) != "sheet":
+            continue
+        name = normalize_header(sheet.get("name"))
+        if name not in RAW_SHEET_NAMES:
+            continue
+        rid = sheet.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
+        target = targets.get(rid) or ""
+        if not target:
+            continue
+        path = target.lstrip("/")
+        if not path.startswith("xl/"):
+            path = f"xl/{path}"
+        return path
+    return None
+
+
+def load_shared_strings(archive):
+    if "xl/sharedStrings.xml" not in set(archive.namelist()):
+        return []
+    strings = []
+    with archive.open("xl/sharedStrings.xml") as handle:
+        for _event, elem in ET.iterparse(handle, events=("end",)):
+            if local_tag(elem.tag) != "si":
+                continue
+            parts = []
+            for child in elem.iter():
+                if local_tag(child.tag) == "t" and child.text:
+                    parts.append(child.text)
+            strings.append("".join(parts))
+            elem.clear()
+    return strings
+
+
+def cell_value(elem, strings):
+    kind = elem.get("t")
+    if kind == "inlineStr":
+        parts = []
+        for child in elem.iter():
+            if local_tag(child.tag) == "t" and child.text:
+                parts.append(child.text)
+        return "".join(parts)
+    text = ""
+    for child in list(elem):
+        if local_tag(child.tag) == "v":
+            text = child.text or ""
+            break
+    if kind == "s":
+        try:
+            return strings[int(text)]
+        except (TypeError, ValueError, IndexError):
+            return text
+    if kind == "b":
+        return 1 if str(text).strip().lower() in ("1", "true") else 0
+    if kind == "n" or (kind in (None, "") and text):
+        number = to_float(text)
+        return number if number is not None else text
+    return text
+
+
+def import_raw_sheet(archive, sheet_path, conn):
+    strings = load_shared_strings(archive)
+    col_map = {}
+    header_done = False
+    buffer = []
+    export_count = 0
+    import_count = 0
+    with archive.open(sheet_path) as handle:
+        for _event, elem in ET.iterparse(handle, events=("end",)):
+            if local_tag(elem.tag) != "row":
+                continue
+            values = {}
+            cursor = 0
+            for cell in list(elem):
+                if local_tag(cell.tag) != "c":
+                    continue
+                ref = cell.get("r")
+                cursor = col_letters_to_index(ref) if ref else cursor
+                values[cursor] = cell_value(cell, strings)
+                cursor += 1
+            if not header_done:
+                for index, value in values.items():
+                    key = map_header(value)
+                    if key:
+                        col_map[index] = key
+                header_done = True
+                elem.clear()
+                if len(col_map) < 4:
+                    return None, "The Raw sheet headers were not recognized. Use the Raw sheet from the LCL Volume workbook."
+                conn.execute("DELETE FROM LclShipments")
+                conn.execute("DELETE FROM LclImportMeta")
+                continue
+            raw = {key: values.get(index) for index, key in col_map.items()}
+            if not any((raw.get("shipment_id"), raw.get("dest_ctry"), raw.get("customer"), raw.get("direction"))):
+                elem.clear()
+                continue
+            row = slim_row(
+                [{"name": name} for name in KEEP_FIELDS],
+                [raw.get(KEEP_FIELDS[name]) for name in KEEP_FIELDS],
+                to_text(raw.get("direction")),
+            )
+            direction = to_text(row[1]).casefold()
+            if direction == "import":
+                import_count += 1
+            else:
+                export_count += 1
+            buffer.append(row)
+            elem.clear()
+            if len(buffer) >= 2000:
+                flush_rows(conn, buffer)
+    if not header_done:
+        return None, "The Raw sheet is empty."
+    flush_rows(conn, buffer)
+    return {"exportCount": export_count, "importCount": import_count}, None
+
+
 def import_lcl_workbook(filename=None, data=None):
     if data is None:
         return None, "No file was uploaded."
@@ -224,28 +380,37 @@ def import_lcl_workbook(filename=None, data=None):
         return None, "The file is not a valid Excel workbook."
     try:
         names = set(archive.namelist())
-        if "xl/pivotCache/pivotCacheDefinition1.xml" not in names:
-            return None, "This workbook has no LCL pivot cache."
+        raw_sheet = find_raw_sheet_path(archive)
+        has_cache = "xl/pivotCache/pivotCacheDefinition1.xml" in names
+        if not raw_sheet and not has_cache:
+            return None, "This workbook has no Raw sheet or LCL pivot cache."
         with get_connection() as conn:
-            conn.execute("DELETE FROM LclShipments")
-            conn.execute("DELETE FROM LclImportMeta")
-            export_count = import_cache(
-                archive,
-                "xl/pivotCache/pivotCacheDefinition1.xml",
-                "xl/pivotCache/pivotCacheRecords1.xml",
-                "Export",
-                conn,
-                None,
-            )
-            if "xl/pivotCache/pivotCacheDefinition2.xml" in names:
-                import_count = import_cache(
+            if raw_sheet:
+                counts, error = import_raw_sheet(archive, raw_sheet, conn)
+                if error:
+                    return None, error
+                export_count = counts["exportCount"]
+                import_count = counts["importCount"]
+            else:
+                conn.execute("DELETE FROM LclShipments")
+                conn.execute("DELETE FROM LclImportMeta")
+                export_count = import_cache(
                     archive,
-                    "xl/pivotCache/pivotCacheDefinition2.xml",
-                    "xl/pivotCache/pivotCacheRecords2.xml",
-                    "Import",
+                    "xl/pivotCache/pivotCacheDefinition1.xml",
+                    "xl/pivotCache/pivotCacheRecords1.xml",
+                    "Export",
                     conn,
                     None,
                 )
+                if "xl/pivotCache/pivotCacheDefinition2.xml" in names:
+                    import_count = import_cache(
+                        archive,
+                        "xl/pivotCache/pivotCacheDefinition2.xml",
+                        "xl/pivotCache/pivotCacheRecords2.xml",
+                        "Import",
+                        conn,
+                        None,
+                    )
             conn.execute(
                 """
                 INSERT INTO LclImportMeta (ID, Filename, ImportedAt, ExportCount, ImportCount)

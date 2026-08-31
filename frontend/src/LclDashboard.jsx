@@ -359,7 +359,7 @@ const LclDashboard = forwardRef(function LclDashboard({ embedded = false, onNoti
     }
     setImporting(true);
     if (!embedded) {
-      setNotice("Importing LCL workbook. This can take a few minutes…");
+      setNotice("Importing the Raw sheet. Large workbooks can take several minutes…");
     }
     try {
       const result = await api.importLcl(file);

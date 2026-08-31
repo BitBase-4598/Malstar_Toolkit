@@ -41,7 +41,7 @@ LCL_XLSX_PATH = _path(
     "LCL_XLSX_PATH",
     Path(r"C:\Users\Administrator\Desktop\LCL_Volume_Analysis - 202405 - 20260818.xlsx"),
 )
-LCL_MAX_UPLOAD_MB = int(os.environ.get("LCL_MAX_UPLOAD_MB", "128"))
+LCL_MAX_UPLOAD_MB = int(os.environ.get("LCL_MAX_UPLOAD_MB", "512"))
 GCA_XLSX_PATH = _path(
     "GCA_XLSX_PATH",
     Path(r"C:\Users\Administrator\Desktop\GCA LCL Project Analysis (1).xlsx"),

@@ -364,7 +364,7 @@ def test_leave_name_mapping_and_half_day():
 
     from openpyxl import Workbook
 
-    from services.leave import replace_leave_people_from_workbook
+    from services.leave import LEAVE_PEOPLE, replace_leave_people_from_workbook
 
     migrate()
     from app import app
@@ -385,9 +385,7 @@ def test_leave_name_mapping_and_half_day():
     assert error is None
     listed = client.get("/api/leave-people").get_json()["data"]
     names = [row["name"] for row in listed]
-    assert "Jane Li" in names
-    assert "Wenjie Yan" in names
-    assert "Qing Huang" in names
+    assert names == list(LEAVE_PEOPLE)
     assert "Jeff Yang" not in names
     assert "Ailsa He" not in names
     created = client.post("/api/leave-plans", json={
@@ -497,11 +495,62 @@ def test_lcl_import_requires_xlsx():
         content_type="multipart/form-data",
     )
     assert fake.status_code == 400
-    assert "pivot cache" in fake.get_json()["message"].lower()
+    assert "raw sheet" in fake.get_json()["message"].lower() or "pivot cache" in fake.get_json()["message"].lower()
+
+
+def test_lcl_import_raw_sheet_headers():
+    from io import BytesIO
+
+    from openpyxl import Workbook
+
+    migrate()
+    from app import app
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Raw"
+    sheet.append([
+        "Shipment ID",
+        "Job Branch",
+        "Dest Ctry",
+        "Weight",
+        "Volume",
+        "Dimension",
+        "Chargeable",
+        "Shipment Controlling Party Name",
+        "Direction",
+        "Month Name",
+        "Count of Bosch",
+        "Year",
+        "Year Month",
+        "Country Full Name",
+    ])
+    sheet.append([
+        "EXP1", "SZ1", "DE", 100, 1.2, "1 x 100 x 80 x 60", 1.2,
+        "ACME", "Export", "January", 1, 2026, "2026-01", "Germany",
+    ])
+    sheet.append([
+        "IMP1", "SH1", "US", 80, 0.8, "1 x 80 x 60 x 50", 0.8,
+        "BETA", "Import", "February", 0, 2026, "2026-02", "United States",
+    ])
+    payload = BytesIO()
+    workbook.save(payload)
+    client = app.test_client()
+    imported = client.post(
+        "/api/lcl/import",
+        data={"file": (BytesIO(payload.getvalue()), "LCL_Volume_Analysis.xlsx")},
+        content_type="multipart/form-data",
+    )
+    assert imported.status_code == 200
+    body = imported.get_json()
+    assert body["success"] is True
+    assert body["data"]["exportCount"] == 1
+    assert body["data"]["importCount"] == 1
+    assert body["data"]["total"] == 2
 
 
 def test_lcl_dimension_and_summary():
-    from services.lcl import build_map, build_summary, parse_dimension
+    from services.lcl import build_map, build_summary, clear_lcl_cache, parse_dimension
     from db import get_connection
 
     pieces, length, width, height = parse_dimension(" 2 x 120 x 80 x 60")
@@ -509,6 +558,8 @@ def test_lcl_dimension_and_summary():
     assert length == 120
     migrate()
     with get_connection() as conn:
+        conn.execute("DELETE FROM LclShipments")
+        conn.execute("DELETE FROM LclImportMeta")
         conn.execute(
             """
             INSERT INTO LclShipments (
@@ -527,6 +578,7 @@ def test_lcl_dimension_and_summary():
             """,
             ("S2", "Export", "2026", "May", "SIN", "NL", "Netherlands", "PUMA", 0, 200, 1.5, "2 x 0 x 0 x 0", 2, 0, 0, 0, 1.5),
         )
+    clear_lcl_cache()
     data = build_summary({"year": "2026"})
     assert data["kpis"]["shipments"] == 2
     assert data["kpis"]["avgVolume"] == 1.0

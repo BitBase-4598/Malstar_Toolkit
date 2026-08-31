@@ -12,8 +12,19 @@ LEAVE_TYPE_LABELS = {
     "half_day": "Half day",
     "other": "Other",
 }
-LEAVE_PEOPLE_EXCLUDE = {"jeff yang", "ailsa he"}
-LEAVE_PEOPLE_EXTRA = ({"email": "", "name": "Jane Li"},)
+LEAVE_PEOPLE = (
+    "Andrew Li",
+    "Jane Li",
+    "Jason Zhong",
+    "Mina Xiang",
+    "Nathan Li",
+    "Nicole Jiang",
+    "Qing Huang",
+    "Tao Liu",
+    "Wenjie Yan",
+    "Yolanda Feng",
+)
+LEAVE_PEOPLE_LOOKUP = {name.casefold(): name for name in LEAVE_PEOPLE}
 
 
 def leave_to_dict(row):
@@ -60,24 +71,14 @@ def leave_change_summary(payload):
 
 
 def apply_people_overrides(people):
-    filtered = []
-    seen = set()
+    emails = {}
     for item in people or []:
         name = str(item.get("name") or "").strip()
-        if not name or name.casefold() in LEAVE_PEOPLE_EXCLUDE:
-            continue
         key = name.casefold()
-        if key in seen:
+        if key not in LEAVE_PEOPLE_LOOKUP or key in emails:
             continue
-        seen.add(key)
-        filtered.append({"email": str(item.get("email") or "").strip(), "name": name[:120]})
-    for extra in LEAVE_PEOPLE_EXTRA:
-        key = extra["name"].casefold()
-        if key not in seen:
-            seen.add(key)
-            filtered.append({"email": extra["email"], "name": extra["name"]})
-    filtered.sort(key=lambda item: item["name"].casefold())
-    return filtered
+        emails[key] = str(item.get("email") or "").strip()
+    return [{"email": emails.get(name.casefold(), ""), "name": name} for name in LEAVE_PEOPLE]
 
 
 def person_to_dict(row):
@@ -154,13 +155,21 @@ def list_leave_people(conn=None):
         return fetch(db)
 
 
+def stored_leave_people_names():
+    with get_connection() as conn:
+        return [row["Name"] for row in conn.execute("SELECT Name FROM LeavePeople ORDER BY ID")]
+
+
 def ensure_leave_people():
-    people = list_leave_people()
-    if people:
-        return people
+    stored = stored_leave_people_names()
+    stored_keys = [name.casefold() for name in stored]
+    wanted_keys = [name.casefold() for name in LEAVE_PEOPLE]
+    if stored_keys == wanted_keys:
+        return list_leave_people()
     path = GCA_XLSX_PATH
     if path.is_file():
-        result, error = replace_leave_people_from_workbook(path.read_bytes())
+        _result, error = replace_leave_people_from_workbook(path.read_bytes())
         if not error:
             return list_leave_people()
-    return people
+    replace_leave_people([{"email": "", "name": name} for name in stored])
+    return list_leave_people()

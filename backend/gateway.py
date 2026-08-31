@@ -30,6 +30,8 @@ SKIP_RES_HEADERS = {
 }
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 512 * 1024 * 1024
+app.config["MAX_FORM_MEMORY_SIZE"] = 512 * 1024 * 1024
 
 
 @app.before_request
@@ -57,8 +59,9 @@ def _forward(target_base, subpath=""):
         headers=headers,
         method=request.method,
     )
+    timeout = 900 if request.method in {"POST", "PUT", "PATCH"} else 120
     try:
-        with urllib.request.urlopen(req, timeout=120) as response:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
             out_headers = [
                 (key, value)
                 for key, value in response.headers.items()
@@ -94,4 +97,4 @@ if __name__ == "__main__":
     print(f"Public gateway on http://{LISTEN_HOST}:{LISTEN_PORT}")
     print(f"  /remarks -> {REMARKS_UPSTREAM}")
     print(f"  /        -> {TIMER_UPSTREAM}")
-    serve(app, host=LISTEN_HOST, port=LISTEN_PORT, threads=8)
+    serve(app, host=LISTEN_HOST, port=LISTEN_PORT, threads=8, channel_timeout=900)
