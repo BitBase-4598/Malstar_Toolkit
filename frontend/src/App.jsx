@@ -100,6 +100,16 @@ export default function App() {
     }
   }, [section]);
 
+  useEffect(() => {
+    const preload = () => TOOL_BY_ID.records?.Workspace?.preload?.();
+    if (typeof requestIdleCallback === "function") {
+      const idle = requestIdleCallback(preload, { timeout: 1200 });
+      return () => cancelIdleCallback(idle);
+    }
+    const timer = setTimeout(preload, 400);
+    return () => clearTimeout(timer);
+  }, []);
+
   const changeSection = (next) => {
     setSection(next);
     setVisited((current) => (current[next] ? current : { ...current, [next]: true }));

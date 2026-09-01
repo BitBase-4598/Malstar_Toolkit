@@ -18,6 +18,7 @@ from flask import Flask
 from werkzeug.exceptions import NotFound
 
 from db import get_connection, migrate
+from config import SCHEMA_VERSION
 from services.dashboard_analytics import format_minutes, minutes_between, parse_dashboard_record
 from services.files_store import stored_path
 from util import letters_only
@@ -57,7 +58,7 @@ def test_migrate_schema_version_once():
     with get_connection() as conn:
         version = conn.execute("SELECT Version FROM SchemaVersion WHERE ID=1").fetchone()[0]
         count = conn.execute("SELECT COUNT(*) FROM CustomerRemarks").fetchone()[0]
-    assert version == 6
+        assert version == SCHEMA_VERSION
     assert count == 3
     migrate()
     with get_connection() as conn:
@@ -698,6 +699,11 @@ def test_icb_csv_import_and_search():
     chile = client.get("/api/icb?q=MAELOGVAP").get_json()["data"][0]
     assert chile["icbCode"] == "MAELOGVAP"
     assert "as customer" in chile["notes"]
+    with get_connection() as conn:
+        fts = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='IcbStationsFts'"
+        ).fetchone()
+        assert fts is not None
 
 
 def test_unloco_csv_import_and_search():

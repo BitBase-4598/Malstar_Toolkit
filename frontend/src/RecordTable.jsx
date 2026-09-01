@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 import { copyText } from "./copyText";
-import FieldSelect from "./FieldSelect";
+import PageJump from "./PageJump";
 
 const COPY_FIELDS = [
   { key: "ctrlOrgcode", label: "CTRLOrgcode" },
@@ -54,7 +54,6 @@ export default function RecordTable({
   const pageSize = pagination.pageSize || rows.length || 12;
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const to = Math.min(page * pageSize, total);
-  const pages = Array.from({ length: totalPages }, (_, index) => index + 1);
 
   return (
     <section className="card">
@@ -146,19 +145,12 @@ export default function RecordTable({
           <button type="button" disabled={page <= 1} onClick={() => onPageChange((value) => value - 1)}>
             Previous
           </button>
-          <label className="pagination-select">
-            Page
-            <FieldSelect
-              compact
-              value={String(Math.min(page, totalPages))}
-              disabled={totalPages <= 1}
-              searchable={totalPages > 8}
-              options={pages.map((number) => ({ value: String(number), label: String(number) }))}
-              onChange={(next) => onPageChange(Number(next))}
-              ariaLabel="Select page"
-            />
-            of {totalPages}
-          </label>
+          <PageJump
+            page={Math.min(page, totalPages)}
+            totalPages={totalPages}
+            onChange={(next) => onPageChange(Number(next))}
+            ariaLabel="Select page"
+          />
           <button type="button" disabled={page >= totalPages} onClick={() => onPageChange((value) => value + 1)}>
             Next
           </button>

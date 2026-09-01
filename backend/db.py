@@ -50,6 +50,10 @@ def _create_tables(conn):
         "CREATE INDEX IF NOT EXISTS idx_customer_remarks_letters "
         "ON CustomerRemarks (CustomerLetters)"
     )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_customer_remarks_updated "
+        "ON CustomerRemarks (UpdateTime DESC, ID DESC)"
+    )
     conn.execute("""
         CREATE TABLE IF NOT EXISTS ActivityLogs (
             ID INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -275,6 +279,10 @@ def _create_tables(conn):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_icb_unloco ON IcbStations (Unloco)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_icb_agent ON IcbStations (AgentCode)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_icb_code ON IcbStations (IcbCode)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_icb_list ON IcbStations (Country, Location, Branch, ID)"
+    )
+    _ensure_icb_fts(conn)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS IcbImportMeta (
             ID INTEGER PRIMARY KEY CHECK (ID = 1),
@@ -298,6 +306,10 @@ def _create_tables(conn):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_unloco_code ON Unlocodes (UnCode)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_unloco_country ON Unlocodes (CountryCode)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_unloco_search ON Unlocodes (SearchText)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_unloco_list "
+        "ON Unlocodes (CountryCode, PortName, UnCode, ID)"
+    )
     _ensure_unlocodes_fts(conn)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS UnlocoImportMeta (
@@ -495,6 +507,71 @@ def rebuild_unlocodes_fts(conn):
         pass
 
 
+ICB_FTS_COLS = (
+    "Country",
+    "Location",
+    "Branch",
+    "Unloco",
+    "GroupCode",
+    "GroupName",
+    "AgentCode",
+    "IcbCode",
+    "Notes",
+)
+
+
+def _ensure_icb_fts(conn):
+    cols = ", ".join(ICB_FTS_COLS)
+    new_vals = ", ".join(f"new.{name}" for name in ICB_FTS_COLS)
+    old_vals = ", ".join(f"old.{name}" for name in ICB_FTS_COLS)
+    try:
+        conn.execute(
+            f"""
+            CREATE VIRTUAL TABLE IF NOT EXISTS IcbStationsFts USING fts5(
+                {cols},
+                content='IcbStations',
+                content_rowid='ID',
+                tokenize='unicode61'
+            )
+            """
+        )
+        conn.execute(
+            f"""
+            CREATE TRIGGER IF NOT EXISTS icb_stations_ai AFTER INSERT ON IcbStations BEGIN
+                INSERT INTO IcbStationsFts(rowid, {cols})
+                VALUES (new.ID, {new_vals});
+            END
+            """
+        )
+        conn.execute(
+            f"""
+            CREATE TRIGGER IF NOT EXISTS icb_stations_ad AFTER DELETE ON IcbStations BEGIN
+                INSERT INTO IcbStationsFts(IcbStationsFts, rowid, {cols})
+                VALUES ('delete', old.ID, {old_vals});
+            END
+            """
+        )
+        conn.execute(
+            f"""
+            CREATE TRIGGER IF NOT EXISTS icb_stations_au AFTER UPDATE ON IcbStations BEGIN
+                INSERT INTO IcbStationsFts(IcbStationsFts, rowid, {cols})
+                VALUES ('delete', old.ID, {old_vals});
+                INSERT INTO IcbStationsFts(rowid, {cols})
+                VALUES (new.ID, {new_vals});
+            END
+            """
+        )
+    except sqlite3.OperationalError:
+        pass
+
+
+def rebuild_icb_fts(conn):
+    try:
+        conn.execute("INSERT INTO IcbStationsFts(IcbStationsFts) VALUES('rebuild')")
+    except sqlite3.OperationalError:
+        pass
+
+
 def _ensure_activity_log_columns(conn):
     columns = {row[1] for row in conn.execute("PRAGMA table_info(ActivityLogs)")}
     additions = (
@@ -642,5 +719,21 @@ def migrate():
             _ensure_unlocodes_fts(conn)
             rebuild_unlocodes_fts(conn)
             _set_schema_version(conn, 6)
+        if current < 7:
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_customer_remarks_updated "
+                "ON CustomerRemarks (UpdateTime DESC, ID DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_unloco_list "
+                "ON Unlocodes (CountryCode, PortName, UnCode, ID)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_icb_list "
+                "ON IcbStations (Country, Location, Branch, ID)"
+            )
+            _ensure_icb_fts(conn)
+            rebuild_icb_fts(conn)
+            _set_schema_version(conn, 7)
         if current < SCHEMA_VERSION:
             _set_schema_version(conn, SCHEMA_VERSION)

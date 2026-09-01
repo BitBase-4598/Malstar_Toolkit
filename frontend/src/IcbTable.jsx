@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { copyText } from "./copyText";
-import FieldSelect from "./FieldSelect";
+import PageJump from "./PageJump";
 import { ICB_PAGE_SIZE } from "./api/icb";
 
 const COPY_FIELDS = [
@@ -58,7 +58,6 @@ export default function IcbTable({
   const pageSize = pagination.pageSize || rows.length || ICB_PAGE_SIZE;
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const to = Math.min(page * pageSize, total);
-  const pages = Array.from({ length: totalPages }, (_, index) => index + 1);
 
   return (
     <section className="card">
@@ -132,19 +131,12 @@ export default function IcbTable({
           <button type="button" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
             Previous
           </button>
-          <label className="pagination-select">
-            Page
-            <FieldSelect
-              compact
-              value={String(page)}
-              disabled={totalPages <= 1}
-              searchable={totalPages > 8}
-              options={pages.map((number) => ({ value: String(number), label: String(number) }))}
-              onChange={(next) => onPageChange(Number(next))}
-              ariaLabel="Select stations page"
-            />
-            of {totalPages}
-          </label>
+          <PageJump
+            page={page}
+            totalPages={totalPages}
+            onChange={(next) => onPageChange(Number(next))}
+            ariaLabel="Select stations page"
+          />
           <button type="button" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>
             Next
           </button>

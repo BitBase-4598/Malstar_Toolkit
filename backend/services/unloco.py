@@ -7,7 +7,7 @@ from pathlib import Path
 
 from config import UNLOCODE_CSV_PATH
 from db import get_connection, rebuild_unlocodes_fts
-from util import now_stamp
+from util import fts_prefix_query, now_stamp
 
 FLAG_DEFS = (
     ("oceanPrimary", "Ocean Primary", "is ocean primary code"),
@@ -220,11 +220,13 @@ def fts_available(conn):
         return False
 
 
-def fts_match_query(query):
-    tokens = re.findall(r"[A-Za-z0-9]+", query or "")
-    if not tokens:
-        return None
-    return " OR ".join(f"{token}*" for token in tokens[:8])
+UNLOCO_LIST_COLS = (
+    "u.ID, u.PortName, u.UnCode, u.CountryCode, u.CountryName, u.Category, u.Flags"
+)
+UNLOCO_TABLE_COLS = (
+    "ID, PortName, UnCode, CountryCode, CountryName, Category, Flags"
+)
+UNLOCO_LIST_ORDER = "CountryCode, PortName, UnCode, ID"
 
 
 def list_unlocodes(query="", page=1, page_size=50):
@@ -232,7 +234,6 @@ def list_unlocodes(query="", page=1, page_size=50):
     page = max(int(page or 1), 1)
     page_size = min(max(int(page_size or 50), 1), 200)
     offset = (page - 1) * page_size
-    order = "CountryCode COLLATE NOCASE, PortName COLLATE NOCASE, UnCode COLLATE NOCASE, ID"
     with get_connection() as conn:
         meta_row = conn.execute("SELECT * FROM UnlocoImportMeta WHERE ID=1").fetchone()
         meta_total = int(meta_row["RowCount"]) if meta_row else 0
@@ -242,14 +243,14 @@ def list_unlocodes(query="", page=1, page_size=50):
             total = meta_total or conn.execute("SELECT COUNT(*) FROM Unlocodes").fetchone()[0]
             rows = conn.execute(
                 f"""
-                SELECT * FROM Unlocodes
-                ORDER BY {order}
+                SELECT {UNLOCO_TABLE_COLS} FROM Unlocodes
+                ORDER BY {UNLOCO_LIST_ORDER}
                 LIMIT ? OFFSET ?
                 """,
                 (page_size, offset),
             ).fetchall()
         else:
-            match = fts_match_query(q)
+            match = fts_prefix_query(q)
             used_fts = False
             if match and fts_available(conn):
                 try:
@@ -259,11 +260,10 @@ def list_unlocodes(query="", page=1, page_size=50):
                     ).fetchone()[0]
                     rows = conn.execute(
                         f"""
-                        SELECT u.* FROM UnlocodesFts
+                        SELECT {UNLOCO_LIST_COLS} FROM UnlocodesFts
                         JOIN Unlocodes u ON u.ID = UnlocodesFts.rowid
                         WHERE UnlocodesFts MATCH ?
-                        ORDER BY u.CountryCode COLLATE NOCASE, u.PortName COLLATE NOCASE,
-                                 u.UnCode COLLATE NOCASE, u.ID
+                        ORDER BY rank, u.ID
                         LIMIT ? OFFSET ?
                         """,
                         (match, page_size, offset),
@@ -278,8 +278,8 @@ def list_unlocodes(query="", page=1, page_size=50):
                 total = conn.execute(f"SELECT COUNT(*) FROM Unlocodes {where}", params).fetchone()[0]
                 rows = conn.execute(
                     f"""
-                    SELECT * FROM Unlocodes {where}
-                    ORDER BY {order}
+                    SELECT {UNLOCO_TABLE_COLS} FROM Unlocodes {where}
+                    ORDER BY {UNLOCO_LIST_ORDER}
                     LIMIT ? OFFSET ?
                     """,
                     params + [page_size, offset],

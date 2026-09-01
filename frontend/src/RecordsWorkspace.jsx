@@ -109,7 +109,7 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
     unlocoInflight.current.clear();
   };
 
-  const fetchRecords = useCallback(async (q, targetPage) => {
+  const fetchRecords = useCallback(async (q, targetPage, signal) => {
     const key = cacheKey(q, targetPage);
     if (pageCache.current.has(key)) {
       return pageCache.current.get(key);
@@ -118,7 +118,7 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
       return pageInflight.current.get(key);
     }
     const pending = api
-      .list(q, targetPage, RECORDS_PAGE_SIZE)
+      .list(q, targetPage, RECORDS_PAGE_SIZE, signal ? { signal } : undefined)
       .then((result) => {
         pageCache.current.set(key, result);
         pageInflight.current.delete(key);
@@ -145,17 +145,22 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
   );
 
   useEffect(() => {
-    const timer = setTimeout(() => {
+    const applyQuery = (next) => {
       setDebounced((current) => {
-        if (current !== query) {
+        if (current !== next) {
           invalidateRecordPages();
         }
-        return query;
+        return next;
       });
       setPage(1);
       setIcbPage(1);
       setUnlocoPage(1);
-    }, 300);
+    };
+    if (!query) {
+      applyQuery("");
+      return undefined;
+    }
+    const timer = setTimeout(() => applyQuery(query), 120);
     return () => clearTimeout(timer);
   }, [query]);
 
@@ -163,7 +168,7 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
     onImportingChange?.(importing || icbImporting || unlocoImporting);
   }, [importing, icbImporting, unlocoImporting, onImportingChange]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal) => {
     const seq = ++loadSeq.current;
     const key = cacheKey(remarksQuery, page);
     const cached = pageCache.current.get(key);
@@ -179,7 +184,7 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
     }
     setLoading(true);
     try {
-      const result = await fetchRecords(remarksQuery, page);
+      const result = await fetchRecords(remarksQuery, page, signal);
       if (seq !== loadSeq.current) {
         return;
       }
@@ -187,7 +192,7 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
       setPagination(result.pagination);
       prefetchNeighbors(remarksQuery, page, result.pagination?.totalPages || 1);
     } catch (error) {
-      if (seq !== loadSeq.current) {
+      if (error.name === "AbortError" || seq !== loadSeq.current) {
         return;
       }
       onNotice?.({ type: "error", text: error.message });
@@ -197,6 +202,52 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
       }
     }
   }, [remarksQuery, page, fetchRecords, prefetchNeighbors, onNotice]);
+
+  const fetchIcb = useCallback(async (q, targetPage, signal) => {
+    const key = cacheKey(q, targetPage);
+    if (icbCache.current.has(key)) {
+      return icbCache.current.get(key);
+    }
+    if (icbInflight.current.has(key)) {
+      return icbInflight.current.get(key);
+    }
+    const pending = api
+      .listIcb(q, targetPage, ICB_PAGE_SIZE, signal ? { signal } : undefined)
+      .then((result) => {
+        icbCache.current.set(key, result);
+        icbInflight.current.delete(key);
+        return result;
+      })
+      .catch((error) => {
+        icbInflight.current.delete(key);
+        throw error;
+      });
+    icbInflight.current.set(key, pending);
+    return pending;
+  }, []);
+
+  const fetchUnloco = useCallback(async (q, targetPage, signal) => {
+    const key = cacheKey(q, targetPage);
+    if (unlocoCache.current.has(key)) {
+      return unlocoCache.current.get(key);
+    }
+    if (unlocoInflight.current.has(key)) {
+      return unlocoInflight.current.get(key);
+    }
+    const pending = api
+      .listUnloco(q, targetPage, UNLOCO_PAGE_SIZE, signal ? { signal } : undefined)
+      .then((result) => {
+        unlocoCache.current.set(key, result);
+        unlocoInflight.current.delete(key);
+        return result;
+      })
+      .catch((error) => {
+        unlocoInflight.current.delete(key);
+        throw error;
+      });
+    unlocoInflight.current.set(key, pending);
+    return pending;
+  }, []);
 
   const loadIcb = useCallback(async (signal) => {
     const seq = ++icbLoadSeq.current;
@@ -210,26 +261,32 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
       setIcbPagination(cached.pagination || { page: 1, total: 0, totalPages: 1, pageSize: ICB_PAGE_SIZE });
       setIcbMeta(cached.meta || { filename: "", importedAt: "", rowCount: 0 });
       setIcbLoading(false);
+      const totalPages = cached.pagination?.totalPages || 1;
+      if (icbPage + 1 <= totalPages) {
+        fetchIcb(debounced, icbPage + 1);
+      }
+      if (icbPage - 1 >= 1) {
+        fetchIcb(debounced, icbPage - 1);
+      }
       return;
     }
     setIcbLoading(true);
     try {
-      let pending = icbInflight.current.get(key);
-      if (!pending) {
-        pending = api.listIcb(debounced, icbPage, ICB_PAGE_SIZE, { signal });
-        icbInflight.current.set(key, pending);
-      }
-      const result = await pending;
-      icbCache.current.set(key, result);
-      icbInflight.current.delete(key);
+      const result = await fetchIcb(debounced, icbPage, signal);
       if (seq !== icbLoadSeq.current) {
         return;
       }
       setIcbRows(result.data || []);
       setIcbPagination(result.pagination || { page: 1, total: 0, totalPages: 1, pageSize: ICB_PAGE_SIZE });
       setIcbMeta(result.meta || { filename: "", importedAt: "", rowCount: 0 });
+      const totalPages = result.pagination?.totalPages || 1;
+      if (icbPage + 1 <= totalPages) {
+        fetchIcb(debounced, icbPage + 1);
+      }
+      if (icbPage - 1 >= 1) {
+        fetchIcb(debounced, icbPage - 1);
+      }
     } catch (error) {
-      icbInflight.current.delete(key);
       if (error.name === "AbortError" || seq !== icbLoadSeq.current) {
         return;
       }
@@ -239,7 +296,7 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
         setIcbLoading(false);
       }
     }
-  }, [debounced, icbPage, onNotice]);
+  }, [debounced, icbPage, fetchIcb, onNotice]);
 
   const loadUnloco = useCallback(async (signal) => {
     const seq = ++unlocoLoadSeq.current;
@@ -253,26 +310,32 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
       setUnlocoPagination(cached.pagination || { page: 1, total: 0, totalPages: 1, pageSize: UNLOCO_PAGE_SIZE });
       setUnlocoMeta(cached.meta || { filename: "", importedAt: "", rowCount: 0 });
       setUnlocoLoading(false);
+      const totalPages = cached.pagination?.totalPages || 1;
+      if (unlocoPage + 1 <= totalPages) {
+        fetchUnloco(debounced, unlocoPage + 1);
+      }
+      if (unlocoPage - 1 >= 1) {
+        fetchUnloco(debounced, unlocoPage - 1);
+      }
       return;
     }
     setUnlocoLoading(true);
     try {
-      let pending = unlocoInflight.current.get(key);
-      if (!pending) {
-        pending = api.listUnloco(debounced, unlocoPage, UNLOCO_PAGE_SIZE, { signal });
-        unlocoInflight.current.set(key, pending);
-      }
-      const result = await pending;
-      unlocoCache.current.set(key, result);
-      unlocoInflight.current.delete(key);
+      const result = await fetchUnloco(debounced, unlocoPage, signal);
       if (seq !== unlocoLoadSeq.current) {
         return;
       }
       setUnlocoRows(result.data || []);
       setUnlocoPagination(result.pagination || { page: 1, total: 0, totalPages: 1, pageSize: UNLOCO_PAGE_SIZE });
       setUnlocoMeta(result.meta || { filename: "", importedAt: "", rowCount: 0 });
+      const totalPages = result.pagination?.totalPages || 1;
+      if (unlocoPage + 1 <= totalPages) {
+        fetchUnloco(debounced, unlocoPage + 1);
+      }
+      if (unlocoPage - 1 >= 1) {
+        fetchUnloco(debounced, unlocoPage - 1);
+      }
     } catch (error) {
-      unlocoInflight.current.delete(key);
       if (error.name === "AbortError" || seq !== unlocoLoadSeq.current) {
         return;
       }
@@ -282,12 +345,15 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
         setUnlocoLoading(false);
       }
     }
-  }, [debounced, unlocoPage, onNotice]);
+  }, [debounced, unlocoPage, fetchUnloco, onNotice]);
 
   useEffect(() => {
-    if (searchTab === "remarks") {
-      load();
+    if (searchTab !== "remarks") {
+      return undefined;
     }
+    const controller = new AbortController();
+    load(controller.signal);
+    return () => controller.abort();
   }, [load, searchTab]);
 
   useEffect(() => {

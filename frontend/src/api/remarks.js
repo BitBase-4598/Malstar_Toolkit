@@ -4,8 +4,8 @@ export const RECORDS_PAGE_SIZE = 12;
 const BASE = `${API_ROOT}/customer-remarks`;
 
 export const remarksApi = {
-  list: (q, page = 1, pageSize = RECORDS_PAGE_SIZE) =>
-    request(`${BASE}?q=${encodeURIComponent(q)}&page=${page}&pageSize=${pageSize}`),
+  list: (q, page = 1, pageSize = RECORDS_PAGE_SIZE, options) =>
+    request(`${BASE}?q=${encodeURIComponent(q)}&page=${page}&pageSize=${pageSize}`, options),
   create: (data) =>
     request(BASE, {
       method: "POST",

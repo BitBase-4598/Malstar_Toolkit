@@ -31,12 +31,17 @@ def list_records():
         where = ""
         params = []
     with get_connection() as conn:
-        total = conn.execute(
-            f"SELECT COUNT(*) FROM CustomerRemarks {where}", params
-        ).fetchone()[0]
+        if q_letters:
+            total = conn.execute(
+                f"SELECT COUNT(*) FROM CustomerRemarks {where}", params
+            ).fetchone()[0]
+        else:
+            total = conn.execute("SELECT COUNT(*) FROM CustomerRemarks").fetchone()[0]
         rows = conn.execute(
             f"""
-            SELECT * FROM CustomerRemarks {where}
+            SELECT ID, CTRLOrgcode, Customer, Remark1, Remark2, Remark3,
+                   CreateTime, UpdateTime
+            FROM CustomerRemarks {where}
             ORDER BY UpdateTime DESC, ID DESC LIMIT ? OFFSET ?
             """,
             params + [page_size, (page - 1) * page_size],

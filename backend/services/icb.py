@@ -1,9 +1,10 @@
 import csv
 import re
+import sqlite3
 from io import StringIO
 
 from db import get_connection
-from util import now_stamp
+from util import fts_prefix_query, now_stamp
 
 HEADER_MAP = {
     "country": "country",
@@ -204,38 +205,82 @@ def import_icb_csv(filename, data):
     return {"filename": (filename or "icb.csv")[:200], "rowCount": len(records), "importedAt": stamp}, None
 
 
+def icb_fts_available(conn):
+    try:
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='IcbStationsFts'"
+        ).fetchone()
+        return bool(row)
+    except sqlite3.OperationalError:
+        return False
+
+
 def list_icb_stations(query="", page=1, page_size=100):
     q = clean_text(query)
     page = max(int(page or 1), 1)
     page_size = min(max(int(page_size or 100), 1), 500)
-    where = ""
-    params = []
-    if q:
-        like = f"%{q}%"
-        where = """
-            WHERE Country LIKE ? COLLATE NOCASE
-               OR Location LIKE ? COLLATE NOCASE
-               OR Branch LIKE ? COLLATE NOCASE
-               OR Unloco LIKE ? COLLATE NOCASE
-               OR GroupCode LIKE ? COLLATE NOCASE
-               OR GroupName LIKE ? COLLATE NOCASE
-               OR AgentCode LIKE ? COLLATE NOCASE
-               OR IcbCode LIKE ? COLLATE NOCASE
-               OR Notes LIKE ? COLLATE NOCASE
-        """
-        params = [like] * 9
+    offset = (page - 1) * page_size
+    order = "Country, Location, Branch, ID"
     with get_connection() as conn:
-        total = conn.execute(f"SELECT COUNT(*) FROM IcbStations {where}", params).fetchone()[0]
-        rows = conn.execute(
-            f"""
-            SELECT * FROM IcbStations {where}
-            ORDER BY Country COLLATE NOCASE, Location COLLATE NOCASE, Branch COLLATE NOCASE, ID
-            LIMIT ? OFFSET ?
-            """,
-            params + [page_size, (page - 1) * page_size],
-        ).fetchall()
-        meta_row = None
         meta_row = conn.execute("SELECT * FROM IcbImportMeta WHERE ID=1").fetchone()
+        meta_total = int(meta_row["RowCount"]) if meta_row else 0
+        if not q:
+            total = meta_total or conn.execute("SELECT COUNT(*) FROM IcbStations").fetchone()[0]
+            rows = conn.execute(
+                f"""
+                SELECT * FROM IcbStations
+                ORDER BY {order}
+                LIMIT ? OFFSET ?
+                """,
+                (page_size, offset),
+            ).fetchall()
+        else:
+            match = fts_prefix_query(q)
+            used_fts = False
+            rows = []
+            total = 0
+            if match and icb_fts_available(conn):
+                try:
+                    total = conn.execute(
+                        "SELECT COUNT(*) FROM IcbStationsFts WHERE IcbStationsFts MATCH ?",
+                        (match,),
+                    ).fetchone()[0]
+                    rows = conn.execute(
+                        f"""
+                        SELECT s.* FROM IcbStationsFts
+                        JOIN IcbStations s ON s.ID = IcbStationsFts.rowid
+                        WHERE IcbStationsFts MATCH ?
+                        ORDER BY rank, s.ID
+                        LIMIT ? OFFSET ?
+                        """,
+                        (match, page_size, offset),
+                    ).fetchall()
+                    used_fts = True
+                except sqlite3.OperationalError:
+                    used_fts = False
+            if not used_fts:
+                like = f"%{q}%"
+                where = """
+                    WHERE Country LIKE ? COLLATE NOCASE
+                       OR Location LIKE ? COLLATE NOCASE
+                       OR Branch LIKE ? COLLATE NOCASE
+                       OR Unloco LIKE ? COLLATE NOCASE
+                       OR GroupCode LIKE ? COLLATE NOCASE
+                       OR GroupName LIKE ? COLLATE NOCASE
+                       OR AgentCode LIKE ? COLLATE NOCASE
+                       OR IcbCode LIKE ? COLLATE NOCASE
+                       OR Notes LIKE ? COLLATE NOCASE
+                """
+                params = [like] * 9
+                total = conn.execute(f"SELECT COUNT(*) FROM IcbStations {where}", params).fetchone()[0]
+                rows = conn.execute(
+                    f"""
+                    SELECT * FROM IcbStations {where}
+                    ORDER BY {order}
+                    LIMIT ? OFFSET ?
+                    """,
+                    params + [page_size, offset],
+                ).fetchall()
     meta = {
         "filename": meta_row["Filename"] if meta_row else "",
         "importedAt": meta_row["ImportedAt"] if meta_row else "",

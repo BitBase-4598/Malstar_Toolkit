@@ -122,7 +122,7 @@ export const TOOLS = [
   },
   {
     id: "records",
-    label: "Auto Rating Search",
+    label: "SearchBar",
     title: "AutoRatingSearchBar",
     layer: "Search tool",
     icon: FileText,
