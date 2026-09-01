@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Pencil, Trash2 } from "lucide-react";
 import { copyText } from "./copyText";
 import PageJump from "./PageJump";
 import { ICB_PAGE_SIZE } from "./api/icb";
@@ -23,6 +24,8 @@ export default function IcbTable({
   page,
   meta,
   onPageChange,
+  onEdit,
+  onDelete,
   onCopied,
   onCopyError,
 }) {
@@ -80,18 +83,19 @@ export default function IcbTable({
               <th>ICB</th>
               <th>Direction</th>
               <th>Notes</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
             {loading && rows.length === 0 ? (
               <tr>
-                <td colSpan={COPY_FIELDS.length} className="empty">
+                <td colSpan={COPY_FIELDS.length + 1} className="empty">
                   Loading...
                 </td>
               </tr>
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={COPY_FIELDS.length} className="empty">
+                <td colSpan={COPY_FIELDS.length + 1} className="empty">
                   {meta?.rowCount ? "No stations match this search." : "Import ICB.csv to populate this table."}
                 </td>
               </tr>
@@ -119,6 +123,21 @@ export default function IcbTable({
                       </td>
                     );
                   })}
+                  <td>
+                    <div className="actions">
+                      <button type="button" onClick={() => onEdit(row)} aria-label="Edit station">
+                        <Pencil size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        className="danger"
+                        onClick={() => onDelete(row)}
+                        aria-label="Delete station"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))
             )}

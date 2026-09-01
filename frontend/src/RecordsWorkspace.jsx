@@ -410,6 +410,7 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
   }));
 
   const openEdit = (row) => {
+    setCatalogKind("");
     setEditing(row);
     setForm({
       ctrlOrgcode: row.ctrlOrgcode,
@@ -419,6 +420,36 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
       remark3: row.remark3,
     });
     setModal(true);
+  };
+
+  const openEditIcb = (row) => {
+    setModal(false);
+    setEditing(row);
+    setIcbForm({
+      country: row.country || "",
+      location: row.location || "",
+      branch: row.branch || "",
+      unloco: row.unloco || "",
+      groupCode: row.groupCode || "",
+      groupName: row.groupName || "",
+      agentCode: row.agentCode || "",
+      icbCode: row.icbCode || "",
+      notes: row.notes || "",
+    });
+    setCatalogKind("icb");
+  };
+
+  const openEditUnloco = (row) => {
+    setModal(false);
+    setEditing(row);
+    setUnlocoForm({
+      countryName: row.countryName || "",
+      countryCode: row.countryCode || "",
+      unCode: row.unCode || "",
+      portName: row.portName || "",
+      category: row.category || "",
+    });
+    setCatalogKind("unlocode");
   };
 
   const closeModal = useCallback(() => {
@@ -445,21 +476,36 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
     }
   };
 
+  const reloadIcb = async (targetPage = 1) => {
+    icbCache.current.clear();
+    icbInflight.current.clear();
+    const listed = await api.listIcb(debounced, targetPage, ICB_PAGE_SIZE);
+    icbCache.current.set(cacheKey(debounced, targetPage), listed);
+    setIcbRows(listed.data || []);
+    setIcbPagination(listed.pagination || { page: 1, total: 0, totalPages: 1, pageSize: ICB_PAGE_SIZE });
+    setIcbMeta(listed.meta || { filename: "", importedAt: "", rowCount: 0 });
+    setIcbPage(targetPage);
+  };
+
+  const reloadUnloco = async (targetPage = 1) => {
+    unlocoCache.current.clear();
+    unlocoInflight.current.clear();
+    const listed = await api.listUnloco(debounced, targetPage, UNLOCO_PAGE_SIZE);
+    unlocoCache.current.set(cacheKey(debounced, targetPage), listed);
+    setUnlocoRows(listed.data || []);
+    setUnlocoPagination(listed.pagination || { page: 1, total: 0, totalPages: 1, pageSize: UNLOCO_PAGE_SIZE });
+    setUnlocoMeta(listed.meta || { filename: "", importedAt: "", rowCount: 0 });
+    setUnlocoPage(targetPage);
+  };
+
   const saveIcb = async (event) => {
     event.preventDefault();
     setSaving(true);
     try {
-      const result = await api.createIcb(icbForm);
+      const result = editing ? await api.updateIcb(editing.id, icbForm) : await api.createIcb(icbForm);
       onNotice?.({ type: "success", text: result.message });
       setCatalogKind("");
-      icbCache.current.clear();
-      icbInflight.current.clear();
-      setIcbPage(1);
-      const listed = await api.listIcb(debounced, 1, ICB_PAGE_SIZE);
-      icbCache.current.set(cacheKey(debounced, 1), listed);
-      setIcbRows(listed.data || []);
-      setIcbPagination(listed.pagination || { page: 1, total: 0, totalPages: 1, pageSize: ICB_PAGE_SIZE });
-      setIcbMeta(listed.meta || { filename: "", importedAt: "", rowCount: 0 });
+      await reloadIcb(editing ? icbPage : 1);
       await onRefreshLogs?.();
     } catch (error) {
       onNotice?.({ type: "error", text: error.message });
@@ -472,17 +518,12 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
     event.preventDefault();
     setSaving(true);
     try {
-      const result = await api.createUnloco(unlocoForm);
+      const result = editing
+        ? await api.updateUnloco(editing.id, unlocoForm)
+        : await api.createUnloco(unlocoForm);
       onNotice?.({ type: "success", text: result.message });
       setCatalogKind("");
-      unlocoCache.current.clear();
-      unlocoInflight.current.clear();
-      setUnlocoPage(1);
-      const listed = await api.listUnloco(debounced, 1, UNLOCO_PAGE_SIZE);
-      unlocoCache.current.set(cacheKey(debounced, 1), listed);
-      setUnlocoRows(listed.data || []);
-      setUnlocoPagination(listed.pagination || { page: 1, total: 0, totalPages: 1, pageSize: UNLOCO_PAGE_SIZE });
-      setUnlocoMeta(listed.meta || { filename: "", importedAt: "", rowCount: 0 });
+      await reloadUnloco(editing ? unlocoPage : 1);
       await onRefreshLogs?.();
     } catch (error) {
       onNotice?.({ type: "error", text: error.message });
@@ -504,6 +545,38 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
       } else {
         await load();
       }
+      await onRefreshLogs?.();
+    } catch (error) {
+      onNotice?.({ type: "error", text: error.message });
+    }
+  };
+
+  const removeIcb = async (row) => {
+    const label = [row.country, row.icbCode || row.branch].filter(Boolean).join(" / ") || "this station";
+    if (!window.confirm(`Delete ${label}?`)) {
+      return;
+    }
+    try {
+      const result = await api.removeIcb(row.id);
+      onNotice?.({ type: "success", text: result.message });
+      const target = icbRows.length === 1 && icbPage > 1 ? icbPage - 1 : icbPage;
+      await reloadIcb(target);
+      await onRefreshLogs?.();
+    } catch (error) {
+      onNotice?.({ type: "error", text: error.message });
+    }
+  };
+
+  const removeUnloco = async (row) => {
+    const label = [row.unCode, row.portName].filter(Boolean).join(" / ") || "this UNLOCODE";
+    if (!window.confirm(`Delete ${label}?`)) {
+      return;
+    }
+    try {
+      const result = await api.removeUnloco(row.id);
+      onNotice?.({ type: "success", text: result.message });
+      const target = unlocoRows.length === 1 && unlocoPage > 1 ? unlocoPage - 1 : unlocoPage;
+      await reloadUnloco(target);
       await onRefreshLogs?.();
     } catch (error) {
       onNotice?.({ type: "error", text: error.message });
@@ -666,6 +739,8 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
           page={unlocoPage}
           meta={unlocoMeta}
           onPageChange={setUnlocoPage}
+          onEdit={openEditUnloco}
+          onDelete={removeUnloco}
           onCopied={copied}
           onCopyError={(message) => onNotice?.({ type: "error", text: message })}
         />
@@ -677,6 +752,8 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
           page={icbPage}
           meta={icbMeta}
           onPageChange={setIcbPage}
+          onEdit={openEditIcb}
+          onDelete={removeIcb}
           onCopied={copied}
           onCopyError={(message) => onNotice?.({ type: "error", text: message })}
         />
@@ -708,6 +785,7 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
           kind={catalogKind}
           form={catalogKind === "icb" ? icbForm : unlocoForm}
           saving={saving}
+          editing={editing}
           onChange={catalogKind === "icb" ? setIcbForm : setUnlocoForm}
           onClose={closeModal}
           onSubmit={catalogKind === "icb" ? saveIcb : saveUnloco}

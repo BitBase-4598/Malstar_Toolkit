@@ -11,6 +11,13 @@ export const unlocoApi = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     }),
+  updateUnloco: (id, data) =>
+    request(`${API_ROOT}/unlocode/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  removeUnloco: (id) => request(`${API_ROOT}/unlocode/${id}`, { method: "DELETE" }),
   importUnloco: (file) => {
     const form = new FormData();
     form.append("file", file);

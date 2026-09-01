@@ -302,17 +302,18 @@ def list_unlocodes(query="", page=1, page_size=50):
 
 
 def bump_unloco_row_count(conn, delta=1):
+    delta = int(delta)
     conn.execute(
         """
         INSERT INTO UnlocoImportMeta (ID, Filename, ImportedAt, RowCount)
-        VALUES (1, 'manual', '', ?)
-        ON CONFLICT(ID) DO UPDATE SET RowCount=UnlocoImportMeta.RowCount + excluded.RowCount
+        VALUES (1, 'manual', '', MAX(?, 0))
+        ON CONFLICT(ID) DO UPDATE SET RowCount=MAX(UnlocoImportMeta.RowCount + ?, 0)
         """,
-        (max(int(delta), 0),),
+        (delta, delta),
     )
 
 
-def create_unlocode(payload):
+def parse_unloco_payload(payload):
     port_name = clean_text((payload or {}).get("portName"))
     un_code = clean_text((payload or {}).get("unCode")).upper()
     country_code = clean_text((payload or {}).get("countryCode")).upper()
@@ -320,11 +321,25 @@ def create_unlocode(payload):
     category = clean_text((payload or {}).get("category"))
     if not un_code and not port_name:
         return None, "UNLOCODE or Port is required."
+    search_text = " ".join(part for part in (port_name, un_code, country_code, country_name) if part)
+    return {
+        "portName": port_name,
+        "unCode": un_code,
+        "countryCode": country_code,
+        "countryName": country_name,
+        "category": category,
+        "searchText": search_text,
+    }, None
+
+
+def create_unlocode(payload):
+    fields, error = parse_unloco_payload(payload)
+    if error:
+        return None, error
     flags = [
         {"id": key, "label": label, "on": False}
         for key, label, _header in FLAG_DEFS
     ]
-    search_text = " ".join(part for part in (port_name, un_code, country_code, country_name) if part)
     with get_connection() as conn:
         cur = conn.execute(
             """
@@ -333,15 +348,53 @@ def create_unlocode(payload):
             ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                port_name,
-                un_code,
-                country_code,
-                country_name,
-                category,
+                fields["portName"],
+                fields["unCode"],
+                fields["countryCode"],
+                fields["countryName"],
+                fields["category"],
                 json.dumps(flags, separators=(",", ":")),
-                search_text,
+                fields["searchText"],
             ),
         )
         bump_unloco_row_count(conn)
         row = conn.execute("SELECT * FROM Unlocodes WHERE ID=?", (cur.lastrowid,)).fetchone()
+    return row_to_dict(row), None
+
+
+def update_unlocode(record_id, payload):
+    fields, error = parse_unloco_payload(payload)
+    if error:
+        return None, error
+    with get_connection() as conn:
+        existing = conn.execute("SELECT ID FROM Unlocodes WHERE ID=?", (record_id,)).fetchone()
+        if not existing:
+            return None, "Record not found"
+        conn.execute(
+            """
+            UPDATE Unlocodes
+            SET PortName=?, UnCode=?, CountryCode=?, CountryName=?, Category=?, SearchText=?
+            WHERE ID=?
+            """,
+            (
+                fields["portName"],
+                fields["unCode"],
+                fields["countryCode"],
+                fields["countryName"],
+                fields["category"],
+                fields["searchText"],
+                record_id,
+            ),
+        )
+        row = conn.execute("SELECT * FROM Unlocodes WHERE ID=?", (record_id,)).fetchone()
+    return row_to_dict(row), None
+
+
+def delete_unlocode(record_id):
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM Unlocodes WHERE ID=?", (record_id,)).fetchone()
+        if not row:
+            return None, "Record not found"
+        conn.execute("DELETE FROM Unlocodes WHERE ID=?", (record_id,))
+        bump_unloco_row_count(conn, -1)
     return row_to_dict(row), None

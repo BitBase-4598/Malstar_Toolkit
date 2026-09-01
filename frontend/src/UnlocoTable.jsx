@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Pencil, Trash2 } from "lucide-react";
 import { copyText } from "./copyText";
 import PageJump from "./PageJump";
 import { UNLOCO_PAGE_SIZE } from "./api/unloco";
@@ -18,6 +19,8 @@ export default function UnlocoTable({
   page,
   meta,
   onPageChange,
+  onEdit,
+  onDelete,
   onCopied,
   onCopyError,
 }) {
@@ -68,18 +71,19 @@ export default function UnlocoTable({
               {COPY_FIELDS.map((field) => (
                 <th key={field.key}>{field.label}</th>
               ))}
+              <th></th>
             </tr>
           </thead>
           <tbody>
             {loading && rows.length === 0 ? (
               <tr>
-                <td colSpan={COPY_FIELDS.length} className="empty">
+                <td colSpan={COPY_FIELDS.length + 1} className="empty">
                   Loading...
                 </td>
               </tr>
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={COPY_FIELDS.length} className="empty">
+                <td colSpan={COPY_FIELDS.length + 1} className="empty">
                   {meta?.rowCount
                     ? "No UNLOCODEs match this search."
                     : "Import UNLOCODE.csv to populate this table."}
@@ -105,6 +109,21 @@ export default function UnlocoTable({
                       </td>
                     );
                   })}
+                  <td>
+                    <div className="actions">
+                      <button type="button" onClick={() => onEdit(row)} aria-label="Edit UNLOCODE">
+                        <Pencil size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        className="danger"
+                        onClick={() => onDelete(row)}
+                        aria-label="Delete UNLOCODE"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))
             )}

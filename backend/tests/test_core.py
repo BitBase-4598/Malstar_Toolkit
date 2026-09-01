@@ -777,6 +777,18 @@ def test_icb_and_unloco_create_record():
     assert listed["pagination"]["total"] >= 1
     missing = client.post("/api/icb", json={"location": "only location"})
     assert missing.status_code == 400
+    icb_id = icb.get_json()["data"]["id"]
+    updated = client.put(
+        f"/api/icb/{icb_id}",
+        json={"country": "Chile", "branch": "VAP", "icbCode": "TESTICB99", "groupCode": "CL-FIS"},
+    )
+    assert updated.status_code == 200
+    assert updated.get_json()["data"]["icbCode"] == "TESTICB99"
+    assert updated.get_json()["data"]["direction"] == "import"
+    gone = client.delete(f"/api/icb/{icb_id}")
+    assert gone.status_code == 200
+    assert client.get("/api/icb?q=TESTICB99").get_json()["pagination"]["total"] == 0
+    assert client.delete(f"/api/icb/{icb_id}").status_code == 404
 
     unloco = client.post(
         "/api/unlocode",
@@ -787,6 +799,16 @@ def test_icb_and_unloco_create_record():
     found = client.get("/api/unlocode?q=CLVAP").get_json()
     assert found["pagination"]["total"] == 1
     assert found["data"][0]["portName"] == "Valparaiso"
+    unloco_id = unloco.get_json()["data"]["id"]
+    renamed = client.put(
+        f"/api/unlocode/{unloco_id}",
+        json={"countryCode": "CL", "countryName": "Chile", "unCode": "CLVAP", "portName": "Valparaíso"},
+    )
+    assert renamed.status_code == 200
+    assert renamed.get_json()["data"]["portName"] == "Valparaíso"
+    deleted = client.delete(f"/api/unlocode/{unloco_id}")
+    assert deleted.status_code == 200
+    assert client.get("/api/unlocode?q=CLVAP").get_json()["pagination"]["total"] == 0
     empty = client.post("/api/unlocode", json={"countryCode": "CL"})
     assert empty.status_code == 400
 

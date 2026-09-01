@@ -299,17 +299,18 @@ def list_icb_stations(query="", page=1, page_size=100):
 
 
 def bump_icb_row_count(conn, delta=1):
+    delta = int(delta)
     conn.execute(
         """
         INSERT INTO IcbImportMeta (ID, Filename, ImportedAt, RowCount)
-        VALUES (1, 'manual', '', ?)
-        ON CONFLICT(ID) DO UPDATE SET RowCount=IcbImportMeta.RowCount + excluded.RowCount
+        VALUES (1, 'manual', '', MAX(?, 0))
+        ON CONFLICT(ID) DO UPDATE SET RowCount=MAX(IcbImportMeta.RowCount + ?, 0)
         """,
-        (max(int(delta), 0),),
+        (delta, delta),
     )
 
 
-def create_icb_station(payload):
+def parse_icb_payload(payload):
     country = clean_text((payload or {}).get("country"))
     location = clean_text((payload or {}).get("location"))
     branch = clean_text((payload or {}).get("branch"))
@@ -321,7 +322,39 @@ def create_icb_station(payload):
     notes = clean_text((payload or {}).get("notes"))
     if not any((country, branch, icb_code)):
         return None, "Country, CW1 Branch, or ICB code is required."
-    direction = direction_from_group(group_code, group_name)
+    return {
+        "country": country,
+        "location": location,
+        "branch": branch,
+        "unloco": unloco,
+        "groupCode": group_code,
+        "groupName": group_name,
+        "agentCode": agent_code,
+        "icbCode": icb_code,
+        "notes": notes,
+        "direction": direction_from_group(group_code, group_name),
+    }, None
+
+
+def _icb_values(fields):
+    return (
+        fields["country"],
+        fields["location"],
+        fields["branch"],
+        fields["unloco"],
+        fields["groupCode"],
+        fields["groupName"],
+        fields["agentCode"],
+        fields["icbCode"],
+        fields["notes"],
+        fields["direction"],
+    )
+
+
+def create_icb_station(payload):
+    fields, error = parse_icb_payload(payload)
+    if error:
+        return None, error
     with get_connection() as conn:
         cur = conn.execute(
             """
@@ -330,8 +363,39 @@ def create_icb_station(payload):
                 AgentCode, IcbCode, Notes, Direction
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (country, location, branch, unloco, group_code, group_name, agent_code, icb_code, notes, direction),
+            _icb_values(fields),
         )
         bump_icb_row_count(conn)
         row = conn.execute("SELECT * FROM IcbStations WHERE ID=?", (cur.lastrowid,)).fetchone()
+    return row_to_dict(row), None
+
+
+def update_icb_station(record_id, payload):
+    fields, error = parse_icb_payload(payload)
+    if error:
+        return None, error
+    with get_connection() as conn:
+        existing = conn.execute("SELECT ID FROM IcbStations WHERE ID=?", (record_id,)).fetchone()
+        if not existing:
+            return None, "Record not found"
+        conn.execute(
+            """
+            UPDATE IcbStations
+            SET Country=?, Location=?, Branch=?, Unloco=?, GroupCode=?, GroupName=?,
+                AgentCode=?, IcbCode=?, Notes=?, Direction=?
+            WHERE ID=?
+            """,
+            _icb_values(fields) + (record_id,),
+        )
+        row = conn.execute("SELECT * FROM IcbStations WHERE ID=?", (record_id,)).fetchone()
+    return row_to_dict(row), None
+
+
+def delete_icb_station(record_id):
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM IcbStations WHERE ID=?", (record_id,)).fetchone()
+        if not row:
+            return None, "Record not found"
+        conn.execute("DELETE FROM IcbStations WHERE ID=?", (record_id,))
+        bump_icb_row_count(conn, -1)
     return row_to_dict(row), None

@@ -11,6 +11,13 @@ export const icbApi = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     }),
+  updateIcb: (id, data) =>
+    request(`${API_ROOT}/icb/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  removeIcb: (id) => request(`${API_ROOT}/icb/${id}`, { method: "DELETE" }),
   importIcb: (file) => {
     const form = new FormData();
     form.append("file", file);

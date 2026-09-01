@@ -1,7 +1,13 @@
 from flask import Blueprint, jsonify, request
 
 from logging_util import audit
-from services.unloco import create_unlocode, import_unloco_csv, list_unlocodes
+from services.unloco import (
+    create_unlocode,
+    delete_unlocode,
+    import_unloco_csv,
+    list_unlocodes,
+    update_unlocode,
+)
 
 bp = Blueprint("unloco", __name__)
 
@@ -27,6 +33,35 @@ def create_unloco():
         resource_id=str(row["id"]),
     )
     return jsonify({"success": True, "message": "UNLOCODE created", "data": row}), 201
+
+
+@bp.put("/api/unlocode/<int:record_id>")
+def update_unloco(record_id):
+    row, error = update_unlocode(record_id, request.get_json(silent=True) or {})
+    if error:
+        status = 404 if error == "Record not found" else 400
+        audit("unloco.update", "failure", resource_id=record_id, summary=error)
+        return jsonify({"success": False, "message": error}), status
+    audit(
+        "unloco.update",
+        summary=f"{row['unCode'] or row['portName']} / {row['countryCode']}",
+        resource_id=str(row["id"]),
+    )
+    return jsonify({"success": True, "message": "UNLOCODE updated", "data": row})
+
+
+@bp.delete("/api/unlocode/<int:record_id>")
+def delete_unloco(record_id):
+    row, error = delete_unlocode(record_id)
+    if error:
+        audit("unloco.delete", "failure", resource_id=record_id, summary=error)
+        return jsonify({"success": False, "message": error}), 404
+    audit(
+        "unloco.delete",
+        summary=f"{row['unCode'] or row['portName']} / {row['countryCode']}",
+        resource_id=str(row["id"]),
+    )
+    return jsonify({"success": True, "message": "UNLOCODE deleted", "data": row})
 
 
 @bp.post("/api/unlocode/import")

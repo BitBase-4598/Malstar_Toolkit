@@ -20,10 +20,16 @@ const UNLOCO_FIELDS = [
   { key: "category", label: "LCL Category" },
 ];
 
-export default function CatalogInsertModal({ kind, form, saving, onChange, onClose, onSubmit }) {
+export default function CatalogInsertModal({ kind, form, saving, editing, onChange, onClose, onSubmit }) {
   const isIcb = kind === "icb";
   const fields = isIcb ? ICB_FIELDS : UNLOCO_FIELDS;
-  const title = isIcb ? "Add ICB station" : "Add UNLOCODE";
+  const title = editing
+    ? isIcb
+      ? "Edit ICB station"
+      : "Edit UNLOCODE"
+    : isIcb
+      ? "Add ICB station"
+      : "Add UNLOCODE";
   const hint = isIcb
     ? "Country, CW1 Branch, or ICB code identifies the station."
     : "Country and UNLOCODE identify the location.";
