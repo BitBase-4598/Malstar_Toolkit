@@ -2,9 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { WORLD_COUNTRIES, WORLD_HEIGHT, WORLD_WIDTH } from "./worldCountries";
 
 const LAND = "#1b455c";
-const LAND_ACTIVE = "#2a6a88";
-const BUBBLE = "#42b0d5";
-const BUBBLE_ACTIVE = "#ffffff";
+const BORDER = "#00243d";
+const HEAT_STOPS = ["#1b455c", "#245870", "#2f7a9a", "#42b0d5", "#8ad4ea", "#e8f6fb"];
 
 const ARROW_COLOR = {
   export: "#42b0d5",
@@ -19,8 +18,33 @@ function project(lat, lng) {
   };
 }
 
-function bubbleRadius(count, max) {
-  return 3.5 + Math.sqrt(count / Math.max(max, 1)) * 26;
+function parseHex(hex) {
+  const n = hex.replace("#", "");
+  return [parseInt(n.slice(0, 2), 16), parseInt(n.slice(2, 4), 16), parseInt(n.slice(4, 6), 16)];
+}
+
+function mixHex(from, to, t) {
+  const a = parseHex(from);
+  const b = parseHex(to);
+  const mix = a.map((channel, i) => Math.round(channel + (b[i] - channel) * t));
+  return `#${mix.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function heatT(count, max) {
+  if (!count || max <= 0) {
+    return 0;
+  }
+  return Math.sqrt(count / max);
+}
+
+function heatFill(count, max) {
+  const t = heatT(count, max);
+  if (t <= 0) {
+    return LAND;
+  }
+  const scaled = t * (HEAT_STOPS.length - 1);
+  const index = Math.min(Math.floor(scaled), HEAT_STOPS.length - 2);
+  return mixHex(HEAT_STOPS[index], HEAT_STOPS[index + 1], scaled - index);
 }
 
 function curveControl(from, to) {
@@ -49,16 +73,16 @@ function expand(box, x, y) {
   box.maxY = Math.max(box.maxY, y);
 }
 
-function fitDataView(points, arrows, zoomToData, maxCount) {
+function fitDataView(points, arrows, zoomToData) {
   if (!zoomToData) {
     return WORLD_VIEW;
   }
   const box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  const padPt = 22;
   for (const item of points || []) {
     const { x, y } = project(item.lat, item.lng);
-    const radius = bubbleRadius(item.count, maxCount) + 10;
-    expand(box, x - radius, y - radius);
-    expand(box, x + radius, y + radius);
+    expand(box, x - padPt, y - padPt);
+    expand(box, x + padPt, y + padPt);
   }
   for (const arrow of arrows || []) {
     const from = project(arrow.fromLat, arrow.fromLng);
@@ -162,17 +186,13 @@ export default function LclMap({ points, arrows, selected, onSelect, showArrows,
   );
   const max = Math.max(...(points || []).map((item) => item.count), 1);
   const arrowMax = Math.max(...(arrows || []).map((item) => item.count), 1);
-  const bubbles = useMemo(
-    () => [...(points || [])].sort((a, b) => b.count - a.count),
-    [points]
-  );
   const visibleArrows = useMemo(
     () => (showArrows ? arrows || [] : []),
     [showArrows, arrows]
   );
   const targetView = useMemo(
-    () => fitDataView(points, visibleArrows, zoomToData, max),
-    [points, visibleArrows, zoomToData, max]
+    () => fitDataView(points, visibleArrows, zoomToData),
+    [points, visibleArrows, zoomToData]
   );
   const view = useAnimatedViewBox(targetView);
 
@@ -206,7 +226,7 @@ export default function LclMap({ points, arrows, selected, onSelect, showArrows,
         viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
         preserveAspectRatio="xMidYMid meet"
         role="img"
-        aria-label="Destination world map of shipment volume"
+        aria-label="Destination world heatmap of shipment volume by country"
         onMouseLeave={() => {
           setHoverIso("");
           setTooltip(null);
@@ -232,13 +252,14 @@ export default function LclMap({ points, arrows, selected, onSelect, showArrows,
         {WORLD_COUNTRIES.map((country) => {
           const item = byIso[country.iso2];
           const isActive = active.has(country.iso2) || country.iso2 === hoverIso;
+          const fill = heatFill(item?.count || 0, max);
           return (
             <path
               key={country.iso2}
               d={country.d}
-              fill={isActive ? LAND_ACTIVE : LAND}
-              stroke={isActive ? BUBBLE : "#00243d"}
-              strokeWidth={isActive ? 1.4 : 0.4}
+              fill={isActive ? mixHex(fill, "#ffffff", item?.count ? 0.18 : 0.12) : fill}
+              stroke={isActive ? "#e8f6fb" : BORDER}
+              strokeWidth={isActive ? 1.4 : 0.55}
               vectorEffect="non-scaling-stroke"
               style={{ cursor: "pointer" }}
               onMouseMove={(event) => showTip(event, item, country.iso2)}
@@ -268,32 +289,12 @@ export default function LclMap({ points, arrows, selected, onSelect, showArrows,
             />
           );
         })}
-        {bubbles.map((item) => {
-          const { x, y } = project(item.lat, item.lng);
-          const isActive = active.has(item.iso2) || item.iso2 === hoverIso;
-          return (
-            <circle
-              key={item.iso2}
-              cx={x}
-              cy={y}
-              r={bubbleRadius(item.count, max)}
-              fill={isActive ? BUBBLE_ACTIVE : BUBBLE}
-              fillOpacity={isActive ? 1 : 0.78}
-              stroke={isActive ? BUBBLE : "#e8f6fb"}
-              strokeWidth={isActive ? 2 : 1}
-              style={{ cursor: "pointer" }}
-              onMouseMove={(event) => showTip(event, item, item.iso2)}
-              onClick={() => activate(item.iso2)}
-            />
-          );
-        })}
       </svg>
       <div className="lcl-map-legend">
-        <span className="lcl-map-bubble-key">
-          <i className="is-sm" />
-          <i className="is-md" />
-          <i className="is-lg" />
-          Volume
+        <span className="lcl-map-heat-key">
+          Low
+          <i className="lcl-map-heat-bar" aria-hidden="true" />
+          High
         </span>
         {showArrows ? (
           <>

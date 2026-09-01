@@ -521,7 +521,7 @@ const LclDashboard = forwardRef(function LclDashboard({ embedded = false, onNoti
                 <div>
                   <strong>Destination map</strong>
                   <p className="dash-section-note">
-                    Bubble size is shipment volume by dest country.
+                    Country brightness is shipment volume by dest country.
                     {filters.direction.length
                       ? " Arrows show export out and import in for the selected direction."
                       : filtersActive

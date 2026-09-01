@@ -3101,33 +3101,19 @@ html.lcl-html #root {
   clip-path: polygon(0 35%, 68% 35%, 68% 0, 100% 50%, 68% 100%, 68% 65%, 0 65%);
 }
 
-.lcl-map-bubble-key {
+.lcl-map-heat-key {
   display: inline-flex;
-  align-items: flex-end;
-  gap: 6px;
-  height: 22px;
+  align-items: center;
+  gap: 8px;
 }
 
-.lcl-map-bubble-key i {
+.lcl-map-heat-bar {
   display: block;
+  width: 92px;
+  height: 8px;
   border-radius: 99px;
-  background: #42b0d5;
-  border: 1px solid #e8f6fb;
-}
-
-.lcl-map-bubble-key i.is-sm {
-  width: 7px;
-  height: 7px;
-}
-
-.lcl-map-bubble-key i.is-md {
-  width: 12px;
-  height: 12px;
-}
-
-.lcl-map-bubble-key i.is-lg {
-  width: 18px;
-  height: 18px;
+  background: linear-gradient(90deg, #1b455c 0%, #2f7a9a 38%, #42b0d5 68%, #e8f6fb 100%);
+  border: 1px solid #00243d;
 }
 
 .lcl-globe-tip {
