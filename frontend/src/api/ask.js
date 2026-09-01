@@ -1,4 +1,4 @@
-import { API_ROOT, request } from "./client";
+import { API_ROOT, IMPORT_TIMEOUT_MS, request } from "./client";
 
 export const askApi = {
   askStatus: () => request(`${API_ROOT}/ask/status`),
@@ -7,6 +7,7 @@ export const askApi = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: "{}",
+      timeout: IMPORT_TIMEOUT_MS,
     }),
   ask: (question) =>
     request(`${API_ROOT}/ask`, {

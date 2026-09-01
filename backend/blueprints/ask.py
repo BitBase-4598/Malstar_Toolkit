@@ -41,8 +41,21 @@ def ask_question():
     if len(question) > ASK_MAX_QUESTION:
         question = question[:ASK_MAX_QUESTION]
     with get_connection() as conn:
-        maybe_backfill_index(conn)
+        indexing = maybe_backfill_index(conn)
         rows = search_chunks(conn, question)
+    if indexing and not rows:
+        audit("ask.query", summary=question[:200], extra={"mode": "indexing"})
+        return jsonify({
+            "success": True,
+            "data": {
+                "question": question,
+                "answer": "Indexing files and SOPs. Try Ask again in a moment.",
+                "mode": "indexing",
+                "citations": [],
+                "llmEnabled": llm_enabled(),
+                "llmError": None,
+            },
+        })
     citations = [chunk_to_citation(row) for row in rows]
     wanted_generate = llm_enabled()
     answer, llm_error = generate_answer(question, citations)

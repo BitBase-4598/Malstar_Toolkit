@@ -1,6 +1,8 @@
 import json
 import re
+import socket
 import sqlite3
+import threading
 import urllib.error
 import urllib.request
 
@@ -22,10 +24,14 @@ from config import (
     RAG_TOP_K,
     llm_enabled,
 )
+from db import get_connection
 from logging_util import audit
 from services.files_store import cell_to_text, preview_docx, stored_path
 from services.sops import load_sop
 from util import now_stamp
+
+_INDEX_LOCK = threading.Lock()
+_INDEXING = False
 
 
 def fts_available(conn):
@@ -215,18 +221,42 @@ def reindex_all(conn):
     touch_index_state(conn)
 
 
-def maybe_backfill_index(conn):
+def is_indexing():
+    return _INDEXING
+
+
+def _run_reindex():
+    global _INDEXING
+    try:
+        with get_connection() as conn:
+            reindex_all(conn)
+    finally:
+        _INDEXING = False
+
+
+def start_backfill_if_needed(conn):
+    global _INDEXING
     count = conn.execute("SELECT COUNT(*) FROM RagChunks").fetchone()[0]
     if count:
-        return
+        return False
     files = conn.execute("SELECT COUNT(*) FROM ToolkitFiles").fetchone()[0]
     sops = conn.execute("SELECT COUNT(*) FROM Sops").fetchone()[0]
-    if files or sops:
-        reindex_all(conn)
+    if not (files or sops):
+        return False
+    with _INDEX_LOCK:
+        if _INDEXING:
+            return True
+        _INDEXING = True
+    threading.Thread(target=_run_reindex, daemon=True).start()
+    return True
+
+
+def maybe_backfill_index(conn):
+    return start_backfill_if_needed(conn)
 
 
 def rag_status(conn):
-    maybe_backfill_index(conn)
+    indexing = start_backfill_if_needed(conn)
     state = conn.execute("SELECT LastIndexedAt, ChunkCount FROM RagIndexState WHERE ID=1").fetchone()
     sop_sources = conn.execute(
         "SELECT COUNT(DISTINCT SourceID) FROM RagChunks WHERE SourceType='sop'"
@@ -239,6 +269,7 @@ def rag_status(conn):
         "chunkCount": chunk_count,
         "lastIndexedAt": state["LastIndexedAt"] if state else "",
         "llmEnabled": llm_enabled(),
+        "indexing": bool(indexing or _INDEXING),
         "sources": {
             "sops": sop_sources,
             "files": file_sources,
@@ -392,5 +423,13 @@ def generate_answer(question, citations):
     except urllib.error.HTTPError as error:
         detail = error.read().decode("utf-8", errors="replace")[:300]
         return retrieve_only_answer(citations), f"Azure OpenAI HTTP {error.code}: {detail}"
+    except TimeoutError:
+        return retrieve_only_answer(citations), "Azure OpenAI timed out."
+    except socket.timeout:
+        return retrieve_only_answer(citations), "Azure OpenAI timed out."
+    except urllib.error.URLError as error:
+        if isinstance(error.reason, (TimeoutError, socket.timeout)):
+            return retrieve_only_answer(citations), "Azure OpenAI timed out."
+        return retrieve_only_answer(citations), str(error)
     except Exception as error:
         return retrieve_only_answer(citations), str(error)

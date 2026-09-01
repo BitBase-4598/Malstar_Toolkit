@@ -5,6 +5,7 @@ import { ICB_PAGE_SIZE } from "./api/icb";
 import { UNLOCO_PAGE_SIZE } from "./api/unloco";
 import RecordTable from "./RecordTable";
 import RecordModal from "./RecordModal";
+import CatalogInsertModal from "./CatalogInsertModal";
 import IcbTable from "./IcbTable";
 import UnlocoTable from "./UnlocoTable";
 import { lettersOnly } from "./letters";
@@ -15,6 +16,26 @@ const emptyForm = {
   remark1: "",
   remark2: "",
   remark3: "",
+};
+
+const emptyIcb = {
+  country: "",
+  location: "",
+  branch: "",
+  unloco: "",
+  groupCode: "",
+  groupName: "",
+  agentCode: "",
+  icbCode: "",
+  notes: "",
+};
+
+const emptyUnloco = {
+  countryName: "",
+  countryCode: "",
+  unCode: "",
+  portName: "",
+  category: "",
 };
 
 const SEARCH_TABS = [
@@ -40,11 +61,18 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
   const [importing, setImporting] = useState(false);
   const [icbImporting, setIcbImporting] = useState(false);
   const [modal, setModal] = useState(false);
+  const [catalogKind, setCatalogKind] = useState("");
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
+  const [icbForm, setIcbForm] = useState(emptyIcb);
+  const [unlocoForm, setUnlocoForm] = useState(emptyUnloco);
   const pageCache = useRef(new Map());
   const pageInflight = useRef(new Map());
   const loadSeq = useRef(0);
+  const icbCache = useRef(new Map());
+  const icbInflight = useRef(new Map());
+  const unlocoCache = useRef(new Map());
+  const unlocoInflight = useRef(new Map());
   const [icbRows, setIcbRows] = useState([]);
   const [icbPage, setIcbPage] = useState(1);
   const [icbPagination, setIcbPagination] = useState({
@@ -75,6 +103,10 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
   const invalidateRecordPages = () => {
     pageCache.current.clear();
     pageInflight.current.clear();
+    icbCache.current.clear();
+    icbInflight.current.clear();
+    unlocoCache.current.clear();
+    unlocoInflight.current.clear();
   };
 
   const fetchRecords = useCallback(async (q, targetPage) => {
@@ -166,11 +198,30 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
     }
   }, [remarksQuery, page, fetchRecords, prefetchNeighbors, onNotice]);
 
-  const loadIcb = useCallback(async () => {
+  const loadIcb = useCallback(async (signal) => {
     const seq = ++icbLoadSeq.current;
+    const key = cacheKey(debounced, icbPage);
+    const cached = icbCache.current.get(key);
+    if (cached) {
+      if (seq !== icbLoadSeq.current) {
+        return;
+      }
+      setIcbRows(cached.data || []);
+      setIcbPagination(cached.pagination || { page: 1, total: 0, totalPages: 1, pageSize: ICB_PAGE_SIZE });
+      setIcbMeta(cached.meta || { filename: "", importedAt: "", rowCount: 0 });
+      setIcbLoading(false);
+      return;
+    }
     setIcbLoading(true);
     try {
-      const result = await api.listIcb(debounced, icbPage, ICB_PAGE_SIZE);
+      let pending = icbInflight.current.get(key);
+      if (!pending) {
+        pending = api.listIcb(debounced, icbPage, ICB_PAGE_SIZE, { signal });
+        icbInflight.current.set(key, pending);
+      }
+      const result = await pending;
+      icbCache.current.set(key, result);
+      icbInflight.current.delete(key);
       if (seq !== icbLoadSeq.current) {
         return;
       }
@@ -178,7 +229,8 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
       setIcbPagination(result.pagination || { page: 1, total: 0, totalPages: 1, pageSize: ICB_PAGE_SIZE });
       setIcbMeta(result.meta || { filename: "", importedAt: "", rowCount: 0 });
     } catch (error) {
-      if (seq !== icbLoadSeq.current) {
+      icbInflight.current.delete(key);
+      if (error.name === "AbortError" || seq !== icbLoadSeq.current) {
         return;
       }
       onNotice?.({ type: "error", text: error.message });
@@ -189,11 +241,30 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
     }
   }, [debounced, icbPage, onNotice]);
 
-  const loadUnloco = useCallback(async () => {
+  const loadUnloco = useCallback(async (signal) => {
     const seq = ++unlocoLoadSeq.current;
+    const key = cacheKey(debounced, unlocoPage);
+    const cached = unlocoCache.current.get(key);
+    if (cached) {
+      if (seq !== unlocoLoadSeq.current) {
+        return;
+      }
+      setUnlocoRows(cached.data || []);
+      setUnlocoPagination(cached.pagination || { page: 1, total: 0, totalPages: 1, pageSize: UNLOCO_PAGE_SIZE });
+      setUnlocoMeta(cached.meta || { filename: "", importedAt: "", rowCount: 0 });
+      setUnlocoLoading(false);
+      return;
+    }
     setUnlocoLoading(true);
     try {
-      const result = await api.listUnloco(debounced, unlocoPage, UNLOCO_PAGE_SIZE);
+      let pending = unlocoInflight.current.get(key);
+      if (!pending) {
+        pending = api.listUnloco(debounced, unlocoPage, UNLOCO_PAGE_SIZE, { signal });
+        unlocoInflight.current.set(key, pending);
+      }
+      const result = await pending;
+      unlocoCache.current.set(key, result);
+      unlocoInflight.current.delete(key);
       if (seq !== unlocoLoadSeq.current) {
         return;
       }
@@ -201,7 +272,8 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
       setUnlocoPagination(result.pagination || { page: 1, total: 0, totalPages: 1, pageSize: UNLOCO_PAGE_SIZE });
       setUnlocoMeta(result.meta || { filename: "", importedAt: "", rowCount: 0 });
     } catch (error) {
-      if (seq !== unlocoLoadSeq.current) {
+      unlocoInflight.current.delete(key);
+      if (error.name === "AbortError" || seq !== unlocoLoadSeq.current) {
         return;
       }
       onNotice?.({ type: "error", text: error.message });
@@ -219,19 +291,36 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
   }, [load, searchTab]);
 
   useEffect(() => {
-    if (searchTab === "icb") {
-      loadIcb();
+    if (searchTab !== "icb") {
+      return undefined;
     }
+    const controller = new AbortController();
+    loadIcb(controller.signal);
+    return () => controller.abort();
   }, [loadIcb, searchTab]);
 
   useEffect(() => {
-    if (searchTab === "unlocode") {
-      loadUnloco();
+    if (searchTab !== "unlocode") {
+      return undefined;
     }
+    const controller = new AbortController();
+    loadUnloco(controller.signal);
+    return () => controller.abort();
   }, [loadUnloco, searchTab]);
 
   const openNew = () => {
     setEditing(null);
+    if (searchTab === "icb") {
+      setIcbForm(emptyIcb);
+      setCatalogKind("icb");
+      return;
+    }
+    if (searchTab === "unlocode") {
+      setUnlocoForm(emptyUnloco);
+      setCatalogKind("unlocode");
+      return;
+    }
+    setCatalogKind("");
     setForm(emptyForm);
     setModal(true);
   };
@@ -269,6 +358,7 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
   const closeModal = useCallback(() => {
     if (!saving) {
       setModal(false);
+      setCatalogKind("");
     }
   }, [saving]);
 
@@ -281,6 +371,52 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
       setModal(false);
       invalidateRecordPages();
       await load();
+      await onRefreshLogs?.();
+    } catch (error) {
+      onNotice?.({ type: "error", text: error.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveIcb = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const result = await api.createIcb(icbForm);
+      onNotice?.({ type: "success", text: result.message });
+      setCatalogKind("");
+      icbCache.current.clear();
+      icbInflight.current.clear();
+      setIcbPage(1);
+      const listed = await api.listIcb(debounced, 1, ICB_PAGE_SIZE);
+      icbCache.current.set(cacheKey(debounced, 1), listed);
+      setIcbRows(listed.data || []);
+      setIcbPagination(listed.pagination || { page: 1, total: 0, totalPages: 1, pageSize: ICB_PAGE_SIZE });
+      setIcbMeta(listed.meta || { filename: "", importedAt: "", rowCount: 0 });
+      await onRefreshLogs?.();
+    } catch (error) {
+      onNotice?.({ type: "error", text: error.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveUnloco = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const result = await api.createUnloco(unlocoForm);
+      onNotice?.({ type: "success", text: result.message });
+      setCatalogKind("");
+      unlocoCache.current.clear();
+      unlocoInflight.current.clear();
+      setUnlocoPage(1);
+      const listed = await api.listUnloco(debounced, 1, UNLOCO_PAGE_SIZE);
+      unlocoCache.current.set(cacheKey(debounced, 1), listed);
+      setUnlocoRows(listed.data || []);
+      setUnlocoPagination(listed.pagination || { page: 1, total: 0, totalPages: 1, pageSize: UNLOCO_PAGE_SIZE });
+      setUnlocoMeta(listed.meta || { filename: "", importedAt: "", rowCount: 0 });
       await onRefreshLogs?.();
     } catch (error) {
       onNotice?.({ type: "error", text: error.message });
@@ -345,7 +481,10 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
       const result = await api.importIcb(file);
       onNotice?.({ type: "success", text: result.message });
       setIcbPage(1);
+      icbCache.current.clear();
+      icbInflight.current.clear();
       const listed = await api.listIcb(debounced, 1, ICB_PAGE_SIZE);
+      icbCache.current.set(cacheKey(debounced, 1), listed);
       setIcbRows(listed.data || []);
       setIcbPagination(listed.pagination || { page: 1, total: 0, totalPages: 1, pageSize: ICB_PAGE_SIZE });
       setIcbMeta(listed.meta || { filename: "", importedAt: "", rowCount: 0 });
@@ -368,7 +507,10 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
       const result = await api.importUnloco(file);
       onNotice?.({ type: "success", text: result.message });
       setUnlocoPage(1);
+      unlocoCache.current.clear();
+      unlocoInflight.current.clear();
       const listed = await api.listUnloco(debounced, 1, UNLOCO_PAGE_SIZE);
+      unlocoCache.current.set(cacheKey(debounced, 1), listed);
       setUnlocoRows(listed.data || []);
       setUnlocoPagination(listed.pagination || { page: 1, total: 0, totalPages: 1, pageSize: UNLOCO_PAGE_SIZE });
       setUnlocoMeta(listed.meta || { filename: "", importedAt: "", rowCount: 0 });
@@ -493,6 +635,16 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
           onChange={setForm}
           onClose={closeModal}
           onSubmit={save}
+        />
+      ) : null}
+      {catalogKind ? (
+        <CatalogInsertModal
+          kind={catalogKind}
+          form={catalogKind === "icb" ? icbForm : unlocoForm}
+          saving={saving}
+          onChange={catalogKind === "icb" ? setIcbForm : setUnlocoForm}
+          onClose={closeModal}
+          onSubmit={catalogKind === "icb" ? saveIcb : saveUnloco}
         />
       ) : null}
     </>

@@ -65,6 +65,7 @@ export default function FieldSelect({
     }
     return options.filter((option) => String(option.label || "").toLowerCase().includes(text));
   }, [options, query, searchable]);
+  const visible = matches.length > 80 ? matches.slice(0, 80) : matches;
 
   useEffect(() => {
     const onDoc = (event) => {
@@ -154,19 +155,19 @@ export default function FieldSelect({
     }
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setHighlight((index) => Math.min(index + 1, Math.max(matches.length - 1, 0)));
+      setHighlight((index) => Math.min(index + 1, Math.max(visible.length - 1, 0)));
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
       setHighlight((index) => Math.max(index - 1, 0));
     } else if (event.key === "Enter" && open) {
       event.preventDefault();
-      if (matches[highlight]) {
-        pick(matches[highlight]);
+      if (visible[highlight]) {
+        pick(visible[highlight]);
       }
     } else if (event.key === " " && open && event.target !== searchRef.current) {
       event.preventDefault();
-      if (matches[highlight]) {
-        pick(matches[highlight]);
+      if (visible[highlight]) {
+        pick(visible[highlight]);
       }
     } else if (event.key === "Escape") {
       setOpen(false);
@@ -229,7 +230,8 @@ export default function FieldSelect({
               {matches.length === 0 ? (
                 <p className="field-select-empty">No matching option</p>
               ) : (
-                matches.map((option, index) => {
+                <>
+                  {visible.map((option, index) => {
                   const key = optionValue(option);
                   const isAll = multiple && key === "";
                   const isSelected = isAll ? selected.size === 0 : selected.has(key) || (!multiple && key === current);
@@ -253,7 +255,11 @@ export default function FieldSelect({
                       {option.label}
                     </button>
                   );
-                })
+                })}
+                  {matches.length > visible.length ? (
+                    <p className="field-select-empty">Showing {visible.length} of {matches.length}. Type to filter.</p>
+                  ) : null}
+                </>
               )}
             </div>,
             document.body,

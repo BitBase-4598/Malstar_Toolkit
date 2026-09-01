@@ -57,7 +57,7 @@ def test_migrate_schema_version_once():
     with get_connection() as conn:
         version = conn.execute("SELECT Version FROM SchemaVersion WHERE ID=1").fetchone()[0]
         count = conn.execute("SELECT COUNT(*) FROM CustomerRemarks").fetchone()[0]
-    assert version == 5
+    assert version == 6
     assert count == 3
     migrate()
     with get_connection() as conn:
@@ -501,6 +501,61 @@ def test_lcl_import_requires_xlsx():
     assert "raw sheet" in fake.get_json()["message"].lower() or "pivot cache" in fake.get_json()["message"].lower()
 
 
+def test_lcl_failed_import_keeps_existing_rows():
+    from io import BytesIO
+    from zipfile import ZipFile
+
+    from openpyxl import Workbook
+
+    migrate()
+    from app import app
+
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO LclShipments (ShipmentID, Direction, Year, MonthName, JobBranch, DestCtry)
+            VALUES ('KEEP-ME', 'Export', '2026', 'January', 'SZ1', 'DE')
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO LclImportMeta (ID, Filename, ImportedAt, ExportCount, ImportCount)
+            VALUES (1, 'old.xlsx', '2026-01-01 00:00:00', 1, 0)
+            """
+        )
+    client = app.test_client()
+    buffer = BytesIO()
+    with ZipFile(buffer, "w") as archive:
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+    fake = client.post(
+        "/api/lcl/import",
+        data={"file": (BytesIO(buffer.getvalue()), "lcl.xlsx")},
+        content_type="multipart/form-data",
+    )
+    assert fake.status_code == 400
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Raw"
+    sheet.append(["Nope", "Still no"])
+    payload = BytesIO()
+    workbook.save(payload)
+    bad_headers = client.post(
+        "/api/lcl/import",
+        data={"file": (BytesIO(payload.getvalue()), "lcl.xlsx")},
+        content_type="multipart/form-data",
+    )
+    assert bad_headers.status_code == 400
+    with get_connection() as conn:
+        row = conn.execute("SELECT ShipmentID FROM LclShipments").fetchone()
+        assert row["ShipmentID"] == "KEEP-ME"
+        meta = conn.execute("SELECT Filename FROM LclImportMeta WHERE ID=1").fetchone()
+        assert meta["Filename"] == "old.xlsx"
+        staging = conn.execute(
+            "SELECT name FROM sqlite_master WHERE name='LclShipments_staging'"
+        ).fetchone()
+        assert staging is None
+
+
 def test_lcl_import_raw_sheet_headers():
     from io import BytesIO
 
@@ -508,6 +563,11 @@ def test_lcl_import_raw_sheet_headers():
 
     migrate()
     from app import app
+
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO LclShipments (ShipmentID, Direction) VALUES ('KEEP-ME', 'Export')"
+        )
 
     workbook = Workbook()
     sheet = workbook.active
@@ -550,6 +610,13 @@ def test_lcl_import_raw_sheet_headers():
     assert body["data"]["exportCount"] == 1
     assert body["data"]["importCount"] == 1
     assert body["data"]["total"] == 2
+    with get_connection() as conn:
+        ids = {row[0] for row in conn.execute("SELECT ShipmentID FROM LclShipments")}
+        assert ids == {"EXP1", "IMP1"}
+        staging = conn.execute(
+            "SELECT name FROM sqlite_master WHERE name='LclShipments_staging'"
+        ).fetchone()
+        assert staging is None
 
 
 def test_lcl_dimension_and_summary():
@@ -677,6 +744,45 @@ def test_unloco_csv_import_and_search():
     assert by_code["data"][0]["unCode"] == "DKAAR"
     category_only = client.get("/api/unlocode?q=Door").get_json()
     assert category_only["pagination"]["total"] == 0
+    with get_connection() as conn:
+        search_text = conn.execute("SELECT SearchText FROM Unlocodes WHERE UnCode='FRLAI'").fetchone()[0]
+        assert "Door" not in search_text
+        fts = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='UnlocodesFts'"
+        ).fetchone()
+        assert fts is not None
+    empty = client.get("/api/unlocode").get_json()
+    assert empty["pagination"]["total"] == 2
+
+
+def test_icb_and_unloco_create_record():
+    migrate()
+    from app import app
+
+    client = app.test_client()
+    icb = client.post(
+        "/api/icb",
+        json={"country": "Chile", "branch": "VAP", "icbCode": "TESTICB01", "groupCode": "CL-FES"},
+    )
+    assert icb.status_code == 201
+    assert icb.get_json()["data"]["icbCode"] == "TESTICB01"
+    assert icb.get_json()["data"]["direction"] == "export"
+    listed = client.get("/api/icb?q=TESTICB01").get_json()
+    assert listed["pagination"]["total"] >= 1
+    missing = client.post("/api/icb", json={"location": "only location"})
+    assert missing.status_code == 400
+
+    unloco = client.post(
+        "/api/unlocode",
+        json={"countryCode": "CL", "countryName": "Chile", "unCode": "CLVAP", "portName": "Valparaiso"},
+    )
+    assert unloco.status_code == 201
+    assert unloco.get_json()["data"]["unCode"] == "CLVAP"
+    found = client.get("/api/unlocode?q=CLVAP").get_json()
+    assert found["pagination"]["total"] == 1
+    assert found["data"][0]["portName"] == "Valparaiso"
+    empty = client.post("/api/unlocode", json={"countryCode": "CL"})
+    assert empty.status_code == 400
 
 
 def test_gca_xlsx_import_summary_and_hbl_join():
@@ -744,6 +850,30 @@ def test_gca_xlsx_import_summary_and_hbl_join():
     assert joined[0]["hblKey"] == "SZ10000001"
     assert joined[0]["orderId"] == "OD1"
     assert joined[0]["category"] == "Human Error"
+
+
+def test_ask_empty_index_returns_without_reindex():
+    migrate()
+    from app import app
+
+    client = app.test_client()
+    status = client.get("/api/ask/status")
+    assert status.status_code == 200
+    payload = status.get_json()["data"]
+    assert "indexing" in payload
+    asked = client.post("/api/ask", json={"question": "how to book an LCL shipment"})
+    assert asked.status_code == 200
+    body = asked.get_json()
+    assert body["success"] is True
+    assert body["data"]["mode"] in ("retrieve", "indexing", "generate")
+
+
+def test_gateway_get_timeout_is_raised_for_heavy_reads():
+    from gateway import GET_TIMEOUT, WRITE_TIMEOUT, _forward_timeout
+
+    assert _forward_timeout("api/lcl/dashboard", "GET") == GET_TIMEOUT
+    assert _forward_timeout("api/unlocode", "GET") == GET_TIMEOUT
+    assert _forward_timeout("api/lcl/import", "POST") == WRITE_TIMEOUT
 
 
 if __name__ == "__main__":

@@ -70,7 +70,9 @@ const AskWorkspace = forwardRef(function AskWorkspace({ onNotice, onRefreshLogs,
     <div className="ask-layout">
       {chunkCount === 0 ? (
         <div className="ask-banner">
-          The index is empty. Upload files or save SOPs, then rebuild the index.
+          {status?.indexing
+            ? "Indexing files and SOPs. You can ask again in a moment."
+            : "The index is empty. Upload files or save SOPs, then rebuild the index."}
         </div>
       ) : null}
       {!llmEnabled ? (
@@ -112,9 +114,11 @@ const AskWorkspace = forwardRef(function AskWorkspace({ onNotice, onRefreshLogs,
       {result ? (
         <section className="card ask-card ask-result">
           <div className="summary">
-            <strong>{result.mode === "generate" ? "Answer" : "Matches"}</strong>
+            <strong>
+              {result.mode === "generate" ? "Answer" : result.mode === "indexing" ? "Indexing" : "Matches"}
+            </strong>
             <span className={`status-pill ${result.mode === "generate" ? "active" : "planned"}`}>
-              {result.mode === "generate" ? "generated" : "retrieved"}
+              {result.mode === "generate" ? "generated" : result.mode === "indexing" ? "indexing" : "retrieved"}
             </span>
           </div>
           <div className="ask-result-body">

@@ -1,27 +1,32 @@
+import { lazy } from "react";
 import { CalendarDays, ClipboardList, Download, FileText, FolderOpen, Inbox, LayoutDashboard, MessageCircle, Plus, RefreshCw, ScrollText, Upload } from "lucide-react";
 import LeaveForecast from "./LeaveForecast";
 import Dashboard from "./Dashboard";
-import RecordsWorkspace from "./RecordsWorkspace";
-import FeedbackWorkspace from "./FeedbackWorkspace";
-import FileManager from "./FileManager";
-import SopWorkspace from "./SopWorkspace";
-import AskWorkspace from "./AskWorkspace";
-import ActivityLog from "./ActivityLog";
 
-function SearchActions({ recordsRef, recordsImporting, searchTab }) {
-  const catalogTab = searchTab === "icb" || searchTab === "unlocode";
+function lazyTool(loader) {
+  const Component = lazy(loader);
+  Component.preload = loader;
+  return Component;
+}
+
+const RecordsWorkspace = lazyTool(() => import("./RecordsWorkspace"));
+const FeedbackWorkspace = lazyTool(() => import("./FeedbackWorkspace"));
+const FileManager = lazyTool(() => import("./FileManager"));
+const SopWorkspace = lazyTool(() => import("./SopWorkspace"));
+const AskWorkspace = lazyTool(() => import("./AskWorkspace"));
+const ActivityLog = lazyTool(() => import("./ActivityLog"));
+
+function SearchActions({ recordsRef, recordsImporting }) {
   return (
     <>
-      <button className={catalogTab ? "primary" : "ghost"} type="button" onClick={() => recordsRef.current?.openUpload()} disabled={recordsImporting}>
+      <button className="ghost" type="button" onClick={() => recordsRef.current?.openUpload()} disabled={recordsImporting}>
         <Upload size={16} />
         {recordsImporting ? "Importing..." : "Import CSV"}
       </button>
-      {catalogTab ? null : (
-        <button className="primary" type="button" onClick={() => recordsRef.current?.openNew()}>
-          <Plus size={16} />
-          Add record
-        </button>
-      )}
+      <button className="primary" type="button" onClick={() => recordsRef.current?.openNew()}>
+        <Plus size={16} />
+        Add record
+      </button>
     </>
   );
 }

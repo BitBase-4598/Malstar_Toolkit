@@ -4,7 +4,9 @@ Tencent Cloud security groups on this CVM allow 80 but not 8080.
 This gateway keeps Time Motion Tracker Pro at / and exposes Customer Remarks at /remarks/.
 """
 
+import json
 import os
+import socket
 import urllib.error
 import urllib.request
 
@@ -28,6 +30,11 @@ SKIP_RES_HEADERS = {
     "content-encoding",
     "content-length",
 }
+CHUNK_SIZE = 64 * 1024
+GET_TIMEOUT = 300
+WRITE_TIMEOUT = 900
+HEAVY_GET_PREFIXES = ("/api/lcl", "/api/unlocode")
+
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 512 * 1024 * 1024
@@ -40,6 +47,20 @@ def route_remarks_first():
     if path == "/remarks" or path.startswith("/remarks/"):
         subpath = path[len("/remarks"):].lstrip("/")
         return _forward(REMARKS_UPSTREAM, subpath)
+
+
+def _forward_timeout(subpath, method):
+    if method in {"POST", "PUT", "PATCH"}:
+        return WRITE_TIMEOUT
+    path = "/" + str(subpath or "").lstrip("/")
+    if any(path.startswith(prefix) for prefix in HEAVY_GET_PREFIXES):
+        return GET_TIMEOUT
+    return GET_TIMEOUT
+
+
+def _json_error(message, status):
+    payload = json.dumps({"success": False, "message": message})
+    return Response(payload, status, [("Content-Type", "application/json")])
 
 
 def _forward(target_base, subpath=""):
@@ -59,22 +80,54 @@ def _forward(target_base, subpath=""):
         headers=headers,
         method=request.method,
     )
-    timeout = 900 if request.method in {"POST", "PUT", "PATCH"} else 120
+    timeout = _forward_timeout(subpath, request.method)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as response:
-            out_headers = [
-                (key, value)
-                for key, value in response.headers.items()
-                if key.lower() not in SKIP_RES_HEADERS
-            ]
-            return Response(response.read(), response.status, out_headers)
+        response = urllib.request.urlopen(req, timeout=timeout)
     except urllib.error.HTTPError as error:
         out_headers = [
             (key, value)
             for key, value in error.headers.items()
             if key.lower() not in SKIP_RES_HEADERS
         ]
-        return Response(error.read(), error.code, out_headers)
+
+        def error_chunks():
+            try:
+                while True:
+                    chunk = error.read(CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    yield chunk
+            finally:
+                error.close()
+
+        return Response(error_chunks(), error.code, out_headers)
+    except TimeoutError:
+        return _json_error("The request timed out.", 504)
+    except socket.timeout:
+        return _json_error("The request timed out.", 504)
+    except urllib.error.URLError as error:
+        reason = error.reason
+        if isinstance(reason, (TimeoutError, socket.timeout)):
+            return _json_error("The request timed out.", 504)
+        return _json_error("The upstream service is unavailable.", 502)
+
+    out_headers = [
+        (key, value)
+        for key, value in response.headers.items()
+        if key.lower() not in SKIP_RES_HEADERS
+    ]
+
+    def body_chunks():
+        try:
+            while True:
+                chunk = response.read(CHUNK_SIZE)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            response.close()
+
+    return Response(body_chunks(), response.status, out_headers)
 
 
 @app.route("/remarks", methods=["GET", "HEAD"])

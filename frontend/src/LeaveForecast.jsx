@@ -90,7 +90,17 @@ function PersonPicker({ names, value, onChange, disabled }) {
   const wrapRef = useRef(null);
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
-  const matches = names.filter((name) => name.toLowerCase().includes(String(value || "").trim().toLowerCase()));
+  const [filter, setFilter] = useState(value);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setFilter(value), 150);
+    return () => clearTimeout(timer);
+  }, [value]);
+
+  const matches = useMemo(
+    () => names.filter((name) => name.toLowerCase().includes(String(filter || "").trim().toLowerCase())),
+    [names, filter]
+  );
 
   useEffect(() => {
     const onDoc = (event) => {

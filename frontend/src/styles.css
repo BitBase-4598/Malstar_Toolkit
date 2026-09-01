@@ -2999,6 +2999,12 @@ html.lcl-html #root {
   transition: opacity var(--motion-ui) var(--motion-ease);
 }
 
+.dash-layout.is-loading .dash-section,
+.dash-layout.is-loading .wide-table {
+  opacity: 0.72;
+  transition: opacity var(--motion-ui) var(--motion-ease);
+}
+
 .lcl-empty {
   margin: 0;
   padding: 28px;

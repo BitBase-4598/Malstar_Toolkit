@@ -251,3 +251,42 @@ def list_icb_stations(query="", page=1, page_size=100):
         },
         "meta": meta,
     }
+
+
+def bump_icb_row_count(conn, delta=1):
+    conn.execute(
+        """
+        INSERT INTO IcbImportMeta (ID, Filename, ImportedAt, RowCount)
+        VALUES (1, 'manual', '', ?)
+        ON CONFLICT(ID) DO UPDATE SET RowCount=IcbImportMeta.RowCount + excluded.RowCount
+        """,
+        (max(int(delta), 0),),
+    )
+
+
+def create_icb_station(payload):
+    country = clean_text((payload or {}).get("country"))
+    location = clean_text((payload or {}).get("location"))
+    branch = clean_text((payload or {}).get("branch"))
+    unloco = flatten_unloco((payload or {}).get("unloco"))
+    group_code = clean_text((payload or {}).get("groupCode"))
+    group_name = clean_text((payload or {}).get("groupName"))
+    agent_code = clean_text((payload or {}).get("agentCode"))
+    icb_code = clean_text((payload or {}).get("icbCode"))
+    notes = clean_text((payload or {}).get("notes"))
+    if not any((country, branch, icb_code)):
+        return None, "Country, CW1 Branch, or ICB code is required."
+    direction = direction_from_group(group_code, group_name)
+    with get_connection() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO IcbStations (
+                Country, Location, Branch, Unloco, GroupCode, GroupName,
+                AgentCode, IcbCode, Notes, Direction
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (country, location, branch, unloco, group_code, group_name, agent_code, icb_code, notes, direction),
+        )
+        bump_icb_row_count(conn)
+        row = conn.execute("SELECT * FROM IcbStations WHERE ID=?", (cur.lastrowid,)).fetchone()
+    return row_to_dict(row), None

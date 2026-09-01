@@ -134,12 +134,23 @@ function DayChart({ items }) {
   );
 }
 
+function pageWindow(totalPages, current, radius = 20) {
+  const last = Math.max(1, totalPages || 1);
+  const safe = Math.min(Math.max(current || 1, 1), last);
+  if (last <= 40) {
+    return Array.from({ length: last }, (_, index) => index + 1);
+  }
+  const start = Math.max(1, safe - radius);
+  const end = Math.min(last, safe + radius);
+  return Array.from({ length: end - start + 1 }, (_, index) => start + index);
+}
+
 function TablePager({ total, page, pageSize, onPageChange, emptyLabel }) {
   const totalPages = Math.max(1, Math.ceil((total || 0) / (pageSize || 50)) || 1);
   const safePage = Math.min(page, totalPages);
   const from = total === 0 ? 0 : (safePage - 1) * pageSize + 1;
   const to = Math.min(safePage * pageSize, total);
-  const pages = Array.from({ length: totalPages }, (_, index) => index + 1);
+  const pages = pageWindow(totalPages, safePage);
   return (
     <div className="pagination">
       <span>{total === 0 ? emptyLabel : `Showing ${from}–${to} of ${total}`}</span>
@@ -181,6 +192,7 @@ const GcaDashboard = forwardRef(function GcaDashboard(
   const [bookingMeta, setBookingMeta] = useState({ page: 1, total: 0, totalPages: 1, pageSize: GCA_PAGE_SIZE });
   const [feedbackMeta, setFeedbackMeta] = useState({ page: 1, total: 0, totalPages: 1, pageSize: GCA_PAGE_SIZE });
   const [loading, setLoading] = useState(true);
+  const [tablesLoading, setTablesLoading] = useState(false);
   const [importing, setImporting] = useState(false);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -195,21 +207,12 @@ const GcaDashboard = forwardRef(function GcaDashboard(
     onImportingChange?.(importing);
   }, [importing, onImportingChange]);
 
-  const load = useCallback(async () => {
+  const loadSummary = useCallback(async (signal) => {
     setLoading(true);
     try {
-      const params = { dateFrom, dateTo, lane, pageSize: GCA_PAGE_SIZE };
-      const [summaryResult, bookingResult, feedbackResult] = await Promise.all([
-        api.getGcaSummary({ dateFrom, dateTo, lane }),
-        api.listGcaBookings({ ...params, page: bookingPage }),
-        api.listGcaFeedback({ ...params, page: feedbackPage }),
-      ]);
+      const summaryResult = await api.getGcaSummary({ dateFrom, dateTo, lane }, { signal });
       const payload = summaryResult.data || null;
       setData(payload);
-      setBookings(bookingResult.data || []);
-      setBookingMeta(bookingResult.pagination || { page: 1, total: 0, totalPages: 1, pageSize: GCA_PAGE_SIZE });
-      setFeedback(feedbackResult.data || []);
-      setFeedbackMeta(feedbackResult.pagination || { page: 1, total: 0, totalPages: 1, pageSize: GCA_PAGE_SIZE });
       if (!dateFrom && payload?.meta?.dateFrom) {
         setDateFrom(payload.meta.dateFrom);
       }
@@ -217,15 +220,70 @@ const GcaDashboard = forwardRef(function GcaDashboard(
         setDateTo(payload.meta.dateTo);
       }
     } catch (error) {
+      if (error.name === "AbortError") {
+        return;
+      }
       onNotice?.({ type: "error", text: error.message });
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo, lane, bookingPage, feedbackPage, reloadSeq, onNotice]);
+  }, [dateFrom, dateTo, lane, reloadSeq, onNotice]);
+
+  const loadBookings = useCallback(async (signal) => {
+    setTablesLoading(true);
+    try {
+      const bookingResult = await api.listGcaBookings(
+        { dateFrom, dateTo, lane, pageSize: GCA_PAGE_SIZE, page: bookingPage },
+        { signal }
+      );
+      setBookings(bookingResult.data || []);
+      setBookingMeta(bookingResult.pagination || { page: 1, total: 0, totalPages: 1, pageSize: GCA_PAGE_SIZE });
+    } catch (error) {
+      if (error.name === "AbortError") {
+        return;
+      }
+      onNotice?.({ type: "error", text: error.message });
+    } finally {
+      setTablesLoading(false);
+    }
+  }, [dateFrom, dateTo, lane, bookingPage, reloadSeq, onNotice]);
+
+  const loadFeedback = useCallback(async (signal) => {
+    setTablesLoading(true);
+    try {
+      const feedbackResult = await api.listGcaFeedback(
+        { dateFrom, dateTo, lane, pageSize: GCA_PAGE_SIZE, page: feedbackPage },
+        { signal }
+      );
+      setFeedback(feedbackResult.data || []);
+      setFeedbackMeta(feedbackResult.pagination || { page: 1, total: 0, totalPages: 1, pageSize: GCA_PAGE_SIZE });
+    } catch (error) {
+      if (error.name === "AbortError") {
+        return;
+      }
+      onNotice?.({ type: "error", text: error.message });
+    } finally {
+      setTablesLoading(false);
+    }
+  }, [dateFrom, dateTo, lane, feedbackPage, reloadSeq, onNotice]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    const controller = new AbortController();
+    loadSummary(controller.signal);
+    return () => controller.abort();
+  }, [loadSummary]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    loadBookings(controller.signal);
+    return () => controller.abort();
+  }, [loadBookings]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    loadFeedback(controller.signal);
+    return () => controller.abort();
+  }, [loadFeedback]);
 
   const upload = async (event) => {
     const file = event.target.files?.[0];
@@ -255,7 +313,7 @@ const GcaDashboard = forwardRef(function GcaDashboard(
   const empty = !meta?.rowCount;
 
   return (
-    <div className={`dash-layout${embedded ? " gca-embedded" : ""}`}>
+    <div className={`dash-layout${embedded ? " gca-embedded" : ""}${loading || tablesLoading ? " is-loading" : ""}`}>
       <input ref={inputRef} hidden type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={upload} />
       <div className="dash-toolbar">
         <div>

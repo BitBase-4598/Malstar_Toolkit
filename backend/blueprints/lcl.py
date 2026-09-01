@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, request
 
 from logging_util import audit
-from services.lcl import build_dashboard, build_map, build_summary, import_lcl_workbook, list_filter_options
+from services.lcl import build_dashboard, build_map, build_summary, import_lcl_workbook, list_filter_options, split_csv_param
 
 bp = Blueprint("lcl", __name__)
 
@@ -23,7 +23,8 @@ def lcl_summary():
 
 @bp.get("/api/lcl/map")
 def lcl_map():
-    return jsonify({"success": True, "data": build_map(request.args)})
+    include_arrows = bool(split_csv_param(request.args.get("direction")))
+    return jsonify({"success": True, "data": build_map(request.args, include_arrows=include_arrows)})
 
 
 @bp.post("/api/lcl/import")

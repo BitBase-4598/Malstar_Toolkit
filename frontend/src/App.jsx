@@ -210,6 +210,9 @@ export default function App() {
                       if (page.id === "lcl") {
                         import("./LclDashboard");
                       }
+                      if (page.id === "gca") {
+                        import("./GcaDashboard");
+                      }
                     }}
                     onClick={() => changeDashPage(page.id)}
                   >
@@ -290,11 +293,13 @@ export default function App() {
                   className={`page-panel${section === tool.id ? " active" : ""}`}
                   aria-hidden={section !== tool.id}
                 >
-                  {workspaceRef[tool.id] ? (
-                    <Workspace ref={workspaceRef[tool.id]} {...workspaceProps(tool)} />
-                  ) : (
-                    <Workspace {...workspaceProps(tool)} />
-                  )}
+                  <Suspense fallback={<p className="preview-empty">Loading {tool.label}…</p>}>
+                    {workspaceRef[tool.id] ? (
+                      <Workspace ref={workspaceRef[tool.id]} {...workspaceProps(tool)} />
+                    ) : (
+                      <Workspace {...workspaceProps(tool)} />
+                    )}
+                  </Suspense>
                 </div>
               );
             })}

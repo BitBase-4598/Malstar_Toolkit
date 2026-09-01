@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, request
 
 from logging_util import audit
-from services.unloco import import_unloco_csv, list_unlocodes
+from services.unloco import create_unlocode, import_unloco_csv, list_unlocodes
 
 bp = Blueprint("unloco", __name__)
 
@@ -13,6 +13,20 @@ def list_unloco():
     page_size = request.args.get("pageSize", 50, type=int)
     payload = list_unlocodes(q, page, page_size)
     return jsonify({"success": True, **payload})
+
+
+@bp.post("/api/unlocode")
+def create_unloco():
+    row, error = create_unlocode(request.get_json(silent=True) or {})
+    if error:
+        audit("unloco.create", "failure", summary=error)
+        return jsonify({"success": False, "message": error}), 400
+    audit(
+        "unloco.create",
+        summary=f"{row['unCode'] or row['portName']} / {row['countryCode']}",
+        resource_id=str(row["id"]),
+    )
+    return jsonify({"success": True, "message": "UNLOCODE created", "data": row}), 201
 
 
 @bp.post("/api/unlocode/import")

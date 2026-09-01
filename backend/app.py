@@ -146,4 +146,10 @@ if __name__ == "__main__":
     host = os.environ.get("FLASK_HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", os.environ.get("FLASK_PORT", "5000")))
     debug = os.environ.get("FLASK_DEBUG", "false").lower() in ("1", "true", "yes")
-    app.run(host=host, port=port, debug=debug)
+    if debug:
+        app.run(host=host, port=port, debug=True)
+    else:
+        from waitress import serve
+
+        print(f"MALSTAR_Toolkit on http://{host}:{port} (waitress, 1 process, 8 threads)")
+        serve(app, host=host, port=port, threads=8, channel_timeout=900)

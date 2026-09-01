@@ -1,11 +1,12 @@
 import csv
 import json
 import re
+import sqlite3
 from io import StringIO
 from pathlib import Path
 
 from config import UNLOCODE_CSV_PATH
-from db import get_connection
+from db import get_connection, rebuild_unlocodes_fts
 from util import now_stamp
 
 FLAG_DEFS = (
@@ -140,7 +141,7 @@ def parse_unloco_csv(data):
             {"id": key, "label": label, "on": parse_bool(col(key))}
             for key, label, _header in FLAG_DEFS
         ]
-        search_text = " ".join(part for part in (port_name, un_code, country_code, country_name, category) if part)
+        search_text = " ".join(part for part in (port_name, un_code, country_code, country_name) if part)
         records.append({
             "portName": port_name,
             "unCode": un_code,
@@ -193,6 +194,7 @@ def import_unloco_csv(filename, data):
             """,
             ((filename or "UNLOCODE.csv")[:200], stamp, len(records)),
         )
+        rebuild_unlocodes_fts(conn)
         conn.execute("ANALYZE Unlocodes")
     return {"filename": (filename or "UNLOCODE.csv")[:200], "rowCount": len(records), "importedAt": stamp}, None
 
@@ -208,32 +210,80 @@ def ensure_unloco_loaded():
     return import_unloco_csv(path.name, path.read_bytes())
 
 
+def fts_available(conn):
+    try:
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='UnlocodesFts'"
+        ).fetchone()
+        return bool(row)
+    except sqlite3.OperationalError:
+        return False
+
+
+def fts_match_query(query):
+    tokens = re.findall(r"[A-Za-z0-9]+", query or "")
+    if not tokens:
+        return None
+    return " OR ".join(f"{token}*" for token in tokens[:8])
+
+
 def list_unlocodes(query="", page=1, page_size=50):
     q = clean_text(query)
     page = max(int(page or 1), 1)
     page_size = min(max(int(page_size or 50), 1), 200)
-    where = ""
-    params = []
-    if q:
-        like = f"%{q}%"
-        where = """
-            WHERE CountryName LIKE ? COLLATE NOCASE
-               OR CountryCode LIKE ? COLLATE NOCASE
-               OR UnCode LIKE ? COLLATE NOCASE
-               OR PortName LIKE ? COLLATE NOCASE
-        """
-        params = [like, like, like, like]
+    offset = (page - 1) * page_size
+    order = "CountryCode COLLATE NOCASE, PortName COLLATE NOCASE, UnCode COLLATE NOCASE, ID"
     with get_connection() as conn:
-        total = conn.execute(f"SELECT COUNT(*) FROM Unlocodes {where}", params).fetchone()[0]
-        rows = conn.execute(
-            f"""
-            SELECT * FROM Unlocodes {where}
-            ORDER BY CountryCode COLLATE NOCASE, PortName COLLATE NOCASE, UnCode COLLATE NOCASE, ID
-            LIMIT ? OFFSET ?
-            """,
-            params + [page_size, (page - 1) * page_size],
-        ).fetchall()
         meta_row = conn.execute("SELECT * FROM UnlocoImportMeta WHERE ID=1").fetchone()
+        meta_total = int(meta_row["RowCount"]) if meta_row else 0
+        rows = []
+        total = 0
+        if not q:
+            total = meta_total or conn.execute("SELECT COUNT(*) FROM Unlocodes").fetchone()[0]
+            rows = conn.execute(
+                f"""
+                SELECT * FROM Unlocodes
+                ORDER BY {order}
+                LIMIT ? OFFSET ?
+                """,
+                (page_size, offset),
+            ).fetchall()
+        else:
+            match = fts_match_query(q)
+            used_fts = False
+            if match and fts_available(conn):
+                try:
+                    total = conn.execute(
+                        "SELECT COUNT(*) FROM UnlocodesFts WHERE UnlocodesFts MATCH ?",
+                        (match,),
+                    ).fetchone()[0]
+                    rows = conn.execute(
+                        f"""
+                        SELECT u.* FROM UnlocodesFts
+                        JOIN Unlocodes u ON u.ID = UnlocodesFts.rowid
+                        WHERE UnlocodesFts MATCH ?
+                        ORDER BY u.CountryCode COLLATE NOCASE, u.PortName COLLATE NOCASE,
+                                 u.UnCode COLLATE NOCASE, u.ID
+                        LIMIT ? OFFSET ?
+                        """,
+                        (match, page_size, offset),
+                    ).fetchall()
+                    used_fts = True
+                except sqlite3.OperationalError:
+                    used_fts = False
+            if not used_fts:
+                like = f"%{q}%"
+                where = "WHERE SearchText LIKE ? COLLATE NOCASE"
+                params = [like]
+                total = conn.execute(f"SELECT COUNT(*) FROM Unlocodes {where}", params).fetchone()[0]
+                rows = conn.execute(
+                    f"""
+                    SELECT * FROM Unlocodes {where}
+                    ORDER BY {order}
+                    LIMIT ? OFFSET ?
+                    """,
+                    params + [page_size, offset],
+                ).fetchall()
     meta = {
         "filename": meta_row["Filename"] if meta_row else "",
         "importedAt": meta_row["ImportedAt"] if meta_row else "",
@@ -249,3 +299,49 @@ def list_unlocodes(query="", page=1, page_size=50):
         },
         "meta": meta,
     }
+
+
+def bump_unloco_row_count(conn, delta=1):
+    conn.execute(
+        """
+        INSERT INTO UnlocoImportMeta (ID, Filename, ImportedAt, RowCount)
+        VALUES (1, 'manual', '', ?)
+        ON CONFLICT(ID) DO UPDATE SET RowCount=UnlocoImportMeta.RowCount + excluded.RowCount
+        """,
+        (max(int(delta), 0),),
+    )
+
+
+def create_unlocode(payload):
+    port_name = clean_text((payload or {}).get("portName"))
+    un_code = clean_text((payload or {}).get("unCode")).upper()
+    country_code = clean_text((payload or {}).get("countryCode")).upper()
+    country_name = clean_text((payload or {}).get("countryName"))
+    category = clean_text((payload or {}).get("category"))
+    if not un_code and not port_name:
+        return None, "UNLOCODE or Port is required."
+    flags = [
+        {"id": key, "label": label, "on": False}
+        for key, label, _header in FLAG_DEFS
+    ]
+    search_text = " ".join(part for part in (port_name, un_code, country_code, country_name) if part)
+    with get_connection() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO Unlocodes (
+                PortName, UnCode, CountryCode, CountryName, Category, Flags, SearchText
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                port_name,
+                un_code,
+                country_code,
+                country_name,
+                category,
+                json.dumps(flags, separators=(",", ":")),
+                search_text,
+            ),
+        )
+        bump_unloco_row_count(conn)
+        row = conn.execute("SELECT * FROM Unlocodes WHERE ID=?", (cur.lastrowid,)).fetchone()
+    return row_to_dict(row), None

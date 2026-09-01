@@ -31,6 +31,7 @@ export default function Sidebar({ section, onSectionChange }) {
               key={item.id}
               type="button"
               className={active ? "nav-item active" : "nav-item"}
+              onMouseEnter={() => item.Workspace?.preload?.()}
               onClick={() => onSectionChange(item.id)}
               aria-current={active ? "page" : undefined}
             >

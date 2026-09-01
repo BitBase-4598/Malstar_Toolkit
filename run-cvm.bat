@@ -12,5 +12,5 @@ set FLASK_HOST=0.0.0.0
 set PORT=8080
 set FLASK_DEBUG=false
 echo.
-echo Customer Remarks is starting on http://0.0.0.0:8080
+echo MALSTAR_Toolkit is starting on http://0.0.0.0:8080 (waitress)
 python app.py

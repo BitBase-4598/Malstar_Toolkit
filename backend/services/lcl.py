@@ -7,7 +7,7 @@ from pathlib import Path
 from io import BytesIO
 
 from config import LCL_MAX_UPLOAD_MB
-from db import get_connection
+from db import create_lcl_indexes, create_lcl_shipments_table, get_connection
 from services.lcl_centroids import COUNTRY_CENTROIDS, COUNTRY_NAMES
 from util import now_stamp
 
@@ -190,8 +190,15 @@ def slim_row(fields, values, fallback_direction):
     )
 
 
-INSERT_SQL = """
-    INSERT INTO LclShipments (
+LCL_LIVE = "LclShipments"
+LCL_STAGING = "LclShipments_staging"
+
+
+def insert_sql(table=LCL_LIVE):
+    if table not in {LCL_LIVE, LCL_STAGING}:
+        raise ValueError("invalid LCL table name")
+    return f"""
+    INSERT INTO {table} (
         ShipmentID, Direction, Year, MonthName, YearMonth, JobBranch,
         DestCtry, CountryName, Customer, IsBosch, Weight, Volume,
         DimensionRaw, Pieces, DimL, DimW, DimH, Chargeable
@@ -199,17 +206,17 @@ INSERT_SQL = """
 """
 
 
-def flush_rows(conn, buffer):
+def flush_rows(conn, buffer, table=LCL_LIVE):
     if not buffer:
         return 0
-    conn.executemany(INSERT_SQL, buffer)
+    conn.executemany(insert_sql(table), buffer)
     conn.commit()
     count = len(buffer)
     buffer.clear()
     return count
 
 
-def import_cache(zip_file, definition_name, records_name, direction, conn, batch):
+def import_cache(zip_file, definition_name, records_name, direction, conn, batch, table=LCL_LIVE):
     fields = parse_cache_fields(zip_file.read(definition_name))
     inserted = 0
     buffer = []
@@ -227,10 +234,10 @@ def import_cache(zip_file, definition_name, records_name, direction, conn, batch
             buffer.append(slim_row(fields, values, direction))
             root.remove(elem)
             if len(buffer) >= 2000:
-                inserted += flush_rows(conn, buffer)
+                inserted += flush_rows(conn, buffer, table)
                 if inserted % 20000 == 0:
                     print(f"  {direction}: {inserted:,}", flush=True)
-    inserted += flush_rows(conn, buffer)
+    inserted += flush_rows(conn, buffer, table)
     return inserted
 
 
@@ -305,7 +312,7 @@ def cell_value(elem, strings):
     return text
 
 
-def import_raw_sheet(archive, sheet_path, conn):
+def import_raw_sheet(archive, sheet_path, conn, table=LCL_LIVE):
     strings = load_shared_strings(archive)
     col_map = {}
     header_done = False
@@ -334,8 +341,6 @@ def import_raw_sheet(archive, sheet_path, conn):
                 elem.clear()
                 if len(col_map) < 4:
                     return None, "The Raw sheet headers were not recognized. Use the Raw sheet from the LCL Volume workbook."
-                conn.execute("DELETE FROM LclShipments")
-                conn.execute("DELETE FROM LclImportMeta")
                 continue
             raw = {key: values.get(index) for index, key in col_map.items()}
             if not any((raw.get("shipment_id"), raw.get("dest_ctry"), raw.get("customer"), raw.get("direction"))):
@@ -354,11 +359,40 @@ def import_raw_sheet(archive, sheet_path, conn):
             buffer.append(row)
             elem.clear()
             if len(buffer) >= 2000:
-                flush_rows(conn, buffer)
+                flush_rows(conn, buffer, table)
     if not header_done:
         return None, "The Raw sheet is empty."
-    flush_rows(conn, buffer)
+    flush_rows(conn, buffer, table)
     return {"exportCount": export_count, "importCount": import_count}, None
+
+
+def _prepare_lcl_staging(conn):
+    conn.execute(f"DROP TABLE IF EXISTS {LCL_STAGING}")
+    create_lcl_shipments_table(conn, LCL_STAGING)
+    conn.commit()
+
+
+def _drop_lcl_staging(conn):
+    conn.execute(f"DROP TABLE IF EXISTS {LCL_STAGING}")
+    conn.commit()
+
+
+def _swap_lcl_staging(conn, filename, stamp, export_count, import_count):
+    conn.commit()
+    conn.execute("BEGIN IMMEDIATE")
+    conn.execute(f"DROP TABLE IF EXISTS {LCL_LIVE}")
+    conn.execute(f"ALTER TABLE {LCL_STAGING} RENAME TO {LCL_LIVE}")
+    create_lcl_indexes(conn, LCL_LIVE)
+    conn.execute("DELETE FROM LclImportMeta")
+    conn.execute(
+        """
+        INSERT INTO LclImportMeta (ID, Filename, ImportedAt, ExportCount, ImportCount)
+        VALUES (1, ?, ?, ?, ?)
+        """,
+        (filename[:200], stamp, export_count, import_count),
+    )
+    conn.commit()
+    conn.execute("ANALYZE LclShipments")
 
 
 def import_lcl_workbook(filename=None, data=None):
@@ -385,40 +419,39 @@ def import_lcl_workbook(filename=None, data=None):
         if not raw_sheet and not has_cache:
             return None, "This workbook has no Raw sheet or LCL pivot cache."
         with get_connection() as conn:
-            if raw_sheet:
-                counts, error = import_raw_sheet(archive, raw_sheet, conn)
-                if error:
-                    return None, error
-                export_count = counts["exportCount"]
-                import_count = counts["importCount"]
-            else:
-                conn.execute("DELETE FROM LclShipments")
-                conn.execute("DELETE FROM LclImportMeta")
-                export_count = import_cache(
-                    archive,
-                    "xl/pivotCache/pivotCacheDefinition1.xml",
-                    "xl/pivotCache/pivotCacheRecords1.xml",
-                    "Export",
-                    conn,
-                    None,
-                )
-                if "xl/pivotCache/pivotCacheDefinition2.xml" in names:
-                    import_count = import_cache(
+            _prepare_lcl_staging(conn)
+            try:
+                if raw_sheet:
+                    counts, error = import_raw_sheet(archive, raw_sheet, conn, LCL_STAGING)
+                    if error:
+                        _drop_lcl_staging(conn)
+                        return None, error
+                    export_count = counts["exportCount"]
+                    import_count = counts["importCount"]
+                else:
+                    export_count = import_cache(
                         archive,
-                        "xl/pivotCache/pivotCacheDefinition2.xml",
-                        "xl/pivotCache/pivotCacheRecords2.xml",
-                        "Import",
+                        "xl/pivotCache/pivotCacheDefinition1.xml",
+                        "xl/pivotCache/pivotCacheRecords1.xml",
+                        "Export",
                         conn,
                         None,
+                        LCL_STAGING,
                     )
-            conn.execute(
-                """
-                INSERT INTO LclImportMeta (ID, Filename, ImportedAt, ExportCount, ImportCount)
-                VALUES (1, ?, ?, ?, ?)
-                """,
-                (name[:200], stamp, export_count, import_count),
-            )
-            conn.execute("ANALYZE LclShipments")
+                    if "xl/pivotCache/pivotCacheDefinition2.xml" in names:
+                        import_count = import_cache(
+                            archive,
+                            "xl/pivotCache/pivotCacheDefinition2.xml",
+                            "xl/pivotCache/pivotCacheRecords2.xml",
+                            "Import",
+                            conn,
+                            None,
+                            LCL_STAGING,
+                        )
+                _swap_lcl_staging(conn, name, stamp, export_count, import_count)
+            except Exception:
+                _drop_lcl_staging(conn)
+                raise
     finally:
         archive.close()
     clear_lcl_cache()
@@ -732,8 +765,9 @@ def build_dashboard(args):
     if cached is not None:
         return cached
     include_arrows = bool(split_csv_param((args or {}).get("direction")))
+    filters = list_filter_options()
     payload = {
-        "filters": list_filter_options(),
+        "filters": filters,
         "summary": build_summary(args),
         "map": build_map(args, include_arrows=include_arrows),
     }

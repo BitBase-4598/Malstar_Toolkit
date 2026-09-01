@@ -9,7 +9,7 @@ def get_connection():
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA busy_timeout=30000")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA cache_size=-32768")
     conn.execute("PRAGMA temp_store=MEMORY")
@@ -244,38 +244,8 @@ def _create_tables(conn):
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_case_files_case ON CaseFiles (CaseID, ID DESC)"
     )
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS LclShipments (
-            ID INTEGER PRIMARY KEY AUTOINCREMENT,
-            ShipmentID TEXT NOT NULL DEFAULT '',
-            Direction TEXT NOT NULL DEFAULT '',
-            Year TEXT NOT NULL DEFAULT '',
-            MonthName TEXT NOT NULL DEFAULT '',
-            YearMonth TEXT NOT NULL DEFAULT '',
-            JobBranch TEXT NOT NULL DEFAULT '',
-            DestCtry TEXT NOT NULL DEFAULT '',
-            CountryName TEXT NOT NULL DEFAULT '',
-            Customer TEXT NOT NULL DEFAULT '',
-            IsBosch INTEGER NOT NULL DEFAULT 0,
-            Weight REAL,
-            Volume REAL,
-            DimensionRaw TEXT NOT NULL DEFAULT '',
-            Pieces REAL,
-            DimL REAL,
-            DimW REAL,
-            DimH REAL,
-            Chargeable REAL
-        )
-    """)
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_lcl_year ON LclShipments (Year)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_lcl_month ON LclShipments (MonthName)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_lcl_year_month ON LclShipments (Year, MonthName)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_lcl_branch ON LclShipments (JobBranch)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_lcl_direction ON LclShipments (Direction)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_lcl_dest ON LclShipments (DestCtry)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_lcl_dest_name ON LclShipments (DestCtry, CountryName)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_lcl_bosch ON LclShipments (IsBosch)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_lcl_customer ON LclShipments (Customer)")
+    create_lcl_shipments_table(conn)
+    create_lcl_indexes(conn)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS LclImportMeta (
             ID INTEGER PRIMARY KEY CHECK (ID = 1),
@@ -328,6 +298,7 @@ def _create_tables(conn):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_unloco_code ON Unlocodes (UnCode)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_unloco_country ON Unlocodes (CountryCode)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_unloco_search ON Unlocodes (SearchText)")
+    _ensure_unlocodes_fts(conn)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS UnlocoImportMeta (
             ID INTEGER PRIMARY KEY CHECK (ID = 1),
@@ -432,6 +403,94 @@ def _create_tables(conn):
                 VALUES (new.ID, new.Title, new.Locator, new.Body);
             END
         """)
+    except sqlite3.OperationalError:
+        pass
+
+
+LCL_TABLES = {"LclShipments", "LclShipments_staging"}
+LCL_SHIPMENTS_DDL = """
+    ID INTEGER PRIMARY KEY AUTOINCREMENT,
+    ShipmentID TEXT NOT NULL DEFAULT '',
+    Direction TEXT NOT NULL DEFAULT '',
+    Year TEXT NOT NULL DEFAULT '',
+    MonthName TEXT NOT NULL DEFAULT '',
+    YearMonth TEXT NOT NULL DEFAULT '',
+    JobBranch TEXT NOT NULL DEFAULT '',
+    DestCtry TEXT NOT NULL DEFAULT '',
+    CountryName TEXT NOT NULL DEFAULT '',
+    Customer TEXT NOT NULL DEFAULT '',
+    IsBosch INTEGER NOT NULL DEFAULT 0,
+    Weight REAL,
+    Volume REAL,
+    DimensionRaw TEXT NOT NULL DEFAULT '',
+    Pieces REAL,
+    DimL REAL,
+    DimW REAL,
+    DimH REAL,
+    Chargeable REAL
+"""
+
+
+def create_lcl_shipments_table(conn, name="LclShipments"):
+    if name not in LCL_TABLES:
+        raise ValueError("invalid LCL table name")
+    conn.execute(f"CREATE TABLE IF NOT EXISTS {name} ({LCL_SHIPMENTS_DDL})")
+
+
+def create_lcl_indexes(conn, table="LclShipments"):
+    if table not in LCL_TABLES:
+        raise ValueError("invalid LCL table name")
+    conn.execute(f"CREATE INDEX IF NOT EXISTS idx_lcl_year ON {table} (Year)")
+    conn.execute(f"CREATE INDEX IF NOT EXISTS idx_lcl_month ON {table} (MonthName)")
+    conn.execute(f"CREATE INDEX IF NOT EXISTS idx_lcl_year_month ON {table} (Year, MonthName)")
+    conn.execute(f"CREATE INDEX IF NOT EXISTS idx_lcl_branch ON {table} (JobBranch)")
+    conn.execute(f"CREATE INDEX IF NOT EXISTS idx_lcl_direction ON {table} (Direction)")
+    conn.execute(f"CREATE INDEX IF NOT EXISTS idx_lcl_dest ON {table} (DestCtry)")
+    conn.execute(f"CREATE INDEX IF NOT EXISTS idx_lcl_dest_name ON {table} (DestCtry, CountryName)")
+    conn.execute(f"CREATE INDEX IF NOT EXISTS idx_lcl_bosch ON {table} (IsBosch)")
+    conn.execute(f"CREATE INDEX IF NOT EXISTS idx_lcl_customer ON {table} (Customer)")
+
+
+def _ensure_unlocodes_fts(conn):
+    try:
+        conn.execute("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS UnlocodesFts USING fts5(
+                PortName,
+                UnCode,
+                CountryCode,
+                CountryName,
+                content='Unlocodes',
+                content_rowid='ID',
+                tokenize='unicode61'
+            )
+        """)
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS unlocodes_ai AFTER INSERT ON Unlocodes BEGIN
+                INSERT INTO UnlocodesFts(rowid, PortName, UnCode, CountryCode, CountryName)
+                VALUES (new.ID, new.PortName, new.UnCode, new.CountryCode, new.CountryName);
+            END
+        """)
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS unlocodes_ad AFTER DELETE ON Unlocodes BEGIN
+                INSERT INTO UnlocodesFts(UnlocodesFts, rowid, PortName, UnCode, CountryCode, CountryName)
+                VALUES ('delete', old.ID, old.PortName, old.UnCode, old.CountryCode, old.CountryName);
+            END
+        """)
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS unlocodes_au AFTER UPDATE ON Unlocodes BEGIN
+                INSERT INTO UnlocodesFts(UnlocodesFts, rowid, PortName, UnCode, CountryCode, CountryName)
+                VALUES ('delete', old.ID, old.PortName, old.UnCode, old.CountryCode, old.CountryName);
+                INSERT INTO UnlocodesFts(rowid, PortName, UnCode, CountryCode, CountryName)
+                VALUES (new.ID, new.PortName, new.UnCode, new.CountryCode, new.CountryName);
+            END
+        """)
+    except sqlite3.OperationalError:
+        pass
+
+
+def rebuild_unlocodes_fts(conn):
+    try:
+        conn.execute("INSERT INTO UnlocodesFts(UnlocodesFts) VALUES('rebuild')")
     except sqlite3.OperationalError:
         pass
 
@@ -563,5 +622,25 @@ def migrate():
             _set_schema_version(conn, 3)
         if current < 4:
             _set_schema_version(conn, 4)
+        if current < 6:
+            conn.execute("DROP TRIGGER IF EXISTS unlocodes_ai")
+            conn.execute("DROP TRIGGER IF EXISTS unlocodes_ad")
+            conn.execute("DROP TRIGGER IF EXISTS unlocodes_au")
+            try:
+                conn.execute("DROP TABLE IF EXISTS UnlocodesFts")
+            except sqlite3.DatabaseError:
+                pass
+            try:
+                conn.execute(
+                    """
+                    UPDATE Unlocodes
+                    SET SearchText = trim(PortName || ' ' || UnCode || ' ' || CountryCode || ' ' || CountryName)
+                    """
+                )
+            except sqlite3.DatabaseError:
+                pass
+            _ensure_unlocodes_fts(conn)
+            rebuild_unlocodes_fts(conn)
+            _set_schema_version(conn, 6)
         if current < SCHEMA_VERSION:
             _set_schema_version(conn, SCHEMA_VERSION)

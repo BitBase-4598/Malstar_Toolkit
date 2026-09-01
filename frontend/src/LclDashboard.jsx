@@ -291,9 +291,9 @@ const LclDashboard = forwardRef(function LclDashboard({ embedded = false, onNoti
     };
   }, [filters]);
 
-  const loadFilters = useCallback(async () => {
+  const loadFilters = useCallback(async (signal) => {
     try {
-      const filterResult = await api.lclFilters();
+      const filterResult = await api.lclFilters({ signal });
       setOptions(filterResult.data || {
         years: [],
         months: [],
@@ -303,6 +303,9 @@ const LclDashboard = forwardRef(function LclDashboard({ embedded = false, onNoti
         meta: {},
       });
     } catch (error) {
+      if (error.name === "AbortError") {
+        return;
+      }
       if (embedded) {
         onNotice?.({ type: "error", text: error.message });
       } else {
@@ -311,22 +314,33 @@ const LclDashboard = forwardRef(function LclDashboard({ embedded = false, onNoti
     }
   }, [embedded, onNotice]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal) => {
     setLoading(true);
     try {
-      const result = await api.lclDashboard(query);
-      const data = result.data || {};
-      if (data.filters) {
-        setOptions(data.filters);
-      }
-      setSummary(data.summary || null);
-      const mapData = data.map;
+      const [filterResult, summaryResult] = await Promise.all([
+        api.lclFilters({ signal }),
+        api.lclSummary(query, { signal }),
+      ]);
+      setOptions(filterResult.data || {
+        years: [],
+        months: [],
+        branches: [],
+        directions: [],
+        countries: [],
+        meta: {},
+      });
+      setSummary(summaryResult.data || null);
+      const mapResult = await api.lclMap(query, { signal });
+      const mapData = mapResult.data;
       setMapPoints(Array.isArray(mapData) ? mapData : mapData?.points || []);
       setMapArrows(Array.isArray(mapData) ? [] : mapData?.arrows || []);
       if (!embedded) {
         setNotice("");
       }
     } catch (error) {
+      if (error.name === "AbortError") {
+        return;
+      }
       if (embedded) {
         onNotice?.({ type: "error", text: error.message });
       } else {
@@ -338,11 +352,15 @@ const LclDashboard = forwardRef(function LclDashboard({ embedded = false, onNoti
   }, [query, embedded, onNotice]);
 
   useEffect(() => {
+    const controller = new AbortController();
     const hasFilters = Object.values(query).some((value) => (Array.isArray(value) ? value.length : value));
     const timer = setTimeout(() => {
-      load();
+      load(controller.signal);
     }, hasFilters ? 160 : 0);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [load, query]);
 
   useEffect(() => {
