@@ -18,20 +18,27 @@ bp = Blueprint("remarks", __name__)
 
 @bp.get("/api/customer-remarks")
 def list_records():
-    q_letters = letters_only(request.args.get("q", ""))
+    q_raw = str(request.args.get("q") or "").strip()
+    q_letters = letters_only(q_raw)
+    q_code = q_raw.upper()
     page = max(request.args.get("page", 1, type=int), 1)
     page_size = min(max(request.args.get("pageSize", 20, type=int), 1), 10000)
+    clauses = []
+    params = []
     if q_letters:
-        where = """WHERE CustomerLetters != '' AND (
-                       instr(CustomerLetters, ?) > 0
-                       OR instr(?, CustomerLetters) > 0
-                   )"""
-        params = [q_letters, q_letters]
-    else:
-        where = ""
-        params = []
+        clauses.append(
+            """CustomerLetters != '' AND (
+                   instr(CustomerLetters, ?) > 0
+                   OR instr(?, CustomerLetters) > 0
+               )"""
+        )
+        params.extend([q_letters, q_letters])
+    if q_code:
+        clauses.append("instr(upper(CTRLOrgcode), ?) > 0")
+        params.append(q_code)
+    where = f"WHERE {' OR '.join(f'({clause})' for clause in clauses)}" if clauses else ""
     with get_connection() as conn:
-        if q_letters:
+        if where:
             total = conn.execute(
                 f"SELECT COUNT(*) FROM CustomerRemarks {where}", params
             ).fetchone()[0]

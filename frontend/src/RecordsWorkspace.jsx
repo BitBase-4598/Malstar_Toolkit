@@ -8,7 +8,6 @@ import RecordModal from "./RecordModal";
 import CatalogInsertModal from "./CatalogInsertModal";
 import IcbTable from "./IcbTable";
 import UnlocoTable from "./UnlocoTable";
-import { lettersOnly } from "./letters";
 
 const emptyForm = {
   ctrlOrgcode: "",
@@ -97,7 +96,7 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
   const [unlocoLoading, setUnlocoLoading] = useState(false);
   const unlocoLoadSeq = useRef(0);
 
-  const remarksQuery = lettersOnly(debounced);
+  const remarksQuery = debounced.trim();
   const cacheKey = (q, targetPage) => `${q}|${targetPage}`;
 
   const invalidateRecordPages = () => {
@@ -696,7 +695,9 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
           placeholder={
             searchTab === "unlocode"
               ? "Country name, country, UNLOCODE, or port"
-              : "Company, port, UNLOCODE, or ICB code"
+              : searchTab === "icb"
+                ? "Company, port, UNLOCODE, or ICB code"
+                : "Company name or CTRLOrgcode"
           }
           aria-describedby="search-hint"
         />
@@ -729,7 +730,7 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
             ? icbMeta.rowCount
               ? `${icbMeta.filename || "ICB.csv"} · ${icbMeta.rowCount} stations${icbMeta.importedAt ? ` · ${icbMeta.importedAt}` : ""}. Search country, branch, UNLOCO, agent, or ICB.`
               : "Import ICB.csv to load stations. Search country, branch, UNLOCO, agent, or ICB."
-            : "Remarks match letters in the company name. Punctuation and numbers are ignored."}
+            : "Company names match letters only. CTRLOrgcode matches the code as typed."}
       </p>
       {searchTab === "unlocode" ? (
         <UnlocoTable

@@ -170,6 +170,19 @@ def test_get_list_does_not_audit():
     assert after == before
 
 
+def test_remarks_search_matches_orgcode():
+    migrate()
+    from app import app
+
+    client = app.test_client()
+    by_code = client.get("/api/customer-remarks?q=CQN").get_json()
+    assert by_code["pagination"]["total"] >= 1
+    assert all(row["ctrlOrgcode"] == "CQN" for row in by_code["data"])
+    by_name = client.get("/api/customer-remarks?q=Demo").get_json()
+    assert by_name["pagination"]["total"] >= 1
+    assert any("demo" in row["customer"].casefold() for row in by_name["data"])
+
+
 def test_unhandled_api_exception_is_audited():
     migrate()
     from app import create_app
