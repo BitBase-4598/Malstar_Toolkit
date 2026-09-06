@@ -33,7 +33,7 @@ export default function FilePreview({ preview, loading }) {
   }, [imageOpen]);
 
   if (loading) {
-    return <p className="preview-empty">Loading preview...</p>;
+    return <p className="preview-empty">Loading preview…</p>;
   }
   if (!preview) {
     return <p className="preview-empty">Select a file to preview.</p>;

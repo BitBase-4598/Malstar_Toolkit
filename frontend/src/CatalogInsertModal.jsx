@@ -1,5 +1,5 @@
-import { useEffect } from "react";
 import { Save, X } from "lucide-react";
+import ModalShell from "./ModalShell";
 
 const ICB_FIELDS = [
   { key: "country", label: "Country", required: true },
@@ -34,61 +34,49 @@ export default function CatalogInsertModal({ kind, form, saving, editing, onChan
     ? "Country, CW1 Branch, or ICB code identifies the station."
     : "Country and UNLOCODE identify the location.";
 
-  useEffect(() => {
-    const onKeyDown = (event) => {
-      if (event.key === "Escape" && !saving) {
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose, saving]);
-
   const update = (field) => (event) => onChange({ ...form, [field]: event.target.value });
 
   return (
-    <div className="overlay" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !saving && onClose()}>
-      <form className="modal" onSubmit={onSubmit}>
-        <div className="modal-head">
-          <div>
-            <h2>{title}</h2>
-            <p>{hint}</p>
-          </div>
-          <button type="button" onClick={onClose} disabled={saving} aria-label="Close">
-            <X size={18} />
-          </button>
+    <ModalShell as="form" busy={saving} onClose={onClose} onSubmit={onSubmit} labelledBy="catalog-modal-title">
+      <div className="modal-head">
+        <div>
+          <h2 id="catalog-modal-title">{title}</h2>
+          <p>{hint}</p>
         </div>
-        <div className="grid">
-          {fields.map((field) => (
-            <label key={field.key} className={field.key === "notes" || field.key === "category" ? "wide" : undefined}>
-              {field.label}
-              {field.required ? " *" : ""}
-              <input
-                required={Boolean(field.required)}
-                name={field.key}
-                value={form[field.key] || ""}
-                onChange={update(field.key)}
-                disabled={saving}
-              />
-            </label>
-          ))}
-          {isIcb ? (
-            <label className="wide">
-              Notes
-              <textarea rows="2" value={form.notes || ""} onChange={update("notes")} disabled={saving} />
-            </label>
-          ) : null}
-        </div>
-        <div className="modal-actions">
-          <button type="button" className="secondary" onClick={onClose} disabled={saving}>
-            Cancel
-          </button>
-          <button className="primary" disabled={saving}>
-            <Save size={16} />
-            {saving ? "Saving..." : "Save"}
-          </button>
-        </div>
-      </form>
-    </div>
+        <button type="button" onClick={onClose} disabled={saving} aria-label="Close">
+          <X size={18} />
+        </button>
+      </div>
+      <div className="grid">
+        {fields.map((field) => (
+          <label key={field.key} className={field.key === "notes" || field.key === "category" ? "wide" : undefined}>
+            {field.label}
+            {field.required ? " *" : ""}
+            <input
+              required={Boolean(field.required)}
+              name={field.key}
+              value={form[field.key] || ""}
+              onChange={update(field.key)}
+              disabled={saving}
+            />
+          </label>
+        ))}
+        {isIcb ? (
+          <label className="wide">
+            Notes
+            <textarea rows="2" value={form.notes || ""} onChange={update("notes")} disabled={saving} />
+          </label>
+        ) : null}
+      </div>
+      <div className="modal-actions">
+        <button type="button" className="secondary" onClick={onClose} disabled={saving}>
+          Cancel
+        </button>
+        <button className="primary" disabled={saving}>
+          <Save size={16} />
+          {saving ? "Saving..." : "Save"}
+        </button>
+      </div>
+    </ModalShell>
   );
 }

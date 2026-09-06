@@ -350,7 +350,7 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
             : `${meta.filename} · ${meta.filteredCount} of ${meta.rowCount} rows · ${meta.uploadedAt}`}
         </p>
       </div>
-      {loading && !data ? <p className="preview-empty">Loading dashboard...</p> : null}
+      {loading && !data ? <p className="preview-empty">Loading dashboard…</p> : null}
       {empty && !loading ? (
         <section className="card dash-empty">
           <p>No dashboard data yet. Upload a daily report with Order Number, Shipment Number, timestamps, and Handled By.</p>

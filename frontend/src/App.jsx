@@ -78,8 +78,8 @@ export default function App() {
     }
     if (notice.type === "success") {
       setToastLeaving(false);
-      const fadeTimer = setTimeout(() => setToastLeaving(true), 1000);
-      const clearTimer = setTimeout(() => setNotice({ type: "", text: "" }), 1300);
+      const fadeTimer = setTimeout(() => setToastLeaving(true), 2400);
+      const clearTimer = setTimeout(() => setNotice({ type: "", text: "" }), 2800);
       return () => {
         clearTimeout(fadeTimer);
         clearTimeout(clearTimer);
@@ -167,6 +167,7 @@ export default function App() {
         filters: logFilters,
         onFiltersChange: setLogFilters,
         total: logTotal,
+        onNotice: setNotice,
       };
     }
     const props = {
@@ -321,7 +322,10 @@ export default function App() {
           className={`toast success${notice.placement === "top" ? " toast-top" : ""}${toastLeaving ? " leaving" : ""}`}
           role="status"
         >
-          {notice.text}
+          <span>{notice.text}</span>
+          <button type="button" onClick={() => setNotice({ type: "", text: "" })} aria-label="Dismiss">
+            <X size={16} />
+          </button>
         </div>
       )}
     </div>

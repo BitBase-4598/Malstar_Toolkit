@@ -78,7 +78,7 @@ export default function UnlocoTable({
             {loading && rows.length === 0 ? (
               <tr>
                 <td colSpan={COPY_FIELDS.length + 1} className="empty">
-                  Loading...
+                  Loading…
                 </td>
               </tr>
             ) : rows.length === 0 ? (

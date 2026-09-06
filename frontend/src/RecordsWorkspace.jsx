@@ -8,6 +8,7 @@ import RecordModal from "./RecordModal";
 import CatalogInsertModal from "./CatalogInsertModal";
 import IcbTable from "./IcbTable";
 import UnlocoTable from "./UnlocoTable";
+import useConfirm from "./useConfirm";
 
 const emptyForm = {
   ctrlOrgcode: "",
@@ -50,6 +51,7 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
   const remarksFileRef = useRef();
   const icbFileRef = useRef();
   const unlocoFileRef = useRef();
+  const [confirm, confirmDialog] = useConfirm();
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [rows, setRows] = useState([]);
@@ -532,7 +534,11 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
   };
 
   const remove = async (row) => {
-    if (!window.confirm(`Delete ${row.ctrlOrgcode} / ${row.customer}?`)) {
+    const ok = await confirm({
+      title: "Delete record",
+      message: `Delete ${row.ctrlOrgcode} / ${row.customer}?`,
+    });
+    if (!ok) {
       return;
     }
     try {
@@ -552,7 +558,11 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
 
   const removeIcb = async (row) => {
     const label = [row.country, row.icbCode || row.branch].filter(Boolean).join(" / ") || "this station";
-    if (!window.confirm(`Delete ${label}?`)) {
+    const ok = await confirm({
+      title: "Delete ICB station",
+      message: `Delete ${label}?`,
+    });
+    if (!ok) {
       return;
     }
     try {
@@ -568,7 +578,11 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
 
   const removeUnloco = async (row) => {
     const label = [row.unCode, row.portName].filter(Boolean).join(" / ") || "this UNLOCODE";
-    if (!window.confirm(`Delete ${label}?`)) {
+    const ok = await confirm({
+      title: "Delete UNLOCODE",
+      message: `Delete ${label}?`,
+    });
+    if (!ok) {
       return;
     }
     try {
@@ -792,6 +806,7 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
           onSubmit={catalogKind === "icb" ? saveIcb : saveUnloco}
         />
       ) : null}
+      {confirmDialog}
     </>
   );
 });

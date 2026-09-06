@@ -68,7 +68,7 @@ function copyRequestId(requestId) {
   navigator.clipboard.writeText(requestId).catch(() => {});
 }
 
-export default function ActivityLog({ entries, loading, filters, onFiltersChange, total }) {
+export default function ActivityLog({ entries, loading, filters, onFiltersChange, total, onNotice }) {
   const [draft, setDraft] = useState(filters || emptyFilters);
   const [exporting, setExporting] = useState(false);
 
@@ -106,7 +106,7 @@ export default function ActivityLog({ entries, loading, filters, onFiltersChange
       link.click();
       URL.revokeObjectURL(url);
     } catch (error) {
-      window.alert(error.message);
+      onNotice?.({ type: "error", text: error.message });
     } finally {
       setExporting(false);
     }
@@ -178,7 +178,7 @@ export default function ActivityLog({ entries, loading, filters, onFiltersChange
       </div>
       <div className="log-list">
         {loading && entries.length === 0 ? (
-          <p className="log-empty">Loading log...</p>
+          <p className="log-empty">Loading…</p>
         ) : entries.length === 0 ? (
           <p className="log-empty">No matching activity.</p>
         ) : (
