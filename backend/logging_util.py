@@ -63,8 +63,6 @@ ACTION_CATALOG = {
     "gca.import": {"module": "gca", "label": "GCA hypercare imported", "resource_type": "gca"},
     "ask.query": {"module": "ask", "label": "Ask", "resource_type": "ask"},
     "ask.reindex": {"module": "ask", "label": "Ask index rebuilt", "resource_type": "ask"},
-    "wiki.search": {"module": "wiki", "label": "Wiki search", "resource_type": "wiki"},
-    "wiki.reindex": {"module": "wiki", "label": "Wiki rebuilt", "resource_type": "wiki"},
     "server.exception": {"module": "server", "label": "Unhandled exception", "resource_type": "server"},
 }
 
@@ -132,8 +130,6 @@ FAILURE_LABELS = {
     "gca.import": "GCA import failed",
     "ask.query": "Ask failed",
     "ask.reindex": "Ask reindex failed",
-    "wiki.search": "Wiki search failed",
-    "wiki.reindex": "Wiki reindex failed",
     "server.exception": "Unhandled exception",
 }
 

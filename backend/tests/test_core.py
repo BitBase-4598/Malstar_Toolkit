@@ -895,27 +895,6 @@ def test_gca_xlsx_import_summary_and_hbl_join():
     assert joined[0]["category"] == "Human Error"
 
 
-def test_wiki_indexes_remarks_and_guides():
-    migrate()
-    from app import app
-
-    client = app.test_client()
-    rebuilt = client.post("/api/wiki/reindex")
-    assert rebuilt.status_code == 200
-    meta = rebuilt.get_json()["data"]
-    assert meta["pageCount"] >= 5
-    assert meta["sources"]["guide"] >= 4
-    assert meta["sources"]["remark"] >= 3
-    listed = client.get("/api/wiki").get_json()
-    slugs = {row["slug"] for row in listed["data"]}
-    assert "malstar-toolkit" in slugs
-    page = client.get("/api/wiki/malstar-toolkit").get_json()["data"]
-    assert "MALSTAR" in page["title"]
-    found = client.get("/api/wiki/search?q=Priority%20customer").get_json()["data"]
-    assert found
-    assert any("Demo Customer" in item["title"] or "Priority" in item["excerpt"] for item in found)
-
-
 def test_ask_empty_index_returns_without_reindex():
     migrate()
     from app import app

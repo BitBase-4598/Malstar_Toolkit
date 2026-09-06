@@ -11,7 +11,6 @@ from services.rag import (
     reindex_all,
     search_chunks,
 )
-from services.wiki import search_wiki_chunks
 
 bp = Blueprint("ask", __name__)
 
@@ -43,14 +42,7 @@ def ask_question():
         question = question[:ASK_MAX_QUESTION]
     with get_connection() as conn:
         indexing = maybe_backfill_index(conn)
-        rows = list(search_chunks(conn, question))
-        wiki_rows = search_wiki_chunks(conn, question, limit=4)
-        seen = {(row["SourceType"], row["SourceID"], row["Locator"]) for row in rows}
-        for row in wiki_rows:
-            key = (row["SourceType"], row["SourceID"], row["Locator"])
-            if key not in seen:
-                rows.append(row)
-                seen.add(key)
+        rows = search_chunks(conn, question)
     if indexing and not rows:
         audit("ask.query", summary=question[:200], extra={"mode": "indexing"})
         return jsonify({

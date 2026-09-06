@@ -1,5 +1,5 @@
 import { lazy } from "react";
-import { BookOpen, CalendarDays, ClipboardList, Download, FileText, FolderOpen, Inbox, LayoutDashboard, MessageCircle, Plus, RefreshCw, ScrollText, Upload } from "lucide-react";
+import { CalendarDays, ClipboardList, Download, FileText, FolderOpen, Inbox, LayoutDashboard, MessageCircle, Plus, RefreshCw, ScrollText, Upload } from "lucide-react";
 import LeaveForecast from "./LeaveForecast";
 import Dashboard from "./Dashboard";
 
@@ -14,7 +14,6 @@ const FeedbackWorkspace = lazyTool(() => import("./FeedbackWorkspace"));
 const FileManager = lazyTool(() => import("./FileManager"));
 const SopWorkspace = lazyTool(() => import("./SopWorkspace"));
 const AskWorkspace = lazyTool(() => import("./AskWorkspace"));
-const WikiWorkspace = lazyTool(() => import("./WikiWorkspace"));
 const ActivityLog = lazyTool(() => import("./ActivityLog"));
 
 function SearchActions({ recordsRef, recordsImporting }) {
@@ -103,15 +102,6 @@ function AskActions({ askRef, askReindexing }) {
   );
 }
 
-function WikiActions({ wikiRef, wikiReindexing }) {
-  return (
-    <button className="ghost" type="button" onClick={() => wikiRef.current?.reindex()} disabled={wikiReindexing}>
-      <RefreshCw size={16} />
-      {wikiReindexing ? "Rebuilding..." : "Rebuild wiki"}
-    </button>
-  );
-}
-
 export const TOOLS = [
   {
     id: "leave",
@@ -165,15 +155,6 @@ export const TOOLS = [
     icon: ClipboardList,
     Workspace: SopWorkspace,
     Actions: SopsActions,
-  },
-  {
-    id: "wiki",
-    label: "Wiki",
-    title: "Wiki",
-    layer: "Knowledge tool",
-    icon: BookOpen,
-    Workspace: WikiWorkspace,
-    Actions: WikiActions,
   },
   {
     id: "ask",

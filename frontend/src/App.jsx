@@ -33,7 +33,6 @@ export default function App() {
   const filesRef = useRef();
   const sopsRef = useRef();
   const askRef = useRef();
-  const wikiRef = useRef();
   const dashRef = useRef();
   const lclRef = useRef();
   const gcaRef = useRef();
@@ -41,7 +40,6 @@ export default function App() {
   const feedbackRef = useRef();
   const pendingCitation = useRef(null);
   const [askReindexing, setAskReindexing] = useState(false);
-  const [wikiReindexing, setWikiReindexing] = useState(false);
   const [dashImporting, setDashImporting] = useState(false);
   const [lclImporting, setLclImporting] = useState(false);
   const [gcaImporting, setGcaImporting] = useState(false);
@@ -122,10 +120,6 @@ export default function App() {
       return;
     }
     pendingCitation.current = citation;
-    if (citation.sourceType === "wiki") {
-      changeSection("wiki");
-      return;
-    }
     changeSection(citation.sourceType === "sop" ? "sops" : "files");
   };
 
@@ -141,10 +135,6 @@ export default function App() {
     if (citation.sourceType === "file" && visited.files && section === "files") {
       pendingCitation.current = null;
       filesRef.current?.openPreview(citation.sourceId);
-    }
-    if (citation.sourceType === "wiki" && visited.wiki && section === "wiki") {
-      pendingCitation.current = null;
-      wikiRef.current?.openPage(citation.locator);
     }
   }, [section, visited]);
 
@@ -167,8 +157,6 @@ export default function App() {
     sopsRef,
     askRef,
     askReindexing,
-    wikiRef,
-    wikiReindexing,
   };
 
   const workspaceProps = (tool) => {
@@ -201,9 +189,6 @@ export default function App() {
       props.onOpenCitation = openCitation;
       props.onReindexingChange = setAskReindexing;
     }
-    if (tool.id === "wiki") {
-      props.onReindexingChange = setWikiReindexing;
-    }
     return props;
   };
 
@@ -213,7 +198,6 @@ export default function App() {
     feedback: feedbackRef,
     files: filesRef,
     sops: sopsRef,
-    wiki: wikiRef,
     ask: askRef,
   };
 

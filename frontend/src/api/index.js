@@ -10,7 +10,6 @@ import { icbApi } from "./icb";
 import { unlocoApi } from "./unloco";
 import { gcaApi } from "./gca";
 import { casesApi } from "./cases";
-import { wikiApi } from "./wiki";
 
 export { RECORDS_PAGE_SIZE };
 
@@ -27,5 +26,4 @@ export const api = {
   ...unlocoApi,
   ...gcaApi,
   ...casesApi,
-  ...wikiApi,
 };
