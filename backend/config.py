@@ -59,6 +59,8 @@ AZURE_OPENAI_API_KEY = os.environ.get("AZURE_OPENAI_API_KEY", "").strip()
 AZURE_OPENAI_CHAT_DEPLOYMENT = os.environ.get("AZURE_OPENAI_CHAT_DEPLOYMENT", "").strip()
 AZURE_OPENAI_API_VERSION = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-06-01").strip() or "2024-06-01"
 AZURE_OPENAI_TIMEOUT = int(os.environ.get("AZURE_OPENAI_TIMEOUT", "25"))
+AZURE_OPENAI_EMBEDDING_DEPLOYMENT = os.environ.get("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "").strip()
+WIKI_SOURCE_LIMIT = int(os.environ.get("WIKI_SOURCE_LIMIT", "400"))
 CORS_ORIGINS = [
     origin.strip()
     for origin in os.environ.get(
@@ -67,6 +69,10 @@ CORS_ORIGINS = [
     if origin.strip()
 ]
 SCHEMA_VERSION = 8
+
+
+def embedding_enabled():
+    return bool(AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY and AZURE_OPENAI_EMBEDDING_DEPLOYMENT)
 
 
 def resolve_static_dir():

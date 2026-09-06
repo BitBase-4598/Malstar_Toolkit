@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from "react";
-import { ClipboardList, FolderOpen, RefreshCw, Send } from "lucide-react";
+import { BookOpen, ClipboardList, FolderOpen, RefreshCw, Send } from "lucide-react";
 import { api } from "./api";
 
 const AskWorkspace = forwardRef(function AskWorkspace({ onNotice, onRefreshLogs, onOpenCitation, onReindexingChange }, ref) {
@@ -128,17 +128,18 @@ const AskWorkspace = forwardRef(function AskWorkspace({ onNotice, onRefreshLogs,
               <ul className="ask-citations">
                 {result.citations.map((citation, index) => {
                   const isSop = citation.sourceType === "sop";
+                  const isWiki = citation.sourceType === "wiki";
                   return (
                     <li key={`${citation.sourceType}-${citation.sourceId}-${citation.locator}-${index}`}>
                       <button type="button" onClick={() => onOpenCitation?.(citation)}>
                         <span className="ask-citation-index">[{index + 1}]</span>
                         <span className="ask-citation-icon" aria-hidden="true">
-                          {isSop ? <ClipboardList size={16} /> : <FolderOpen size={16} />}
+                          {isWiki ? <BookOpen size={16} /> : isSop ? <ClipboardList size={16} /> : <FolderOpen size={16} />}
                         </span>
                         <span className="ask-citation-copy">
                           <strong>{citation.title}</strong>
                           <em>
-                            {isSop ? "SOP" : "File"} · {citation.locator}
+                            {isWiki ? "Wiki" : isSop ? "SOP" : "File"} · {citation.locator}
                           </em>
                           <span>{citation.excerpt}</span>
                         </span>
