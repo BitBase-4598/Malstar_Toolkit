@@ -78,8 +78,8 @@ export default function App() {
     }
     if (notice.type === "success") {
       setToastLeaving(false);
-      const fadeTimer = setTimeout(() => setToastLeaving(true), 1000);
-      const clearTimer = setTimeout(() => setNotice({ type: "", text: "" }), 1300);
+      const fadeTimer = setTimeout(() => setToastLeaving(true), 2400);
+      const clearTimer = setTimeout(() => setNotice({ type: "", text: "" }), 2800);
       return () => {
         clearTimeout(fadeTimer);
         clearTimeout(clearTimer);
