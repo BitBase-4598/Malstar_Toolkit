@@ -80,6 +80,21 @@ def test_migrate_schema_version_once():
     assert count_again == 3
 
 
+def test_migrate_existing_schema_8_adds_lcl_shipment_id():
+    migrate()
+    with get_connection() as conn:
+        conn.execute("UPDATE SchemaVersion SET Version=8 WHERE ID=1")
+        conn.commit()
+    migrate()
+    with get_connection() as conn:
+        version = conn.execute("SELECT Version FROM SchemaVersion WHERE ID=1").fetchone()[0]
+        assert version == SCHEMA_VERSION
+        index = conn.execute(
+            "SELECT 1 FROM pg_indexes WHERE indexname = 'idx_lcl_shipment_id'"
+        ).fetchone()
+        assert index is not None
+
+
 def test_stored_path_rejects_traversal():
     migrate()
     flask_app = Flask(__name__)
@@ -590,6 +605,7 @@ def test_lcl_import_raw_sheet_headers():
     from app import app
 
     with get_connection() as conn:
+        conn.execute("DELETE FROM LclShipments")
         conn.execute(
             "INSERT INTO LclShipments (ShipmentID, Direction) VALUES ('KEEP-ME', 'Export')"
         )
@@ -637,8 +653,160 @@ def test_lcl_import_raw_sheet_headers():
     assert body["data"]["total"] == 2
     with get_connection() as conn:
         ids = {row[0] for row in conn.execute("SELECT ShipmentID FROM LclShipments")}
-        assert ids == {"EXP1", "IMP1"}
+        assert ids == {"KEEP-ME", "EXP1", "IMP1"}
         assert not table_exists(conn, "LclShipments_staging")
+        assert body["data"]["inserted"] == 2
+        assert body["data"]["updated"] == 0
+        assert body["data"]["storedTotal"] == 3
+
+
+def _lcl_raw_workbook(headers, rows, sheet_name="Raw"):
+    from io import BytesIO
+
+    from openpyxl import Workbook
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = sheet_name
+    sheet.append(headers)
+    for row in rows:
+        sheet.append(row)
+    payload = BytesIO()
+    workbook.save(payload)
+    return payload.getvalue()
+
+
+def test_lcl_import_accepts_shipmentid_header():
+    from io import BytesIO
+
+    migrate()
+    from app import app
+
+    payload = _lcl_raw_workbook(
+        [
+            "ShipmentID",
+            "JobBranch",
+            "DestCtry",
+            "Weight",
+            "Volume",
+            "Dimension",
+            "Chargeable",
+            "Shipment Controlling Party Name",
+            "Direction",
+            "MonthName",
+            "Count of Bosch",
+            "Year",
+            "YearMonth",
+            "Country Full Name",
+        ],
+        [
+            [
+                "SID-1", "SZ1", "DE", 90, 1.1, "1 x 90 x 70 x 50", 1.1,
+                "ACME", "Export", "March", 0, 2026, "2026-03", "Germany",
+            ],
+        ],
+    )
+    client = app.test_client()
+    imported = client.post(
+        "/api/lcl/import",
+        data={"file": (BytesIO(payload), "lcl.xlsx")},
+        content_type="multipart/form-data",
+    )
+    assert imported.status_code == 200
+    body = imported.get_json()
+    assert body["data"]["inserted"] == 1
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT JobBranch, DestCtry, Volume FROM LclShipments WHERE ShipmentID=?",
+            ("SID-1",),
+        ).fetchone()
+        assert row["JobBranch"] == "SZ1"
+        assert row["DestCtry"] == "DE"
+        assert row["Volume"] == 1.1
+
+
+def test_lcl_import_upserts_by_shipment_id():
+    from io import BytesIO
+
+    migrate()
+    from app import app
+    from services.lcl import clear_lcl_cache
+
+    with get_connection() as conn:
+        conn.execute("DELETE FROM LclShipments")
+        conn.execute("DELETE FROM LclImportMeta")
+        conn.execute(
+            """
+            INSERT INTO LclShipments (
+                ShipmentID, Direction, Year, MonthName, JobBranch, DestCtry, CountryName,
+                Customer, IsBosch, Weight, Volume
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            ("EXP1", "Export", "2025", "January", "SZ1", "DE", "Germany", "OLD", 0, 10, 0.2),
+        )
+    clear_lcl_cache()
+    first = _lcl_raw_workbook(
+        [
+            "Shipment ID",
+            "Job Branch",
+            "Dest Ctry",
+            "Weight",
+            "Volume",
+            "Dimension",
+            "Chargeable",
+            "Shipment Controlling Party Name",
+            "Direction",
+            "Month Name",
+            "Count of Bosch",
+            "Year",
+            "Year Month",
+            "Country Full Name",
+        ],
+        [
+            [
+                "EXP1", "SH1", "NL", 120, 2.5, "1 x 100 x 80 x 60", 2.5,
+                "ACME", "Export", "April", 1, 2026, "2026-04", "Netherlands",
+            ],
+            [
+                "NEW-2", "SIN", "US", 80, 0.8, "1 x 80 x 60 x 50", 0.8,
+                "BETA", "Import", "May", 0, 2026, "2026-05", "United States",
+            ],
+            [
+                "", "SZ1", "FR", 10, 0.1, "1 x 10 x 10 x 10", 0.1,
+                "SKIP", "Export", "June", 0, 2026, "2026-06", "France",
+            ],
+        ],
+    )
+    client = app.test_client()
+    imported = client.post(
+        "/api/lcl/import",
+        data={"file": (BytesIO(first), "lcl-update.xlsx")},
+        content_type="multipart/form-data",
+    )
+    assert imported.status_code == 200
+    body = imported.get_json()
+    assert body["data"]["inserted"] == 1
+    assert body["data"]["updated"] == 1
+    assert body["data"]["skipped"] == 1
+    assert body["data"]["storedTotal"] == 2
+    assert "updated" in body["message"].lower()
+    with get_connection() as conn:
+        rows = {
+            row["ShipmentID"]: row
+            for row in conn.execute(
+                "SELECT ShipmentID, JobBranch, DestCtry, Volume, Customer, Year FROM LclShipments"
+            ).fetchall()
+        }
+        assert set(rows) == {"EXP1", "NEW-2"}
+        assert rows["EXP1"]["JobBranch"] == "SH1"
+        assert rows["EXP1"]["DestCtry"] == "NL"
+        assert rows["EXP1"]["Volume"] == 2.5
+        assert rows["EXP1"]["Customer"] == "ACME"
+        assert rows["EXP1"]["Year"] == "2026"
+        assert rows["NEW-2"]["JobBranch"] == "SIN"
+        filters = client.get("/api/lcl/filters").get_json()["data"]
+        assert filters["meta"]["total"] == 2
+        assert filters["meta"]["filename"] == "lcl-update.xlsx"
 
 
 def test_lcl_dimension_and_summary():

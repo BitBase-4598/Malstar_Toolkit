@@ -377,7 +377,7 @@ const LclDashboard = forwardRef(function LclDashboard({ embedded = false, onNoti
     }
     setImporting(true);
     if (!embedded) {
-      setNotice("Importing the Raw sheet. Large workbooks can take several minutes…");
+      setNotice("Saving shipments by ShipmentID. Large workbooks can take several minutes…");
     }
     try {
       const result = await api.importLcl(file);
@@ -444,7 +444,7 @@ const LclDashboard = forwardRef(function LclDashboard({ embedded = false, onNoti
               : "No LCL data loaded yet"}
           </span>
           <button type="button" className="primary" onClick={openImport} disabled={importing}>
-            {importing ? "Importing…" : empty ? "Import workbook" : "Re-import"}
+            {importing ? "Importing…" : empty ? "Import workbook" : "Update data"}
           </button>
         </div>
       </header>
@@ -455,7 +455,7 @@ const LclDashboard = forwardRef(function LclDashboard({ embedded = false, onNoti
       {loading && !summary ? (
         <p className="lcl-empty">Loading LCL summary…</p>
       ) : empty ? (
-        <p className="lcl-empty">Import the Desktop LCL workbook to populate this dashboard.</p>
+        <p className="lcl-empty">Upload the LCL workbook to populate this dashboard. Rows are stored by ShipmentID, so later uploads add new shipments and update existing ones.</p>
       ) : (
         <>
           <div className="lcl-map-row">

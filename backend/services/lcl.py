@@ -7,7 +7,7 @@ from pathlib import Path
 from io import BytesIO
 
 from config import LCL_MAX_UPLOAD_MB
-from db import create_lcl_indexes, create_lcl_shipments_table, get_connection
+from db import ensure_lcl_shipment_id_unique, get_connection
 from services.lcl_centroids import COUNTRY_CENTROIDS, COUNTRY_NAMES
 from util import now_stamp
 
@@ -31,6 +31,9 @@ KEEP_FIELDS = {
 RAW_SHEET_NAMES = {"raw", "rawdata", "raw data"}
 KEEP_FIELDS_NORM = {
     re.sub(r"[^a-z0-9]+", " ", name.casefold()).strip(): key for name, key in KEEP_FIELDS.items()
+}
+KEEP_FIELDS_COLLAPSED = {
+    re.sub(r"[^a-z0-9]+", "", name.casefold()): key for name, key in KEEP_FIELDS.items()
 }
 
 MONTH_ORDER = (
@@ -60,7 +63,10 @@ def map_header(name):
     text = str(name or "").strip()
     if text in KEEP_FIELDS:
         return KEEP_FIELDS[text]
-    return KEEP_FIELDS_NORM.get(normalize_header(text))
+    mapped = KEEP_FIELDS_NORM.get(normalize_header(text))
+    if mapped:
+        return mapped
+    return KEEP_FIELDS_COLLAPSED.get(re.sub(r"[^a-z0-9]+", "", text.casefold()))
 
 
 def col_letters_to_index(ref):
@@ -159,7 +165,7 @@ def record_values(row_elem, fields):
 def slim_row(fields, values, fallback_direction):
     raw = {}
     for field, value in zip(fields, values):
-        key = KEEP_FIELDS.get(field["name"])
+        key = map_header(field.get("name") if isinstance(field, dict) else field)
         if key:
             raw[key] = value
     dest = to_text(raw.get("dest_ctry")).upper()
@@ -190,35 +196,82 @@ def slim_row(fields, values, fallback_direction):
     )
 
 
-LCL_LIVE = "LclShipments"
-LCL_STAGING = "LclShipments_staging"
-
-
-def insert_sql(table=LCL_LIVE):
-    if table not in {LCL_LIVE, LCL_STAGING}:
-        raise ValueError("invalid LCL table name")
-    return f"""
-    INSERT INTO {table} (
+UPSERT_SQL = """
+    INSERT INTO LclShipments (
         ShipmentID, Direction, Year, MonthName, YearMonth, JobBranch,
         DestCtry, CountryName, Customer, IsBosch, Weight, Volume,
         DimensionRaw, Pieces, DimL, DimW, DimH, Chargeable
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (ShipmentID) WHERE ShipmentID <> '' DO UPDATE SET
+        Direction = EXCLUDED.Direction,
+        Year = EXCLUDED.Year,
+        MonthName = EXCLUDED.MonthName,
+        YearMonth = EXCLUDED.YearMonth,
+        JobBranch = EXCLUDED.JobBranch,
+        DestCtry = EXCLUDED.DestCtry,
+        CountryName = EXCLUDED.CountryName,
+        Customer = EXCLUDED.Customer,
+        IsBosch = EXCLUDED.IsBosch,
+        Weight = EXCLUDED.Weight,
+        Volume = EXCLUDED.Volume,
+        DimensionRaw = EXCLUDED.DimensionRaw,
+        Pieces = EXCLUDED.Pieces,
+        DimL = EXCLUDED.DimL,
+        DimW = EXCLUDED.DimW,
+        DimH = EXCLUDED.DimH,
+        Chargeable = EXCLUDED.Chargeable
 """
 
 
-def flush_rows(conn, buffer, table=LCL_LIVE):
+def empty_import_stats():
+    return {"inserted": 0, "updated": 0, "skipped": 0}
+
+
+def add_import_stats(stats, inserted=0, updated=0, skipped=0):
+    stats["inserted"] += inserted
+    stats["updated"] += updated
+    stats["skipped"] += skipped
+    return stats
+
+
+def flush_rows(conn, buffer, stats=None):
+    if stats is None:
+        stats = empty_import_stats()
     if not buffer:
         return 0
-    conn.executemany(insert_sql(table), buffer)
-    conn.commit()
-    count = len(buffer)
+    skipped = 0
+    by_id = {}
+    for row in buffer:
+        shipment_id = to_text(row[0])
+        if not shipment_id:
+            skipped += 1
+            continue
+        by_id[shipment_id] = (shipment_id,) + tuple(row[1:])
     buffer.clear()
-    return count
+    rows = list(by_id.values())
+    if not rows:
+        add_import_stats(stats, skipped=skipped)
+        return 0
+    ids = [row[0] for row in rows]
+    placeholders = ",".join("?" * len(ids))
+    existing = {
+        row[0]
+        for row in conn.execute(
+            f"SELECT ShipmentID FROM LclShipments WHERE ShipmentID IN ({placeholders})",
+            ids,
+        ).fetchall()
+    }
+    updated = sum(1 for shipment_id in ids if shipment_id in existing)
+    inserted = len(ids) - updated
+    conn.executemany(UPSERT_SQL, rows)
+    conn.commit()
+    add_import_stats(stats, inserted=inserted, updated=updated, skipped=skipped)
+    return inserted + updated
 
 
-def import_cache(zip_file, definition_name, records_name, direction, conn, batch, table=LCL_LIVE):
+def import_cache(zip_file, definition_name, records_name, direction, conn, stats):
     fields = parse_cache_fields(zip_file.read(definition_name))
-    inserted = 0
+    written = 0
     buffer = []
     with zip_file.open(records_name) as handle:
         context = ET.iterparse(handle, events=("start", "end"))
@@ -234,11 +287,11 @@ def import_cache(zip_file, definition_name, records_name, direction, conn, batch
             buffer.append(slim_row(fields, values, direction))
             root.remove(elem)
             if len(buffer) >= 2000:
-                inserted += flush_rows(conn, buffer, table)
-                if inserted % 20000 == 0:
-                    print(f"  {direction}: {inserted:,}", flush=True)
-    inserted += flush_rows(conn, buffer, table)
-    return inserted
+                written += flush_rows(conn, buffer, stats)
+                if written and written % 20000 == 0:
+                    print(f"  {direction}: {written:,}", flush=True)
+    written += flush_rows(conn, buffer, stats)
+    return written
 
 
 def find_raw_sheet_path(archive):
@@ -312,7 +365,7 @@ def cell_value(elem, strings):
     return text
 
 
-def import_raw_sheet(archive, sheet_path, conn, table=LCL_LIVE):
+def import_raw_sheet(archive, sheet_path, conn, stats):
     strings = load_shared_strings(archive)
     col_map = {}
     header_done = False
@@ -339,6 +392,8 @@ def import_raw_sheet(archive, sheet_path, conn, table=LCL_LIVE):
                         col_map[index] = key
                 header_done = True
                 elem.clear()
+                if "shipment_id" not in col_map.values():
+                    return None, "The Raw sheet is missing a ShipmentID column."
                 if len(col_map) < 4:
                     return None, "The Raw sheet headers were not recognized. Use the Raw sheet from the LCL Volume workbook."
                 continue
@@ -351,6 +406,10 @@ def import_raw_sheet(archive, sheet_path, conn, table=LCL_LIVE):
                 [raw.get(KEEP_FIELDS[name]) for name in KEEP_FIELDS],
                 to_text(raw.get("direction")),
             )
+            if not to_text(row[0]):
+                add_import_stats(stats, skipped=1)
+                elem.clear()
+                continue
             direction = to_text(row[1]).casefold()
             if direction == "import":
                 import_count += 1
@@ -359,40 +418,42 @@ def import_raw_sheet(archive, sheet_path, conn, table=LCL_LIVE):
             buffer.append(row)
             elem.clear()
             if len(buffer) >= 2000:
-                flush_rows(conn, buffer, table)
+                flush_rows(conn, buffer, stats)
     if not header_done:
         return None, "The Raw sheet is empty."
-    flush_rows(conn, buffer, table)
+    flush_rows(conn, buffer, stats)
     return {"exportCount": export_count, "importCount": import_count}, None
 
 
-def _prepare_lcl_staging(conn):
-    conn.execute(f"DROP TABLE IF EXISTS {LCL_STAGING}")
-    create_lcl_shipments_table(conn, LCL_STAGING)
-    conn.commit()
+def shipment_counts(conn):
+    row = conn.execute(
+        """
+        SELECT
+            COUNT(*) AS total,
+            COALESCE(SUM(CASE WHEN Direction ILIKE 'import' THEN 1 ELSE 0 END), 0) AS import_count,
+            COALESCE(SUM(CASE WHEN Direction NOT ILIKE 'import' THEN 1 ELSE 0 END), 0) AS export_count
+        FROM LclShipments
+        """
+    ).fetchone()
+    return {
+        "total": int(row["total"] or 0),
+        "importCount": int(row["import_count"] or 0),
+        "exportCount": int(row["export_count"] or 0),
+    }
 
 
-def _drop_lcl_staging(conn):
-    conn.execute(f"DROP TABLE IF EXISTS {LCL_STAGING}")
-    conn.commit()
-
-
-def _swap_lcl_staging(conn, filename, stamp, export_count, import_count):
-    conn.commit()
-    conn.execute("BEGIN IMMEDIATE")
-    conn.execute(f"DROP TABLE IF EXISTS {LCL_LIVE}")
-    conn.execute(f"ALTER TABLE {LCL_STAGING} RENAME TO {LCL_LIVE}")
-    create_lcl_indexes(conn, LCL_LIVE)
+def _refresh_lcl_meta(conn, filename, stamp):
+    counts = shipment_counts(conn)
     conn.execute("DELETE FROM LclImportMeta")
     conn.execute(
         """
         INSERT INTO LclImportMeta (ID, Filename, ImportedAt, ExportCount, ImportCount)
         VALUES (1, ?, ?, ?, ?)
         """,
-        (filename[:200], stamp, export_count, import_count),
+        (filename[:200], stamp, counts["exportCount"], counts["importCount"]),
     )
     conn.commit()
-    conn.execute("ANALYZE LclShipments")
+    return counts
 
 
 def import_lcl_workbook(filename=None, data=None):
@@ -408,6 +469,9 @@ def import_lcl_workbook(filename=None, data=None):
     stamp = now_stamp()
     export_count = 0
     import_count = 0
+    stats = empty_import_stats()
+    stored = {"total": 0, "exportCount": 0, "importCount": 0}
+    wrote = False
     try:
         archive = zipfile.ZipFile(BytesIO(data))
     except zipfile.BadZipFile:
@@ -419,24 +483,28 @@ def import_lcl_workbook(filename=None, data=None):
         if not raw_sheet and not has_cache:
             return None, "This workbook has no Raw sheet or LCL pivot cache."
         with get_connection() as conn:
-            _prepare_lcl_staging(conn)
+            ensure_lcl_shipment_id_unique(conn)
             try:
+                used_raw = False
                 if raw_sheet:
-                    counts, error = import_raw_sheet(archive, raw_sheet, conn, LCL_STAGING)
-                    if error:
-                        _drop_lcl_staging(conn)
+                    counts, error = import_raw_sheet(archive, raw_sheet, conn, stats)
+                    wrote = (stats["inserted"] + stats["updated"]) > 0
+                    if error and has_cache and not wrote:
+                        stats = empty_import_stats()
+                    elif error:
                         return None, error
-                    export_count = counts["exportCount"]
-                    import_count = counts["importCount"]
-                else:
+                    else:
+                        used_raw = True
+                        export_count = counts["exportCount"]
+                        import_count = counts["importCount"]
+                if not used_raw and has_cache:
                     export_count = import_cache(
                         archive,
                         "xl/pivotCache/pivotCacheDefinition1.xml",
                         "xl/pivotCache/pivotCacheRecords1.xml",
                         "Export",
                         conn,
-                        None,
-                        LCL_STAGING,
+                        stats,
                     )
                     if "xl/pivotCache/pivotCacheDefinition2.xml" in names:
                         import_count = import_cache(
@@ -445,12 +513,18 @@ def import_lcl_workbook(filename=None, data=None):
                             "xl/pivotCache/pivotCacheRecords2.xml",
                             "Import",
                             conn,
-                            None,
-                            LCL_STAGING,
+                            stats,
                         )
-                _swap_lcl_staging(conn, name, stamp, export_count, import_count)
+                    else:
+                        import_count = 0
+                    wrote = (stats["inserted"] + stats["updated"]) > 0
+                if stats["inserted"] + stats["updated"] == 0:
+                    return None, "No rows with a ShipmentID were imported."
+                stored = _refresh_lcl_meta(conn, name, stamp)
+                conn.execute("ANALYZE LclShipments")
             except Exception:
-                _drop_lcl_staging(conn)
+                if wrote or (stats["inserted"] + stats["updated"]) > 0:
+                    clear_lcl_cache()
                 raise
     finally:
         archive.close()
@@ -461,6 +535,10 @@ def import_lcl_workbook(filename=None, data=None):
         "exportCount": export_count,
         "importCount": import_count,
         "total": export_count + import_count,
+        "inserted": stats["inserted"],
+        "updated": stats["updated"],
+        "skipped": stats["skipped"],
+        "storedTotal": stored["total"],
     }, None
 
 
@@ -546,6 +624,7 @@ def list_filter_options():
         months = distinct_values(conn, "MonthName")
         months.sort(key=lambda name: MONTH_ORDER.index(name) if name in MONTH_ORDER else 99)
         meta = conn.execute("SELECT * FROM LclImportMeta WHERE ID=1").fetchone()
+        counts = shipment_counts(conn)
         countries = [
             {"code": row["DestCtry"], "name": row["CountryName"] or COUNTRY_NAMES.get(row["DestCtry"], row["DestCtry"])}
             for row in conn.execute(
@@ -567,9 +646,9 @@ def list_filter_options():
             "meta": {
                 "filename": meta["Filename"] if meta else "",
                 "importedAt": meta["ImportedAt"] if meta else "",
-                "exportCount": meta["ExportCount"] if meta else 0,
-                "importCount": meta["ImportCount"] if meta else 0,
-                "total": (meta["ExportCount"] + meta["ImportCount"]) if meta else 0,
+                "exportCount": counts["exportCount"],
+                "importCount": counts["importCount"],
+                "total": counts["total"],
             },
         }
     with _CACHE_LOCK:

@@ -36,7 +36,7 @@ function DashboardActions({ dashRef, dashImporting, dashPage, lclRef, lclImporti
     return (
       <button className="primary" type="button" onClick={() => lclRef.current?.openImport()} disabled={lclImporting}>
         <Upload size={16} />
-        {lclImporting ? "Importing..." : "Re-import"}
+        {lclImporting ? "Importing..." : "Update data"}
       </button>
     );
   }
