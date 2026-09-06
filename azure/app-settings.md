@@ -2,7 +2,10 @@
 
 This app is a **Linux Python 3.12 Web App** deployed from **GitHub** (Oryx / `SCM_DO_BUILD_DURING_DEPLOYMENT=true`). It is **not** the container script in `deploy.ps1`.
 
-Database: **Azure Database for PostgreSQL Flexible Server**. Uploads stay on App Service storage.
+Live site: `https://malstar-toolkit-djexgna2eghtgkep.eastasia-01.azurewebsites.net`  
+Kudu / SCM: `https://malstar-toolkit-djexgna2eghtgkep.scm.eastasia-01.azurewebsites.net`
+
+Database: **Azure Database for PostgreSQL Flexible Server**. Uploads stay on App Service `/home` storage.
 
 Startup command (Configuration → General settings). Keep this exact string:
 
@@ -12,73 +15,50 @@ gunicorn --bind=0.0.0.0:8000 --chdir backend --workers 1 --threads 8 --timeout 1
 
 Do not use `source`, `antenv/bin/gunicorn`, or `WEBSITES_PORT=8080` on this code-deploy app.
 
-## 1. Create Flexible Server
+## 1. Flexible Server (already created)
 
-Discover the live app’s resource group and region (`deploy.ps1` names are stale):
+| Item | Value |
+| --- | --- |
+| Host | `malstar.postgres.database.azure.com` |
+| Port | `5432` |
+| App database | `malstar` (created; do not put app tables in the default `postgres` database) |
+| App user | `nathan` |
+| TLS | `sslmode=require` |
 
-```bash
-az webapp list --query "[?name=='MALSTAR-Toolkit'].{name:name, rg:resourceGroup, loc:location}" -o table
+`nathan` can create databases. The default `postgres` database already has an unrelated `public.shipment` test table and an empty `Malstar_PROD` schema. App tables go in the dedicated `malstar` database.
+
+Connection string (URL-encode `$` in the password as `%24`):
+
+```
+postgresql://nathan:<url-encoded-password>@malstar.postgres.database.azure.com:5432/malstar?sslmode=require
 ```
 
-Create Postgres 16 in the **same** group and region. F1 App Service has no VNet, so use public TLS and Azure’s “allow Azure services” rule (`0.0.0.0`):
+Put that value only in:
 
-```bash
-az postgres flexible-server create \
-  --resource-group <RG> \
-  --name malstar-pg \
-  --location <same as Web App> \
-  --version 16 \
-  --sku-name Standard_B1ms \
-  --tier Burstable \
-  --storage-size 32 \
-  --admin-user malstaradmin \
-  --admin-password '<strong password>' \
-  --public-access 0.0.0.0 \
-  --yes
+- a local gitignored `.env` (for the copy script)
+- Azure App Service application settings (`DATABASE_URL`)
 
-az postgres flexible-server db create \
-  --resource-group <RG> \
-  --server-name malstar-pg \
-  --database-name malstar
-```
+Never commit the password, paste it into the PR, or store it in this file.
 
-Allow the machine that will run the copy script (your laptop or CVM):
+Allow Azure services (the F1 Web App has no VNet) and the machine that runs the copy script:
 
 ```bash
 az postgres flexible-server firewall-rule create \
   --resource-group <RG> \
-  --name malstar-pg \
+  --name malstar \
   --rule-name AllowCopyClient \
   --start-ip-address <YOUR_IP> \
   --end-ip-address <YOUR_IP>
 ```
 
-Do not open `0.0.0.0–255.255.255.255`. Flexible Server usernames are `malstar`, not `malstar@malstar-pg`.
+Do not open `0.0.0.0–255.255.255.255`. Flexible Server usernames are `nathan`, not `nathan@malstar`.
 
-Create a non-admin login (psql as `malstaradmin`):
-
-```sql
-CREATE USER malstar WITH PASSWORD '<app password>';
-GRANT CONNECT ON DATABASE malstar TO malstar;
-GRANT USAGE, CREATE ON SCHEMA public TO malstar;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO malstar;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO malstar;
-```
-
-After the first app start (or copy script), also:
+After the first migrate / copy, confirm:
 
 ```sql
-GRANT ALL ON ALL TABLES IN SCHEMA public TO malstar;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO malstar;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO nathan;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO nathan;
 ```
-
-Connection string:
-
-```
-postgresql://malstar:<url-encoded-password>@malstar-pg.postgres.database.azure.com:5432/malstar?sslmode=require
-```
-
-`sslmode=require` is mandatory.
 
 ## 2. Application settings
 
@@ -93,13 +73,13 @@ Keep:
 | `FLASK_DEBUG` | `false` |
 | `CORS_ORIGINS` | *(empty)* |
 
-Change:
+Change **after** the SQLite copy finishes (see section 3):
 
 ```bash
 az webapp config appsettings set \
   --resource-group <RG> \
   --name MALSTAR-Toolkit \
-  --settings DATABASE_URL='postgresql://malstar:...@malstar-pg.postgres.database.azure.com:5432/malstar?sslmode=require'
+  --settings DATABASE_URL='postgresql://nathan:<url-encoded-password>@malstar.postgres.database.azure.com:5432/malstar?sslmode=require'
 
 az webapp config appsettings delete \
   --resource-group <RG> \
@@ -107,31 +87,44 @@ az webapp config appsettings delete \
   --setting-names DATABASE_PATH
 ```
 
+Do **not** set `DATABASE_URL` on the Web App before the copy if the Postgres-capable code is already deployed. The app will boot against empty Postgres and look like it lost history.
+
 Optional Ask LLM settings are unchanged: `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_CHAT_DEPLOYMENT`, `AZURE_OPENAI_API_VERSION`.
 
 Oryx installs from **repo-root** `requirements.txt` and `backend/requirements.txt`. Both must list `psycopg[binary,pool]`. GitHub Actions does not need `DATABASE_URL` at build time.
 
 ## 3. Cutover order (avoid a crash loop)
 
-Postgres-only code will not start without `DATABASE_URL`.
+Live history is on **Azure App Service SQLite**, not an old CVM file. Download Azure’s `.db`.
 
-1. Create Flexible Server (section 1).
-2. Deploy this codebase (Oryx installs psycopg).
-3. Copy CVM `backend/customer_remark.db` into Flexible Server (do not copy Azure’s empty SQLite over live CVM data unless you have confirmed Azure is newer):
+1. Flexible Server and the `malstar` database already exist (section 1).
+2. Merge / deploy this codebase to `main` **without** setting `DATABASE_URL` so Azure stays on SQLite while Oryx installs psycopg.
+3. Short maintenance window: stop the Web App (or accept a few minutes of writes that will not be copied).
+4. Download the live SQLite from Kudu (Development Tools → Advanced Tools → Debug console), including `-wal` / `-shm` if present:
+
+```
+/home/data/customer_remark.db
+/home/site/wwwroot/backend/customer_remark.db
+```
+
+Use whichever file is larger / recently written. Prefer stopping the app first so WAL is flushed.
+
+5. From a machine whose IP is on the Flexible Server firewall, with the password in a gitignored `.env`:
 
 ```powershell
 cd backend
-python scripts/sqlite_to_postgres.py `
-  --sqlite customer_remark.db `
-  --database-url "postgresql://malstar:...@malstar-pg.postgres.database.azure.com:5432/malstar?sslmode=require"
+python scripts/sqlite_to_postgres.py --sqlite <downloaded-customer_remark.db>
 ```
 
-4. Set `DATABASE_URL`, delete `DATABASE_PATH`, restart the Web App.
-5. Confirm `/api/health` returns 200 (database ping). Then check remarks, leave, dashboard, file download, Ask.
+The script reads `DATABASE_URL` from `.env` if you omit `--database-url`.
 
-If you cannot deploy and change settings in one step: set `DATABASE_URL` first (old SQLite code ignores it), deploy the Postgres-only commit, then delete `DATABASE_PATH`.
+6. Compare row counts for `CustomerRemarks`, `LeavePeople`, `LeavePlans`, `ToolkitFiles`, `ActivityLogs`.
+7. Set App Service `DATABASE_URL`, delete `DATABASE_PATH`, start the Web App.
+8. Confirm `GET /api/health` returns 200 (database ping). Then check remarks, leave, dashboard, file download, Ask, and logs.
 
-Copy `uploads/` to `/home/data/uploads` separately if files live only on the CVM. Keep the old `.db` as a backup for several days.
+Rollback: remove `DATABASE_URL`, restore `DATABASE_PATH` if you used one, restart. Keep the downloaded `.db` for several days.
+
+Uploads stay on `/home/data/uploads`. They are not moved into Postgres.
 
 ## 4. Health check and scale
 

@@ -6,6 +6,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TMP = Path(tempfile.mkdtemp())
+os.environ["MALSTAR_SKIP_DOTENV"] = "1"
+os.environ["DATABASE_URL"] = ""
 os.environ["DATABASE_PATH"] = str(TMP / "test.db")
 os.environ["UPLOAD_DIR"] = str(TMP / "uploads")
 os.environ["LOG_PATH"] = str(TMP / "test.log")

@@ -3,9 +3,9 @@
 
 Usage (from the backend directory):
 
-    python scripts/sqlite_to_postgres.py \\
-      --sqlite customer_remark.db \\
-      --database-url "postgresql://malstar:...@host:5432/malstar?sslmode=require"
+    python scripts/sqlite_to_postgres.py --sqlite customer_remark.db
+    # DATABASE_URL comes from the environment or repo-root .env
+    # or pass --database-url "postgresql://nathan:...@malstar.postgres.database.azure.com:5432/malstar?sslmode=require"
 """
 
 from __future__ import annotations
@@ -19,6 +19,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+import envfile  # noqa: E402,F401
 
 SKIP_TABLES = {
     "sqlite_sequence",
@@ -62,8 +64,15 @@ COPY_ORDER = (
 def parse_args():
     parser = argparse.ArgumentParser(description="Copy SQLite data into PostgreSQL")
     parser.add_argument("--sqlite", required=True, help="Path to customer_remark.db")
-    parser.add_argument("--database-url", required=True, help="PostgreSQL DATABASE_URL")
-    return parser.parse_args()
+    parser.add_argument(
+        "--database-url",
+        default=os.environ.get("DATABASE_URL", "").strip(),
+        help="PostgreSQL DATABASE_URL (defaults to DATABASE_URL / .env)",
+    )
+    args = parser.parse_args()
+    if not args.database_url:
+        parser.error("pass --database-url or set DATABASE_URL in the environment / .env")
+    return args
 
 
 def sqlite_tables(conn):

@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
 
+import envfile  # noqa: F401  # loads repo-root .env before reading DATABASE_URL
+
 BASE_DIR = Path(__file__).resolve().parent
 
 

@@ -58,10 +58,10 @@ To copy an existing SQLite file into Postgres:
 
 ```powershell
 cd backend
-python scripts/sqlite_to_postgres.py --sqlite customer_remark.db --database-url "postgresql://malstar:malstar@127.0.0.1:5432/malstar"
+python scripts/sqlite_to_postgres.py --sqlite customer_remark.db
 ```
 
-Azure Flexible Server cutover is documented in [azure/app-settings.md](azure/app-settings.md).
+`--database-url` is optional when `DATABASE_URL` is set in the environment or a gitignored `.env`. Azure Flexible Server cutover is documented in [azure/app-settings.md](azure/app-settings.md).
 
 ## Azure App Service
 

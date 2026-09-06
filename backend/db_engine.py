@@ -3,6 +3,8 @@ import re
 import sqlite3
 from pathlib import Path
 
+import envfile  # noqa: F401  # loads repo-root .env before reading DATABASE_URL
+
 DATABASE_URL = (os.environ.get("DATABASE_URL") or "").strip()
 USE_POSTGRES = DATABASE_URL.lower().startswith("postgres")
 
