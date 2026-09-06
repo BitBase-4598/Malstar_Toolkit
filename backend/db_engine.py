@@ -110,13 +110,24 @@ class CompatCursor:
             self._cursor.execute(statement, tuple(params) if not isinstance(params, tuple) else params)
         self.lastrowid = None
         stripped = statement.lstrip().upper()
-        if stripped.startswith("INSERT") and "RETURNING" not in stripped:
+        if (
+            stripped.startswith("INSERT")
+            and "RETURNING" not in stripped
+            and "ON CONFLICT" not in stripped
+        ):
             try:
-                ident = self._cursor.connection.execute("SELECT lastval()").fetchone()
+                self._cursor.execute("SAVEPOINT malstar_lastval")
+                ident = self._cursor.execute("SELECT lastval()").fetchone()
+                self._cursor.execute("RELEASE SAVEPOINT malstar_lastval")
                 if ident is not None:
                     self.lastrowid = ident[0] if not hasattr(ident, "keys") else next(iter(ident.values()))
             except Exception:
                 self.lastrowid = None
+                try:
+                    self._cursor.execute("ROLLBACK TO SAVEPOINT malstar_lastval")
+                    self._cursor.execute("RELEASE SAVEPOINT malstar_lastval")
+                except Exception:
+                    pass
         return self
 
     def executemany(self, sql, seq_of_params):

@@ -80,6 +80,21 @@ def test_migrate_schema_version_once():
     assert count_again == 3
 
 
+def test_migrate_existing_schema_8_adds_lcl_shipment_id():
+    migrate()
+    with get_connection() as conn:
+        conn.execute("UPDATE SchemaVersion SET Version=8 WHERE ID=1")
+        conn.commit()
+    migrate()
+    with get_connection() as conn:
+        version = conn.execute("SELECT Version FROM SchemaVersion WHERE ID=1").fetchone()[0]
+        assert version == SCHEMA_VERSION
+        index = conn.execute(
+            "SELECT 1 FROM pg_indexes WHERE indexname = 'idx_lcl_shipment_id'"
+        ).fetchone()
+        assert index is not None
+
+
 def test_stored_path_rejects_traversal():
     migrate()
     flask_app = Flask(__name__)
