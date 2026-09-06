@@ -322,7 +322,10 @@ export default function App() {
           className={`toast success${notice.placement === "top" ? " toast-top" : ""}${toastLeaving ? " leaving" : ""}`}
           role="status"
         >
-          {notice.text}
+          <span>{notice.text}</span>
+          <button type="button" onClick={() => setNotice({ type: "", text: "" })} aria-label="Dismiss">
+            <X size={16} />
+          </button>
         </div>
       )}
     </div>

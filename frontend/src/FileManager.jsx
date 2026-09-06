@@ -3,6 +3,7 @@ import { Download, Pencil, Trash2 } from "lucide-react";
 import { api } from "./api";
 import FilePreview from "./FilePreview";
 import useConfirm from "./useConfirm";
+import usePrompt from "./usePrompt";
 
 function formatSize(bytes) {
   const size = Number(bytes) || 0;
@@ -25,6 +26,7 @@ const FileManager = forwardRef(function FileManager({ onNotice, onRefreshLogs },
   const [preview, setPreview] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [confirm, confirmDialog] = useConfirm();
+  const [promptName, promptDialog] = usePrompt();
   const splitRef = useRef(null);
   const listWidthRef = useRef(420);
   const [listWidth, setListWidth] = useState(() => {
@@ -100,7 +102,13 @@ const FileManager = forwardRef(function FileManager({ onNotice, onRefreshLogs },
   }));
 
   const rename = async (row) => {
-    const next = window.prompt("Rename file", row.originalName);
+    const next = await promptName({
+      title: "Rename file",
+      message: "Enter a new file name.",
+      label: "File name",
+      defaultValue: row.originalName,
+      confirmLabel: "Rename",
+    });
     if (!next || next.trim() === row.originalName) {
       return;
     }
@@ -283,6 +291,7 @@ const FileManager = forwardRef(function FileManager({ onNotice, onRefreshLogs },
         </div>
       </section>
       {confirmDialog}
+      {promptDialog}
     </div>
   );
 });

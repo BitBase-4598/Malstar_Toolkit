@@ -789,20 +789,36 @@ td.copied {
   bottom: 24px;
   z-index: 50;
   min-width: min(280px, calc(100vw - 32px));
-  max-width: min(380px, calc(100vw - 32px));
-  padding: 14px 18px;
-  color: #ffffff;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 14px 16px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--maersk-navy);
   font-size: var(--type-ui);
-  font-weight: 600;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  font-weight: 500;
+  background: var(--maersk-white);
+  border: 1px solid var(--maersk-border);
+  box-shadow: 0 8px 24px rgba(0, 36, 61, 0.16);
   border-radius: var(--radius-lg);
   animation: toast-in var(--motion-toast-in) var(--motion-ease);
 }
 
 .toast.success {
-  background: #107c10;
+  background: var(--maersk-success-bg);
+  border-color: var(--maersk-success);
+  border-left: 4px solid var(--maersk-success);
+  color: var(--maersk-navy);
+}
+
+.toast button {
+  flex: 0 0 auto;
   border: 0;
-  color: #ffffff;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  cursor: pointer;
 }
 
 .toast.leaving {
@@ -1200,8 +1216,37 @@ td.copied {
 }
 
 .modal-body p {
-  margin: 0;
+  margin: 0 0 16px;
   line-height: 1.5;
+}
+
+.modal-body p:last-child {
+  margin-bottom: 0;
+}
+
+.modal-body label {
+  display: block;
+  font-size: var(--type-ui);
+  font-weight: 600;
+  color: var(--maersk-navy);
+}
+
+.modal-body input {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px;
+  border: 1px solid var(--maersk-border);
+  border-radius: var(--radius);
+  font: inherit;
+  color: var(--maersk-text);
+  background: var(--maersk-white);
+}
+
+.modal-body input:focus {
+  border-color: var(--maersk-navy);
+  outline: 2px solid var(--maersk-navy);
+  outline-offset: 1px;
 }
 
 .modal-actions {
