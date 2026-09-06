@@ -1,9 +1,8 @@
 from datetime import datetime
-import sqlite3
 
 from flask import Blueprint, jsonify, request
 
-from db import get_connection
+from db import IntegrityError, get_connection
 from logging_util import audit
 from services.leave import (
     ensure_leave_people,
@@ -66,7 +65,7 @@ def create_leave_plan():
                 ),
             )
             row = conn.execute("SELECT * FROM LeavePlans WHERE ID=?", (cur.lastrowid,)).fetchone()
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         message = "This person already has a leave plan on that day."
         audit("leave.create", "failure", summary=message)
         return jsonify({"success": False, "message": message}), 409
@@ -112,7 +111,7 @@ def update_leave_plan(plan_id):
                 ),
             )
             row = conn.execute("SELECT * FROM LeavePlans WHERE ID=?", (plan_id,)).fetchone()
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         message = "This person already has a leave plan on that day."
         audit("leave.update", "failure", resource_id=plan_id, summary=message)
         return jsonify({"success": False, "message": message}), 409

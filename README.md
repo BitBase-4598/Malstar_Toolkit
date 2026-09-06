@@ -52,7 +52,16 @@ Build and run the production image locally:
 docker compose up --build
 ```
 
-Then open `http://localhost:8080`. SQLite is stored in the `sqlite-data` volume at `/home/data/customer_remark.db`.
+Then open `http://localhost:8080`. Docker Compose uses PostgreSQL (`DATABASE_URL`). Local `python app.py` without `DATABASE_URL` still uses SQLite at `backend/customer_remark.db`.
+
+To copy an existing SQLite file into Postgres:
+
+```powershell
+cd backend
+python scripts/sqlite_to_postgres.py --sqlite customer_remark.db
+```
+
+`--database-url` is optional when `DATABASE_URL` is set in the environment or a gitignored `.env`. If the live SQLite file cannot be downloaded, `python scripts/live_api_to_postgres.py` copies the public App Service APIs instead. Azure Flexible Server cutover is documented in [azure/app-settings.md](azure/app-settings.md).
 
 ## Azure App Service
 

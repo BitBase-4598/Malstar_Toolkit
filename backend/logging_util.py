@@ -1,6 +1,5 @@
 import json
 import logging
-import sqlite3
 import sys
 import traceback
 import uuid
@@ -11,6 +10,7 @@ from flask import g, has_request_context, request
 
 from config import LOG_PATH
 from db import get_connection
+from db_engine import DatabaseError
 
 NOISY_LOG_ACTIONS = {
     "opened malstar_toolkit",
@@ -318,7 +318,7 @@ def audit(
                     user_agent,
                 ),
             )
-    except sqlite3.Error as error:
+    except DatabaseError as error:
         APP_LOGGER.error(
             "audit persist failed",
             extra={"audit": {"event": "server.exception", "outcome": "exception", "summary": str(error)[:500]}},

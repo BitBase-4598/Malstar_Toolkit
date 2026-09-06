@@ -589,7 +589,9 @@ def replace_cases_from_gca_workbook(data):
         ]
         conn.execute("DELETE FROM CaseFiles")
         conn.execute("DELETE FROM Cases")
-        conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('Cases', 'CaseFiles')")
+        from db_engine import reset_identity
+
+        reset_identity(conn, "Cases", "CaseFiles")
         for payload in payloads:
             create_case(conn, payload)
     unlink_stored_files(stored)

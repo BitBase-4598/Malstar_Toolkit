@@ -23,7 +23,7 @@ RUN apt-get update \
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY backend/app.py backend/config.py backend/db.py backend/util.py backend/logging_util.py ./
+COPY backend/app.py backend/config.py backend/db.py backend/db_engine.py backend/util.py backend/logging_util.py ./
 COPY backend/blueprints ./blueprints
 COPY backend/services ./services
 COPY --from=frontend /frontend/dist ./frontend/dist

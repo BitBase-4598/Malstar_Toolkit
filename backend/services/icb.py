@@ -1,9 +1,9 @@
 import csv
 import re
-import sqlite3
 from io import StringIO
 
-from db import get_connection
+from db import fts_ready, get_connection
+from db_engine import OperationalError, use_postgres
 from util import fts_prefix_query, now_stamp
 
 HEADER_MAP = {
@@ -207,11 +207,8 @@ def import_icb_csv(filename, data):
 
 def icb_fts_available(conn):
     try:
-        row = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='IcbStationsFts'"
-        ).fetchone()
-        return bool(row)
-    except sqlite3.OperationalError:
+        return fts_ready(conn, "IcbStationsFts", "IcbStations")
+    except OperationalError:
         return False
 
 
@@ -241,22 +238,38 @@ def list_icb_stations(query="", page=1, page_size=100):
             total = 0
             if match and icb_fts_available(conn):
                 try:
-                    total = conn.execute(
-                        "SELECT COUNT(*) FROM IcbStationsFts WHERE IcbStationsFts MATCH ?",
-                        (match,),
-                    ).fetchone()[0]
-                    rows = conn.execute(
-                        f"""
-                        SELECT s.* FROM IcbStationsFts
-                        JOIN IcbStations s ON s.ID = IcbStationsFts.rowid
-                        WHERE IcbStationsFts MATCH ?
-                        ORDER BY rank, s.ID
-                        LIMIT ? OFFSET ?
-                        """,
-                        (match, page_size, offset),
-                    ).fetchall()
+                    if use_postgres():
+                        tsquery = match.replace("*", ":*").replace(" OR ", " | ")
+                        total = conn.execute(
+                            "SELECT COUNT(*) FROM IcbStations WHERE SearchTsv @@ to_tsquery('simple', ?)",
+                            (tsquery,),
+                        ).fetchone()[0]
+                        rows = conn.execute(
+                            f"""
+                            SELECT * FROM IcbStations
+                            WHERE SearchTsv @@ to_tsquery('simple', ?)
+                            ORDER BY ts_rank(SearchTsv, to_tsquery('simple', ?)) DESC, ID
+                            LIMIT ? OFFSET ?
+                            """,
+                            (tsquery, tsquery, page_size, offset),
+                        ).fetchall()
+                    else:
+                        total = conn.execute(
+                            "SELECT COUNT(*) FROM IcbStationsFts WHERE IcbStationsFts MATCH ?",
+                            (match,),
+                        ).fetchone()[0]
+                        rows = conn.execute(
+                            f"""
+                            SELECT s.* FROM IcbStationsFts
+                            JOIN IcbStations s ON s.ID = IcbStationsFts.rowid
+                            WHERE IcbStationsFts MATCH ?
+                            ORDER BY rank, s.ID
+                            LIMIT ? OFFSET ?
+                            """,
+                            (match, page_size, offset),
+                        ).fetchall()
                     used_fts = True
-                except sqlite3.OperationalError:
+                except OperationalError:
                     used_fts = False
             if not used_fts:
                 like = f"%{q}%"

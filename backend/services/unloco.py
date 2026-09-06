@@ -1,12 +1,12 @@
 import csv
 import json
 import re
-import sqlite3
 from io import StringIO
 from pathlib import Path
 
 from config import UNLOCODE_CSV_PATH
-from db import get_connection, rebuild_unlocodes_fts
+from db import fts_ready, get_connection, rebuild_unlocodes_fts
+from db_engine import OperationalError, use_postgres
 from util import fts_prefix_query, now_stamp
 
 FLAG_DEFS = (
@@ -212,11 +212,8 @@ def ensure_unloco_loaded():
 
 def fts_available(conn):
     try:
-        row = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='UnlocodesFts'"
-        ).fetchone()
-        return bool(row)
-    except sqlite3.OperationalError:
+        return fts_ready(conn, "UnlocodesFts", "Unlocodes")
+    except OperationalError:
         return False
 
 
@@ -254,22 +251,38 @@ def list_unlocodes(query="", page=1, page_size=50):
             used_fts = False
             if match and fts_available(conn):
                 try:
-                    total = conn.execute(
-                        "SELECT COUNT(*) FROM UnlocodesFts WHERE UnlocodesFts MATCH ?",
-                        (match,),
-                    ).fetchone()[0]
-                    rows = conn.execute(
-                        f"""
-                        SELECT {UNLOCO_LIST_COLS} FROM UnlocodesFts
-                        JOIN Unlocodes u ON u.ID = UnlocodesFts.rowid
-                        WHERE UnlocodesFts MATCH ?
-                        ORDER BY rank, u.ID
-                        LIMIT ? OFFSET ?
-                        """,
-                        (match, page_size, offset),
-                    ).fetchall()
+                    if use_postgres():
+                        tsquery = match.replace("*", ":*").replace(" OR ", " | ")
+                        total = conn.execute(
+                            "SELECT COUNT(*) FROM Unlocodes WHERE SearchTsv @@ to_tsquery('simple', ?)",
+                            (tsquery,),
+                        ).fetchone()[0]
+                        rows = conn.execute(
+                            f"""
+                            SELECT {UNLOCO_TABLE_COLS} FROM Unlocodes
+                            WHERE SearchTsv @@ to_tsquery('simple', ?)
+                            ORDER BY ts_rank(SearchTsv, to_tsquery('simple', ?)) DESC, ID
+                            LIMIT ? OFFSET ?
+                            """,
+                            (tsquery, tsquery, page_size, offset),
+                        ).fetchall()
+                    else:
+                        total = conn.execute(
+                            "SELECT COUNT(*) FROM UnlocodesFts WHERE UnlocodesFts MATCH ?",
+                            (match,),
+                        ).fetchone()[0]
+                        rows = conn.execute(
+                            f"""
+                            SELECT {UNLOCO_LIST_COLS} FROM UnlocodesFts
+                            JOIN Unlocodes u ON u.ID = UnlocodesFts.rowid
+                            WHERE UnlocodesFts MATCH ?
+                            ORDER BY rank, u.ID
+                            LIMIT ? OFFSET ?
+                            """,
+                            (match, page_size, offset),
+                        ).fetchall()
                     used_fts = True
-                except sqlite3.OperationalError:
+                except OperationalError:
                     used_fts = False
             if not used_fts:
                 like = f"%{q}%"

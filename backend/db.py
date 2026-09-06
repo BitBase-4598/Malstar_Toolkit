@@ -1,24 +1,34 @@
-import sqlite3
-
-from config import DB_PATH, SCHEMA_VERSION, UPLOAD_DIR
+from config import SCHEMA_VERSION, UPLOAD_DIR
+from db_engine import (
+    DatabaseError,
+    IntegrityError,
+    OperationalError,
+    connect,
+    has_column,
+    pk_autoincrement,
+    table_columns,
+    table_exists,
+    use_postgres,
+)
 from util import letters_only
 
 
 def get_connection():
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=30000")
-    conn.execute("PRAGMA foreign_keys=ON")
-    conn.execute("PRAGMA cache_size=-32768")
-    conn.execute("PRAGMA temp_store=MEMORY")
-    conn.execute("PRAGMA mmap_size=134217728")
-    return conn
+    return connect()
+
+
+def fts_ready(conn, sqlite_name, table, column="SearchTsv"):
+    if use_postgres():
+        return has_column(conn, table, column)
+    return table_exists(conn, sqlite_name)
+
+
+def _sql(text):
+    return text.replace("INTEGER PRIMARY KEY AUTOINCREMENT", pk_autoincrement())
 
 
 def _create_tables(conn):
-    conn.execute("""
+    conn.execute(_sql("""
         CREATE TABLE IF NOT EXISTS CustomerRemarks (
             ID INTEGER PRIMARY KEY AUTOINCREMENT,
             CTRLOrgcode TEXT NOT NULL,
@@ -31,9 +41,9 @@ def _create_tables(conn):
             UpdateTime TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             UNIQUE (CTRLOrgcode, Customer)
         )
-    """)
-    columns = {row[1] for row in conn.execute("PRAGMA table_info(CustomerRemarks)")}
-    if "CustomerLetters" not in columns:
+    """))
+    columns = table_columns(conn, "CustomerRemarks")
+    if "CustomerLetters" not in columns and "customerletters" not in columns:
         conn.execute(
             "ALTER TABLE CustomerRemarks "
             "ADD COLUMN CustomerLetters TEXT NOT NULL DEFAULT ''"
@@ -384,6 +394,25 @@ def _create_tables(conn):
             Version INTEGER NOT NULL
         )
     """)
+    _ensure_rag_fts(conn)
+
+
+def _ensure_rag_fts(conn):
+    if use_postgres():
+        if not has_column(conn, "RagChunks", "SearchTsv"):
+            conn.execute(
+                """
+                ALTER TABLE RagChunks ADD COLUMN SearchTsv tsvector
+                GENERATED ALWAYS AS (
+                    to_tsvector(
+                        'simple',
+                        coalesce(Title, '') || ' ' || coalesce(Locator, '') || ' ' || coalesce(Body, '')
+                    )
+                ) STORED
+                """
+            )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_rag_chunks_tsv ON RagChunks USING GIN (SearchTsv)")
+        return
     try:
         conn.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS RagChunksFts USING fts5(
@@ -415,7 +444,7 @@ def _create_tables(conn):
                 VALUES (new.ID, new.Title, new.Locator, new.Body);
             END
         """)
-    except sqlite3.OperationalError:
+    except OperationalError:
         pass
 
 
@@ -464,6 +493,23 @@ def create_lcl_indexes(conn, table="LclShipments"):
 
 
 def _ensure_unlocodes_fts(conn):
+    if use_postgres():
+        if not has_column(conn, "Unlocodes", "SearchTsv"):
+            conn.execute(
+                """
+                ALTER TABLE Unlocodes ADD COLUMN SearchTsv tsvector
+                GENERATED ALWAYS AS (
+                    to_tsvector(
+                        'simple',
+                        coalesce(PortName, '') || ' ' || coalesce(UnCode, '') || ' ' ||
+                        coalesce(CountryCode, '') || ' ' || coalesce(CountryName, '') || ' ' ||
+                        coalesce(SearchText, '')
+                    )
+                ) STORED
+                """
+            )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_unlocodes_tsv ON Unlocodes USING GIN (SearchTsv)")
+        return
     try:
         conn.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS UnlocodesFts USING fts5(
@@ -496,14 +542,16 @@ def _ensure_unlocodes_fts(conn):
                 VALUES (new.ID, new.PortName, new.UnCode, new.CountryCode, new.CountryName);
             END
         """)
-    except sqlite3.OperationalError:
+    except OperationalError:
         pass
 
 
 def rebuild_unlocodes_fts(conn):
+    if use_postgres():
+        return
     try:
         conn.execute("INSERT INTO UnlocodesFts(UnlocodesFts) VALUES('rebuild')")
-    except sqlite3.OperationalError:
+    except OperationalError:
         pass
 
 
@@ -521,6 +569,17 @@ ICB_FTS_COLS = (
 
 
 def _ensure_icb_fts(conn):
+    if use_postgres():
+        if not has_column(conn, "IcbStations", "SearchTsv"):
+            expr = " || ' ' || ".join(f"coalesce({name}, '')" for name in ICB_FTS_COLS)
+            conn.execute(
+                f"""
+                ALTER TABLE IcbStations ADD COLUMN SearchTsv tsvector
+                GENERATED ALWAYS AS (to_tsvector('simple', {expr})) STORED
+                """
+            )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_icb_stations_tsv ON IcbStations USING GIN (SearchTsv)")
+        return
     cols = ", ".join(ICB_FTS_COLS)
     new_vals = ", ".join(f"new.{name}" for name in ICB_FTS_COLS)
     old_vals = ", ".join(f"old.{name}" for name in ICB_FTS_COLS)
@@ -561,19 +620,21 @@ def _ensure_icb_fts(conn):
             END
             """
         )
-    except sqlite3.OperationalError:
+    except OperationalError:
         pass
 
 
 def rebuild_icb_fts(conn):
+    if use_postgres():
+        return
     try:
         conn.execute("INSERT INTO IcbStationsFts(IcbStationsFts) VALUES('rebuild')")
-    except sqlite3.OperationalError:
+    except OperationalError:
         pass
 
 
 def _ensure_activity_log_columns(conn):
-    columns = {row[1] for row in conn.execute("PRAGMA table_info(ActivityLogs)")}
+    columns = table_columns(conn, "ActivityLogs")
     additions = (
         ("EventId", "TEXT NOT NULL DEFAULT ''"),
         ("RequestId", "TEXT NOT NULL DEFAULT ''"),
@@ -587,7 +648,7 @@ def _ensure_activity_log_columns(conn):
         ("UserAgent", "TEXT NOT NULL DEFAULT ''"),
     )
     for name, definition in additions:
-        if name not in columns:
+        if name not in columns and name.lower() not in columns:
             conn.execute(f"ALTER TABLE ActivityLogs ADD COLUMN {name} {definition}")
 
 
@@ -700,13 +761,14 @@ def migrate():
         if current < 4:
             _set_schema_version(conn, 4)
         if current < 6:
-            conn.execute("DROP TRIGGER IF EXISTS unlocodes_ai")
-            conn.execute("DROP TRIGGER IF EXISTS unlocodes_ad")
-            conn.execute("DROP TRIGGER IF EXISTS unlocodes_au")
-            try:
-                conn.execute("DROP TABLE IF EXISTS UnlocodesFts")
-            except sqlite3.DatabaseError:
-                pass
+            if not use_postgres():
+                conn.execute("DROP TRIGGER IF EXISTS unlocodes_ai")
+                conn.execute("DROP TRIGGER IF EXISTS unlocodes_ad")
+                conn.execute("DROP TRIGGER IF EXISTS unlocodes_au")
+                try:
+                    conn.execute("DROP TABLE IF EXISTS UnlocodesFts")
+                except DatabaseError:
+                    pass
             try:
                 conn.execute(
                     """
@@ -714,7 +776,7 @@ def migrate():
                     SET SearchText = trim(PortName || ' ' || UnCode || ' ' || CountryCode || ' ' || CountryName)
                     """
                 )
-            except sqlite3.DatabaseError:
+            except DatabaseError:
                 pass
             _ensure_unlocodes_fts(conn)
             rebuild_unlocodes_fts(conn)
