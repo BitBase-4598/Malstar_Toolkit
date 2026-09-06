@@ -1,14 +1,27 @@
 import os
+import threading
 
-from flask import Flask, abort, g, jsonify, send_from_directory
+from flask import Flask, abort, g, jsonify, request, send_from_directory
 from flask_cors import CORS
 
 from config import CORS_ORIGINS, LCL_MAX_UPLOAD_MB, MAX_UPLOAD_MB, STATIC_DIR
 from db import migrate
 
+_migrate_lock = threading.Lock()
+_migrated = False
+
+
+def ensure_migrated():
+    global _migrated
+    if _migrated:
+        return
+    with _migrate_lock:
+        if not _migrated:
+            migrate()
+            _migrated = True
+
 
 def create_app():
-    migrate()
     app = Flask(__name__, static_folder=None)
     upload_cap_mb = max(MAX_UPLOAD_MB, LCL_MAX_UPLOAD_MB)
     app.config["MAX_CONTENT_LENGTH"] = upload_cap_mb * 1024 * 1024
@@ -51,6 +64,8 @@ def create_app():
     @app.before_request
     def bind_request_id():
         assign_request_id()
+        if request.path != "/api/health":
+            ensure_migrated()
 
     @app.after_request
     def echo_request_id(response):

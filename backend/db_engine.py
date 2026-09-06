@@ -189,7 +189,7 @@ def _pg_pool():
             max_size=8,
             timeout=30,
             open=True,
-            kwargs={"autocommit": False, "row_factory": dict_row},
+            kwargs={"autocommit": False, "row_factory": dict_row, "connect_timeout": 10},
         )
     return _pool
 
