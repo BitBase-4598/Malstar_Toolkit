@@ -40,10 +40,23 @@ def lcl_import():
         return jsonify({"success": False, "message": error}), 400
     audit(
         "lcl.import",
-        summary=f"{result['filename']} export={result['exportCount']} import={result['importCount']}",
+        summary=(
+            f"{result['filename']} export={result['exportCount']} import={result['importCount']} "
+            f"inserted={result.get('inserted', 0)} updated={result.get('updated', 0)}"
+        ),
     )
+    inserted = result.get("inserted", 0)
+    updated = result.get("updated", 0)
+    stored = result.get("storedTotal", result["total"])
+    if updated:
+        message = (
+            f"Saved {result['total']:,} LCL shipments ({inserted:,} new, {updated:,} updated). "
+            f"Dashboard now has {stored:,}."
+        )
+    else:
+        message = f"Saved {result['total']:,} LCL shipments to the database"
     return jsonify({
         "success": True,
-        "message": f"Imported {result['total']:,} LCL shipments",
+        "message": message,
         "data": result,
     })

@@ -66,7 +66,7 @@ CORS_ORIGINS = [
     ).split(",")
     if origin.strip()
 ]
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 
 def resolve_static_dir():

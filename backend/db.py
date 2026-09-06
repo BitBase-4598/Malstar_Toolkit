@@ -256,6 +256,7 @@ def _create_tables(conn):
     )
     create_lcl_shipments_table(conn)
     create_lcl_indexes(conn)
+    ensure_lcl_shipment_id_unique(conn)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS LclImportMeta (
             ID INTEGER PRIMARY KEY CHECK (ID = 1),
@@ -451,6 +452,29 @@ def create_lcl_indexes(conn, table="LclShipments"):
     conn.execute(f"CREATE INDEX IF NOT EXISTS idx_lcl_dest_name ON {table} (DestCtry, CountryName)")
     conn.execute(f"CREATE INDEX IF NOT EXISTS idx_lcl_bosch ON {table} (IsBosch)")
     conn.execute(f"CREATE INDEX IF NOT EXISTS idx_lcl_customer ON {table} (Customer)")
+
+
+def ensure_lcl_shipment_id_unique(conn):
+    if not table_exists(conn, "LclShipments"):
+        return
+    conn.execute(
+        """
+        DELETE FROM LclShipments AS older
+        USING LclShipments AS newer
+        WHERE older.ShipmentID = newer.ShipmentID
+          AND older.ShipmentID <> ''
+          AND older.ID < newer.ID
+        """
+    )
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_lcl_shipment_id
+        ON LclShipments (ShipmentID)
+        WHERE ShipmentID <> ''
+        """
+    )
+    conn.execute("DROP TABLE IF EXISTS LclShipments_staging")
+    conn.commit()
 
 
 def _ensure_unlocodes_fts(conn):
@@ -662,5 +686,8 @@ def migrate():
             _set_schema_version(conn, 7)
         if current < 8:
             _set_schema_version(conn, 8)
+        if current < 9:
+            ensure_lcl_shipment_id_unique(conn)
+            _set_schema_version(conn, 9)
         if current < SCHEMA_VERSION:
             _set_schema_version(conn, SCHEMA_VERSION)
