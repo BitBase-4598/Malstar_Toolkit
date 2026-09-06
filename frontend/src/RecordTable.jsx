@@ -86,7 +86,7 @@ export default function RecordTable({
             {loading && rows.length === 0 ? (
               <tr>
                 <td colSpan="6" className="empty">
-                  Loading...
+                  Loading…
                 </td>
               </tr>
             ) : rows.length === 0 ? (

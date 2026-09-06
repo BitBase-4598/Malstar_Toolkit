@@ -1189,6 +1189,21 @@ td.copied {
   grid-column: 1 / -1;
 }
 
+.modal-confirm {
+  width: min(440px, 100%);
+}
+
+.modal-body {
+  padding: 20px 24px;
+  font-size: var(--type-body);
+  color: var(--maersk-text);
+}
+
+.modal-body p {
+  margin: 0;
+  line-height: 1.5;
+}
+
 .modal-actions {
   padding: 16px 24px;
   border-top: 1px solid var(--maersk-border);
@@ -1205,6 +1220,16 @@ td.copied {
 .modal-actions .secondary:hover:not(:disabled) {
   background: var(--maersk-row);
   border-color: var(--maersk-navy);
+}
+
+.modal-actions .danger {
+  background: var(--maersk-danger);
+  color: var(--maersk-white);
+  border-color: var(--maersk-danger);
+}
+
+.modal-actions .danger:hover:not(:disabled) {
+  background: #9a0010;
 }
 
 .log-card {

@@ -3,6 +3,7 @@ import { Eye, Pencil, Trash2 } from "lucide-react";
 import { api } from "./api";
 import SopEditor from "./SopEditor";
 import SopView from "./SopView";
+import useConfirm from "./useConfirm";
 
 const SopWorkspace = forwardRef(function SopWorkspace({ onNotice, onRefreshLogs }, ref) {
   const [query, setQuery] = useState("");
@@ -11,6 +12,7 @@ const SopWorkspace = forwardRef(function SopWorkspace({ onNotice, onRefreshLogs 
   const [mode, setMode] = useState("list");
   const [current, setCurrent] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [confirm, confirmDialog] = useConfirm();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -57,7 +59,11 @@ const SopWorkspace = forwardRef(function SopWorkspace({ onNotice, onRefreshLogs 
   };
 
   const remove = async (row) => {
-    if (!window.confirm(`Delete SOP "${row.title}"?`)) {
+    const ok = await confirm({
+      title: "Delete SOP",
+      message: `Delete SOP "${row.title}"?`,
+    });
+    if (!ok) {
       return;
     }
     try {
@@ -92,29 +98,36 @@ const SopWorkspace = forwardRef(function SopWorkspace({ onNotice, onRefreshLogs 
 
   if (mode === "edit") {
     return (
-      <SopEditor
-        sop={current}
-        saving={saving}
-        onCancel={() => setMode(current ? "view" : "list")}
-        onSubmit={save}
-        onNotice={onNotice}
-        onRefreshLogs={onRefreshLogs}
-      />
+      <>
+        <SopEditor
+          sop={current}
+          saving={saving}
+          onCancel={() => setMode(current ? "view" : "list")}
+          onSubmit={save}
+          onNotice={onNotice}
+          onRefreshLogs={onRefreshLogs}
+        />
+        {confirmDialog}
+      </>
     );
   }
 
   if (mode === "view" && current) {
     return (
-      <SopView
-        sop={current}
-        onEdit={() => setMode("edit")}
-        onDelete={() => remove(current)}
-        onNotice={onNotice}
-      />
+      <>
+        <SopView
+          sop={current}
+          onEdit={() => setMode("edit")}
+          onDelete={() => remove(current)}
+          onNotice={onNotice}
+        />
+        {confirmDialog}
+      </>
     );
   }
 
   return (
+    <>
     <section className="card">
       <div className="summary">
         <span className="summary-count">
@@ -145,7 +158,7 @@ const SopWorkspace = forwardRef(function SopWorkspace({ onNotice, onRefreshLogs 
             {loading ? (
               <tr>
                 <td colSpan="7" className="empty">
-                  Loading...
+                  Loading…
                 </td>
               </tr>
             ) : rows.length === 0 ? (
@@ -187,6 +200,8 @@ const SopWorkspace = forwardRef(function SopWorkspace({ onNotice, onRefreshLogs 
         </table>
       </div>
     </section>
+    {confirmDialog}
+    </>
   );
 });
 

@@ -2,6 +2,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { Download, Pencil, Trash2 } from "lucide-react";
 import { api } from "./api";
 import FilePreview from "./FilePreview";
+import useConfirm from "./useConfirm";
 
 function formatSize(bytes) {
   const size = Number(bytes) || 0;
@@ -23,6 +24,7 @@ const FileManager = forwardRef(function FileManager({ onNotice, onRefreshLogs },
   const [selectedId, setSelectedId] = useState(null);
   const [preview, setPreview] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [confirm, confirmDialog] = useConfirm();
   const splitRef = useRef(null);
   const listWidthRef = useRef(420);
   const [listWidth, setListWidth] = useState(() => {
@@ -113,7 +115,11 @@ const FileManager = forwardRef(function FileManager({ onNotice, onRefreshLogs },
   };
 
   const remove = async (row) => {
-    if (!window.confirm(`Delete ${row.originalName}?`)) {
+    const ok = await confirm({
+      title: "Delete file",
+      message: `Delete ${row.originalName}?`,
+    });
+    if (!ok) {
       return;
     }
     try {
@@ -197,7 +203,7 @@ const FileManager = forwardRef(function FileManager({ onNotice, onRefreshLogs },
               {loading ? (
                 <tr>
                   <td colSpan="5" className="empty">
-                    Loading...
+                    Loading…
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
@@ -276,6 +282,7 @@ const FileManager = forwardRef(function FileManager({ onNotice, onRefreshLogs },
           <FilePreview key={preview?.file?.id || "empty"} preview={preview} loading={previewLoading} />
         </div>
       </section>
+      {confirmDialog}
     </div>
   );
 });

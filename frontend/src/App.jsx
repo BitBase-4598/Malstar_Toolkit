@@ -167,6 +167,7 @@ export default function App() {
         filters: logFilters,
         onFiltersChange: setLogFilters,
         total: logTotal,
+        onNotice: setNotice,
       };
     }
     const props = {

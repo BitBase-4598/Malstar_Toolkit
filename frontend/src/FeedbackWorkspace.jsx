@@ -3,6 +3,8 @@ import { Search, Trash2, Upload, X } from "lucide-react";
 import { api } from "./api";
 import FieldSelect from "./FieldSelect";
 import { FEEDBACK_CATEGORIES } from "./api/cases";
+import ModalShell from "./ModalShell";
+import useConfirm from "./useConfirm";
 
 const STATUSES = [
   { id: "pending_review", label: "Pending review" },
@@ -68,6 +70,7 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
+  const [confirm, confirmDialog] = useConfirm();
   const [pendingFiles, setPendingFiles] = useState([]);
   const [files, setFiles] = useState([]);
 
@@ -173,7 +176,11 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
   };
 
   const remove = async (row) => {
-    if (!window.confirm("Delete this feedback?")) {
+    const ok = await confirm({
+      title: "Delete feedback",
+      message: "Delete this feedback?",
+    });
+    if (!ok) {
       return;
     }
     try {
@@ -294,7 +301,7 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
               {loading && rows.length === 0 ? (
                 <tr>
                   <td colSpan="7" className="empty">
-                    Loading...
+                    Loading…
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
@@ -331,15 +338,16 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
         </div>
       </section>
       {modal ? (
-        <div
-          className="overlay"
-          role="presentation"
-          onMouseDown={(event) => event.target === event.currentTarget && closeModal()}
+        <ModalShell
+          as="form"
+          busy={saving || uploading}
+          onClose={closeModal}
+          onSubmit={save}
+          labelledBy="feedback-modal-title"
         >
-          <form className="modal" onSubmit={save}>
             <div className="modal-head">
               <div>
-                <h2>{editing ? `Feedback #${editing.id}` : "New feedback"}</h2>
+                <h2 id="feedback-modal-title">{editing ? `Feedback #${editing.id}` : "New feedback"}</h2>
                 <p>Select a category, describe the issue, and attach supporting files.</p>
               </div>
               <button type="button" onClick={closeModal} disabled={saving || uploading} aria-label="Close">
@@ -451,9 +459,9 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
                 {saving ? "Saving..." : editing ? "Save" : "Submit"}
               </button>
             </div>
-          </form>
-        </div>
+        </ModalShell>
       ) : null}
+      {confirmDialog}
     </>
   );
 });

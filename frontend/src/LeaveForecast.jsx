@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Pencil, Save, Trash2, X } from "lucide-react
 import { api } from "./api";
 import FieldSelect from "./FieldSelect";
 import { holidayInfo, isOffDay } from "./chinaHolidays";
+import useConfirm from "./useConfirm";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const LEAVE_TYPES = [
@@ -192,6 +193,7 @@ export default function LeaveForecast({ onNotice, onRefreshLogs }) {
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
+  const [confirm, confirmDialog] = useConfirm();
   const splitRef = useRef(null);
   const calendarWidthRef = useRef(640);
   const draggingRef = useRef(false);
@@ -307,7 +309,11 @@ export default function LeaveForecast({ onNotice, onRefreshLogs }) {
   };
 
   const remove = async (plan) => {
-    if (!window.confirm(`Delete ${plan.person}'s leave on ${plan.leaveDate}?`)) {
+    const ok = await confirm({
+      title: "Delete leave plan",
+      message: `Delete ${plan.person}'s leave on ${plan.leaveDate}?`,
+    });
+    if (!ok) {
       return;
     }
     try {
@@ -350,6 +356,7 @@ export default function LeaveForecast({ onNotice, onRefreshLogs }) {
   };
 
   return (
+    <>
     <div
       ref={splitRef}
       className={`tool-split leave-split${dragging ? " is-resizing" : ""}`}
@@ -518,5 +525,7 @@ export default function LeaveForecast({ onNotice, onRefreshLogs }) {
         </div>
       </section>
     </div>
+    {confirmDialog}
+    </>
   );
 }
