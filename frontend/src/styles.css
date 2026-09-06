@@ -417,12 +417,14 @@ select {
 .primary,
 .secondary,
 .ghost,
+.danger,
 .pagination button {
   border-radius: var(--radius);
 }
 
 .primary,
-.secondary {
+.secondary,
+.danger {
   padding: 10px 16px;
   font-size: var(--type-ui);
   font-weight: 600;
@@ -444,15 +446,27 @@ select {
 }
 
 .primary:active:not(:disabled),
-.ghost:active:not(:disabled) {
+.ghost:active:not(:disabled),
+.danger:active:not(:disabled) {
   transform: scale(0.98);
 }
 
 .primary:disabled,
 .secondary:disabled,
-.ghost:disabled {
+.ghost:disabled,
+.danger:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.danger {
+  border: 0;
+  background: var(--maersk-danger);
+  color: var(--maersk-white);
+}
+
+.danger:hover:not(:disabled) {
+  background: #9a0010;
 }
 
 .secondary {
@@ -540,6 +554,7 @@ select {
 .primary:focus-visible,
 .secondary:focus-visible,
 .ghost:focus-visible,
+.danger:focus-visible,
 .pagination button:focus-visible {
   outline: 2px solid var(--maersk-blue);
   outline-offset: 2px;
@@ -680,12 +695,21 @@ td.copied {
   border-radius: var(--radius-sm);
 }
 
+.actions .danger,
+.attach-item .danger {
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--maersk-muted);
+}
+
 .actions button:hover {
   background: #e8f6fb;
   color: var(--maersk-blue-dark);
 }
 
-.actions .danger:hover {
+.actions .danger:hover,
+.attach-item .danger:hover:not(:disabled) {
   background: var(--maersk-danger-bg);
   color: var(--maersk-danger);
 }
@@ -2918,6 +2942,7 @@ tbody tr.selected td {
   .primary,
   .secondary,
   .ghost,
+  .danger,
   td,
   tbody tr td,
   .search {
