@@ -52,24 +52,23 @@ def activity_log_filters():
 
 
 def activity_log_row(row):
-    keys = row.keys()
-    summary = row["Summary"] if "Summary" in keys and row["Summary"] else row["Detail"]
+    summary = row["Summary"] or row["Detail"]
     return {
         "id": row["ID"],
         "timestamp": row["Timestamp"],
         "action": row["Action"],
-        "actionCode": row["ActionCode"] if "ActionCode" in keys else "",
+        "actionCode": row["ActionCode"] or "",
         "detail": summary,
         "summary": summary,
         "clientIp": row["ClientIP"],
-        "eventId": row["EventId"] if "EventId" in keys else "",
-        "requestId": row["RequestId"] if "RequestId" in keys else "",
-        "module": row["Module"] if "Module" in keys else "",
-        "outcome": row["Outcome"] if "Outcome" in keys else "",
-        "severity": row["Severity"] if "Severity" in keys else "",
-        "resourceType": row["ResourceType"] if "ResourceType" in keys else "",
-        "resourceId": row["ResourceId"] if "ResourceId" in keys else "",
-        "userAgent": row["UserAgent"] if "UserAgent" in keys else "",
+        "eventId": row["EventId"] or "",
+        "requestId": row["RequestId"] or "",
+        "module": row["Module"] or "",
+        "outcome": row["Outcome"] or "",
+        "severity": row["Severity"] or "",
+        "resourceType": row["ResourceType"] or "",
+        "resourceId": row["ResourceId"] or "",
+        "userAgent": row["UserAgent"] or "",
     }
 
 

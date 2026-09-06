@@ -303,8 +303,8 @@ def bump_unloco_row_count(conn, delta=1):
     conn.execute(
         """
         INSERT INTO UnlocoImportMeta (ID, Filename, ImportedAt, RowCount)
-        VALUES (1, 'manual', '', MAX(?, 0))
-        ON CONFLICT(ID) DO UPDATE SET RowCount=MAX(UnlocoImportMeta.RowCount + ?, 0)
+        VALUES (1, 'manual', '', GREATEST(?, 0))
+        ON CONFLICT(ID) DO UPDATE SET RowCount=GREATEST(UnlocoImportMeta.RowCount + ?, 0)
         """,
         (delta, delta),
     )

@@ -20,6 +20,8 @@ _pool = None
 
 _LIKE_NOCASE = re.compile(r"LIKE\s+\?\s+COLLATE\s+NOCASE", re.IGNORECASE)
 _ON_CONFLICT = re.compile(r"ON CONFLICT\s*\(", re.IGNORECASE)
+_INSTR = re.compile(r"\binstr\s*\(", re.IGNORECASE)
+_BEGIN_IMMEDIATE = re.compile(r"^\s*BEGIN(\s+IMMEDIATE|\s+TRANSACTION)?\s*;?\s*$", re.IGNORECASE)
 
 
 def pk_autoincrement():
@@ -33,6 +35,7 @@ def adapt_sql(sql):
     )
     sql = _LIKE_NOCASE.sub("ILIKE ?", sql)
     sql = _ON_CONFLICT.sub("ON CONFLICT (", sql)
+    sql = _INSTR.sub("strpos(", sql)
     out = []
     in_single = in_double = False
     i = 0
@@ -98,6 +101,8 @@ class CompatCursor:
         self.lastrowid = getattr(cursor, "lastrowid", None)
 
     def execute(self, sql, params=None):
+        if _BEGIN_IMMEDIATE.match(sql or ""):
+            return self
         statement = adapt_sql(sql)
         if params is None:
             self._cursor.execute(statement)

@@ -468,7 +468,7 @@ def booking_to_dict(row):
         "branch": row["Branch"],
         "category": row["Category"],
         "isAi": bool(row["IsAi"]),
-        "feedbackCount": row["FeedbackCount"] if "FeedbackCount" in row.keys() else 0,
+        "feedbackCount": row["FeedbackCount"] if "FeedbackCount" in row else 0,
     }
 
 
@@ -486,13 +486,13 @@ def feedback_to_dict(row):
         "category": row["Category"],
         "description": row["Description"],
         "action": row["Action"],
-        "date": row["ResolvedDate"] if "ResolvedDate" in row.keys() else row["FeedbackDate"],
+        "date": row["ResolvedDate"] if "ResolvedDate" in row else row["FeedbackDate"],
         "week": row["Week"],
         "email": row["Email"],
         "name": row["Name"],
-        "lane": row["ResolvedLane"] if "ResolvedLane" in row.keys() else row["Lane"],
-        "orderId": row["OrderId"] if "OrderId" in row.keys() else "",
-        "bookingStatus": row["BookingStatus"] if "BookingStatus" in row.keys() else "",
+        "lane": row["ResolvedLane"] if "ResolvedLane" in row else row["Lane"],
+        "orderId": row["OrderId"] if "OrderId" in row else "",
+        "bookingStatus": row["BookingStatus"] if "BookingStatus" in row else "",
     }
 
 

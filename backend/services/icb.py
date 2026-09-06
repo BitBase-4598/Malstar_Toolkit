@@ -300,8 +300,8 @@ def bump_icb_row_count(conn, delta=1):
     conn.execute(
         """
         INSERT INTO IcbImportMeta (ID, Filename, ImportedAt, RowCount)
-        VALUES (1, 'manual', '', MAX(?, 0))
-        ON CONFLICT(ID) DO UPDATE SET RowCount=MAX(IcbImportMeta.RowCount + ?, 0)
+        VALUES (1, 'manual', '', GREATEST(?, 0))
+        ON CONFLICT(ID) DO UPDATE SET RowCount=GREATEST(IcbImportMeta.RowCount + ?, 0)
         """,
         (delta, delta),
     )
