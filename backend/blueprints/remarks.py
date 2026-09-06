@@ -1,8 +1,6 @@
-import sqlite3
-
 from flask import Blueprint, jsonify, request
 
-from db import get_connection
+from db import IntegrityError, get_connection
 from logging_util import audit
 from services.remarks import (
     collect_import_payloads,
@@ -84,7 +82,7 @@ def create_record():
             row = conn.execute(
                 "SELECT * FROM CustomerRemarks WHERE ID=?", (cur.lastrowid,)
             ).fetchone()
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         audit(
             "record.create",
             "failure",
@@ -126,7 +124,7 @@ def update_record(record_id):
             row = conn.execute(
                 "SELECT * FROM CustomerRemarks WHERE ID=?", (record_id,)
             ).fetchone()
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         audit(
             "record.update",
             "failure",
