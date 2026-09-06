@@ -61,7 +61,7 @@ cd backend
 python scripts/sqlite_to_postgres.py --sqlite customer_remark.db
 ```
 
-`--database-url` is optional when `DATABASE_URL` is set in the environment or a gitignored `.env`. Azure Flexible Server cutover is documented in [azure/app-settings.md](azure/app-settings.md).
+`--database-url` is optional when `DATABASE_URL` is set in the environment or a gitignored `.env`. If the live SQLite file cannot be downloaded, `python scripts/live_api_to_postgres.py` copies the public App Service APIs instead. Azure Flexible Server cutover is documented in [azure/app-settings.md](azure/app-settings.md).
 
 ## Azure App Service
 

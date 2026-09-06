@@ -5,6 +5,8 @@ This app is a **Linux Python 3.12 Web App** deployed from **GitHub** (Oryx / `SC
 Live site: `https://malstar-toolkit-djexgna2eghtgkep.eastasia-01.azurewebsites.net`  
 Kudu / SCM: `https://malstar-toolkit-djexgna2eghtgkep.scm.eastasia-01.azurewebsites.net`
 
+If Kudu is unavailable, `backend/scripts/live_api_to_postgres.py` can copy the public API tables (remarks, leave, logs, ICB, UNLOCODE, GCA, dashboard). It cannot copy `/home` uploads or raw `LclShipments`. Prefer the SQLite file when you can download it.
+
 Database: **Azure Database for PostgreSQL Flexible Server**. Uploads stay on App Service `/home` storage.
 
 Startup command (Configuration → General settings). Keep this exact string:
@@ -117,6 +119,13 @@ python scripts/sqlite_to_postgres.py --sqlite <downloaded-customer_remark.db>
 ```
 
 The script reads `DATABASE_URL` from `.env` if you omit `--database-url`.
+
+If you cannot download the `.db`, this fallback reads the live site APIs (already used once against the East Asia app):
+
+```powershell
+cd backend
+python scripts/live_api_to_postgres.py --app-url "https://malstar-toolkit-djexgna2eghtgkep.eastasia-01.azurewebsites.net"
+```
 
 6. Compare row counts for `CustomerRemarks`, `LeavePeople`, `LeavePlans`, `ToolkitFiles`, `ActivityLogs`.
 7. Set App Service `DATABASE_URL`, delete `DATABASE_PATH`, start the Web App.
