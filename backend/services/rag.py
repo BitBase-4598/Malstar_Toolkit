@@ -24,7 +24,7 @@ from config import (
     llm_enabled,
 )
 from db import fts_ready, get_connection
-from db_engine import OperationalError, use_postgres
+from db_engine import OperationalError
 from logging_util import audit
 from services.files_store import cell_to_text, preview_docx, stored_path
 from services.sops import load_sop
@@ -289,30 +289,17 @@ def search_chunks(conn, question, limit=RAG_TOP_K):
     rows = []
     if query and fts_available(conn):
         try:
-            if use_postgres():
-                tsquery = " | ".join(f"{term}:*" for term in re.findall(r"[A-Za-z0-9]{2,}", query)[:24]) or query
-                rows = conn.execute(
-                    """
-                    SELECT ID, SourceType, SourceID, Title, Locator, Body
-                    FROM RagChunks
-                    WHERE SearchTsv @@ to_tsquery('simple', ?)
-                    ORDER BY ts_rank(SearchTsv, to_tsquery('simple', ?)) DESC, ID DESC
-                    LIMIT ?
-                    """,
-                    (tsquery, tsquery, limit),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    """
-                    SELECT c.ID, c.SourceType, c.SourceID, c.Title, c.Locator, c.Body
-                    FROM RagChunksFts
-                    JOIN RagChunks c ON c.ID = RagChunksFts.rowid
-                    WHERE RagChunksFts MATCH ?
-                    ORDER BY bm25(RagChunksFts)
-                    LIMIT ?
-                    """,
-                    (query, limit),
-                ).fetchall()
+            tsquery = " | ".join(f"{term}:*" for term in re.findall(r"[A-Za-z0-9]{2,}", query)[:24]) or query
+            rows = conn.execute(
+                """
+                SELECT ID, SourceType, SourceID, Title, Locator, Body
+                FROM RagChunks
+                WHERE SearchTsv @@ to_tsquery('simple', ?)
+                ORDER BY ts_rank(SearchTsv, to_tsquery('simple', ?)) DESC, ID DESC
+                LIMIT ?
+                """,
+                (tsquery, tsquery, limit),
+            ).fetchall()
         except OperationalError:
             rows = []
     if rows:

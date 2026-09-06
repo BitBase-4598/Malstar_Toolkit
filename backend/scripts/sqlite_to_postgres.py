@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Copy a MALSTAR SQLite database into PostgreSQL.
+"""Archival one-shot: copy an old MALSTAR SQLite file into PostgreSQL.
+
+The running app no longer opens SQLite. Use this only to load a leftover .db.
 
 Usage (from the backend directory):
 

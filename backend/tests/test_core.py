@@ -7,8 +7,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 TMP = Path(tempfile.mkdtemp())
 os.environ["MALSTAR_SKIP_DOTENV"] = "1"
-os.environ["DATABASE_URL"] = ""
-os.environ["DATABASE_PATH"] = str(TMP / "test.db")
+os.environ["DATABASE_URL"] = os.environ.get(
+    "TEST_DATABASE_URL",
+    "postgresql://malstar:malstar@127.0.0.1:5432/malstar_test",
+)
 os.environ["UPLOAD_DIR"] = str(TMP / "uploads")
 os.environ["LOG_PATH"] = str(TMP / "test.log")
 os.environ["GCA_XLSX_PATH"] = str(TMP / "missing-gca.xlsx")
@@ -19,8 +21,18 @@ sys.path.insert(0, str(ROOT))
 from flask import Flask
 from werkzeug.exceptions import NotFound
 
-from db import get_connection, migrate
+from db import fts_ready, get_connection, migrate
+from db_engine import table_exists
 from config import SCHEMA_VERSION
+
+
+def _reset_test_database():
+    with get_connection() as conn:
+        conn.execute("DROP SCHEMA IF EXISTS public CASCADE")
+        conn.execute("CREATE SCHEMA public")
+
+
+_reset_test_database()
 from services.dashboard_analytics import format_minutes, minutes_between, parse_dashboard_record
 from services.files_store import stored_path
 from util import letters_only
@@ -111,7 +123,7 @@ def test_api_health_leave_dashboard():
     assert "kpis" in gca.get_json()["data"]
 
 
-def test_audit_writes_sqlite_and_json():
+def test_audit_writes_postgres_and_json():
     migrate()
     from config import LOG_PATH
     from logging_util import audit
@@ -566,10 +578,7 @@ def test_lcl_failed_import_keeps_existing_rows():
         assert row["ShipmentID"] == "KEEP-ME"
         meta = conn.execute("SELECT Filename FROM LclImportMeta WHERE ID=1").fetchone()
         assert meta["Filename"] == "old.xlsx"
-        staging = conn.execute(
-            "SELECT name FROM sqlite_master WHERE name='LclShipments_staging'"
-        ).fetchone()
-        assert staging is None
+        assert not table_exists(conn, "LclShipments_staging")
 
 
 def test_lcl_import_raw_sheet_headers():
@@ -629,10 +638,7 @@ def test_lcl_import_raw_sheet_headers():
     with get_connection() as conn:
         ids = {row[0] for row in conn.execute("SELECT ShipmentID FROM LclShipments")}
         assert ids == {"EXP1", "IMP1"}
-        staging = conn.execute(
-            "SELECT name FROM sqlite_master WHERE name='LclShipments_staging'"
-        ).fetchone()
-        assert staging is None
+        assert not table_exists(conn, "LclShipments_staging")
 
 
 def test_lcl_dimension_and_summary():
@@ -715,10 +721,7 @@ def test_icb_csv_import_and_search():
     assert chile["icbCode"] == "MAELOGVAP"
     assert "as customer" in chile["notes"]
     with get_connection() as conn:
-        fts = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='IcbStationsFts'"
-        ).fetchone()
-        assert fts is not None
+        assert fts_ready(conn, "IcbStationsFts", "IcbStations")
 
 
 def test_unloco_csv_import_and_search():
@@ -768,10 +771,7 @@ def test_unloco_csv_import_and_search():
     with get_connection() as conn:
         search_text = conn.execute("SELECT SearchText FROM Unlocodes WHERE UnCode='FRLAI'").fetchone()[0]
         assert "Door" not in search_text
-        fts = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='UnlocodesFts'"
-        ).fetchone()
-        assert fts is not None
+        assert fts_ready(conn, "UnlocodesFts", "Unlocodes")
     empty = client.get("/api/unlocode").get_json()
     assert empty["pagination"]["total"] == 2
 

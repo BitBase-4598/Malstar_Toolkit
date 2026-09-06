@@ -3,7 +3,7 @@ import re
 from io import StringIO
 
 from db import fts_ready, get_connection
-from db_engine import OperationalError, use_postgres
+from db_engine import OperationalError
 from util import fts_prefix_query, now_stamp
 
 HEADER_MAP = {
@@ -238,36 +238,20 @@ def list_icb_stations(query="", page=1, page_size=100):
             total = 0
             if match and icb_fts_available(conn):
                 try:
-                    if use_postgres():
-                        tsquery = match.replace("*", ":*").replace(" OR ", " | ")
-                        total = conn.execute(
-                            "SELECT COUNT(*) FROM IcbStations WHERE SearchTsv @@ to_tsquery('simple', ?)",
-                            (tsquery,),
-                        ).fetchone()[0]
-                        rows = conn.execute(
-                            f"""
-                            SELECT * FROM IcbStations
-                            WHERE SearchTsv @@ to_tsquery('simple', ?)
-                            ORDER BY ts_rank(SearchTsv, to_tsquery('simple', ?)) DESC, ID
-                            LIMIT ? OFFSET ?
-                            """,
-                            (tsquery, tsquery, page_size, offset),
-                        ).fetchall()
-                    else:
-                        total = conn.execute(
-                            "SELECT COUNT(*) FROM IcbStationsFts WHERE IcbStationsFts MATCH ?",
-                            (match,),
-                        ).fetchone()[0]
-                        rows = conn.execute(
-                            f"""
-                            SELECT s.* FROM IcbStationsFts
-                            JOIN IcbStations s ON s.ID = IcbStationsFts.rowid
-                            WHERE IcbStationsFts MATCH ?
-                            ORDER BY rank, s.ID
-                            LIMIT ? OFFSET ?
-                            """,
-                            (match, page_size, offset),
-                        ).fetchall()
+                    tsquery = match.replace("*", ":*").replace(" OR ", " | ")
+                    total = conn.execute(
+                        "SELECT COUNT(*) FROM IcbStations WHERE SearchTsv @@ to_tsquery('simple', ?)",
+                        (tsquery,),
+                    ).fetchone()[0]
+                    rows = conn.execute(
+                        f"""
+                        SELECT * FROM IcbStations
+                        WHERE SearchTsv @@ to_tsquery('simple', ?)
+                        ORDER BY ts_rank(SearchTsv, to_tsquery('simple', ?)) DESC, ID
+                        LIMIT ? OFFSET ?
+                        """,
+                        (tsquery, tsquery, page_size, offset),
+                    ).fetchall()
                     used_fts = True
                 except OperationalError:
                     used_fts = False

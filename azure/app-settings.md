@@ -5,7 +5,7 @@ This app is a **Linux Python 3.12 Web App** deployed from **GitHub** (Oryx / `SC
 Live site: `https://malstar-toolkit-djexgna2eghtgkep.eastasia-01.azurewebsites.net`  
 Kudu / SCM: `https://malstar-toolkit-djexgna2eghtgkep.scm.eastasia-01.azurewebsites.net`
 
-If Kudu is unavailable, `backend/scripts/live_api_to_postgres.py` can copy the public API tables (remarks, leave, logs, ICB, UNLOCODE, GCA, dashboard). It cannot copy `/home` uploads or raw `LclShipments`. Prefer the SQLite file when you can download it.
+If you still have an old App Service `.db`, `backend/scripts/sqlite_to_postgres.py` can copy it once. Otherwise `backend/scripts/live_api_to_postgres.py` copies the public API tables (remarks, leave, logs, ICB, UNLOCODE, GCA, dashboard). It cannot copy `/home` uploads or raw `LclShipments`. The running app no longer opens SQLite.
 
 Database: **Azure Database for PostgreSQL Flexible Server**. Uploads stay on App Service `/home` storage.
 
@@ -75,7 +75,7 @@ Keep:
 | `FLASK_DEBUG` | `false` |
 | `CORS_ORIGINS` | *(empty)* |
 
-Change **after** the SQLite copy finishes (see section 3):
+Required:
 
 ```bash
 az webapp config appsettings set \
@@ -89,29 +89,17 @@ az webapp config appsettings delete \
   --setting-names DATABASE_PATH
 ```
 
-Do **not** set `DATABASE_URL` on the Web App before the copy if the Postgres-capable code is already deployed. The app will boot against empty Postgres and look like it lost history.
+`DATABASE_URL` is required. The process exits on boot if it is missing or not a PostgreSQL URL. Delete leftover `DATABASE_PATH`; it is unused.
 
 Optional Ask LLM settings are unchanged: `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_CHAT_DEPLOYMENT`, `AZURE_OPENAI_API_VERSION`.
 
 Oryx installs from **repo-root** `requirements.txt` and `backend/requirements.txt`. Both must list `psycopg[binary,pool]`. GitHub Actions does not need `DATABASE_URL` at build time.
 
-## 3. Cutover order (avoid a crash loop)
+## 3. Historical copy (optional)
 
-Live history is on **Azure App Service SQLite**, not an old CVM file. Download Azure’s `.db`.
+Live App Service already uses Azure Flexible Server. There is no SQLite fallback or rollback.
 
-1. Flexible Server and the `malstar` database already exist (section 1).
-2. Merge / deploy this codebase to `main` **without** setting `DATABASE_URL` so Azure stays on SQLite while Oryx installs psycopg.
-3. Short maintenance window: stop the Web App (or accept a few minutes of writes that will not be copied).
-4. Download the live SQLite from Kudu (Development Tools → Advanced Tools → Debug console), including `-wal` / `-shm` if present:
-
-```
-/home/data/customer_remark.db
-/home/site/wwwroot/backend/customer_remark.db
-```
-
-Use whichever file is larger / recently written. Prefer stopping the app first so WAL is flushed.
-
-5. From a machine whose IP is on the Flexible Server firewall, with the password in a gitignored `.env`:
+If you still have an old `.db` and need to load it into a fresh database, from a machine on the Flexible Server firewall:
 
 ```powershell
 cd backend
@@ -120,18 +108,14 @@ python scripts/sqlite_to_postgres.py --sqlite <downloaded-customer_remark.db>
 
 The script reads `DATABASE_URL` from `.env` if you omit `--database-url`.
 
-If you cannot download the `.db`, this fallback reads the live site APIs (already used once against the East Asia app):
+To copy from the public APIs instead:
 
 ```powershell
 cd backend
 python scripts/live_api_to_postgres.py --app-url "https://malstar-toolkit-djexgna2eghtgkep.eastasia-01.azurewebsites.net"
 ```
 
-6. Compare row counts for `CustomerRemarks`, `LeavePeople`, `LeavePlans`, `ToolkitFiles`, `ActivityLogs`.
-7. Set App Service `DATABASE_URL`, delete `DATABASE_PATH`, start the Web App.
-8. Confirm `GET /api/health` returns 200 (database ping). Then check remarks, leave, dashboard, file download, Ask, and logs.
-
-Rollback: remove `DATABASE_URL`, restore `DATABASE_PATH` if you used one, restart. Keep the downloaded `.db` for several days.
+Compare row counts for `CustomerRemarks`, `LeavePeople`, `LeavePlans`, `ToolkitFiles`, `ActivityLogs`. Confirm `GET /api/health` returns 200, then check remarks, leave, dashboard, file download, Ask, and logs.
 
 Uploads stay on `/home/data/uploads`. They are not moved into Postgres.
 
@@ -147,4 +131,4 @@ Always On and custom domains are plan-SKU limits, not database limits. Entra Eas
 
 ## 5. Do not use deploy.ps1 for this app
 
-`azure/deploy.ps1` builds a **container** named `autorating-web` and still sets `DATABASE_PATH`. MALSTAR-Toolkit is GitHub code deploy plus Flexible Server as above.
+`azure/deploy.ps1` builds a **container** named `autorating-web` and is not used for MALSTAR-Toolkit. This app is GitHub code deploy plus Flexible Server as above.

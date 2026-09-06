@@ -8,7 +8,7 @@ Search matches **company name (Customer) only**. Pasted text is stripped to lett
 
 The **Ask** sidebar tool searches structured SOP pages and uploaded `.docx` / `.xlsx` files.
 
-- Saving an SOP or uploading a file updates the SQLite FTS5 index automatically.
+- Saving an SOP or uploading a file updates the PostgreSQL `tsvector` index automatically.
 - Use **Rebuild index** if older files were added before this feature.
 - Without Azure OpenAI, Ask returns matching excerpts and citations (opens the SOP or file preview).
 - With `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, and `AZURE_OPENAI_CHAT_DEPLOYMENT` set, Ask generates an answer from those excerpts. See [azure/app-settings.md](azure/app-settings.md).
@@ -23,7 +23,7 @@ On the CVM, rebuild the frontend with `VITE_BASE=/remarks/` so assets load under
 
 CSV headers must be: `CTRLOrgcode,Customer,Remark1,Remark2,Remark3`. Existing rows are updated by the combined key CTRLOrgcode + Customer.
 
-If replacing the previous project, delete the old SQLite database because its schema is different. The new database is `backend/customer_remark.db`.
+PostgreSQL is required. Set `DATABASE_URL` in a gitignored `.env` (see `.env.example`). The app will not start without a `postgres://` or `postgresql://` URL.
 
 ## Run on this machine (no Docker)
 
@@ -52,16 +52,9 @@ Build and run the production image locally:
 docker compose up --build
 ```
 
-Then open `http://localhost:8080`. Docker Compose uses PostgreSQL (`DATABASE_URL`). Local `python app.py` without `DATABASE_URL` still uses SQLite at `backend/customer_remark.db`.
+Then open `http://localhost:8080`. Docker Compose and local `python app.py` both require `DATABASE_URL` (Compose default: `postgresql://malstar:malstar@postgres:5432/malstar`).
 
-To copy an existing SQLite file into Postgres:
-
-```powershell
-cd backend
-python scripts/sqlite_to_postgres.py --sqlite customer_remark.db
-```
-
-`--database-url` is optional when `DATABASE_URL` is set in the environment or a gitignored `.env`. If the live SQLite file cannot be downloaded, `python scripts/live_api_to_postgres.py` copies the public App Service APIs instead. Azure Flexible Server cutover is documented in [azure/app-settings.md](azure/app-settings.md).
+`scripts/sqlite_to_postgres.py` is an archival one-shot reader for an old `.db` file. New runtimes do not open SQLite. `python scripts/live_api_to_postgres.py` copies public App Service APIs into Postgres. Azure settings are in [azure/app-settings.md](azure/app-settings.md).
 
 ## Azure App Service
 
@@ -73,7 +66,7 @@ From a machine logged in with Azure CLI (`az login`):
 .\azure\deploy.ps1
 ```
 
-Use a **single instance**. SQLite is not safe across scale-out. Persist `/home` (`WEBSITES_ENABLE_APP_SERVICE_STORAGE=true`) so remarks survive restarts.
+Use a **single instance**. Uploads stay on `/home` (`WEBSITES_ENABLE_APP_SERVICE_STORAGE=true`) and are not safe across scale-out until they are on Azure Files.
 
 ## Public access on this Tencent CVM
 
