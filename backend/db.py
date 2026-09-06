@@ -391,6 +391,61 @@ def _create_tables(conn):
         )
     """)
     _ensure_rag_fts(conn)
+    _ensure_wiki_tables(conn)
+
+
+def _ensure_wiki_tables(conn):
+    conn.execute(_sql("""
+        CREATE TABLE IF NOT EXISTS WikiPages (
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            Slug TEXT NOT NULL UNIQUE,
+            Title TEXT NOT NULL,
+            Body TEXT NOT NULL DEFAULT '',
+            SourceType TEXT NOT NULL,
+            SourceID INTEGER,
+            ParentID INTEGER,
+            UpdatedAt TEXT NOT NULL
+        )
+    """))
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_wiki_pages_source ON WikiPages (SourceType, SourceID)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_wiki_pages_updated ON WikiPages (UpdatedAt DESC, ID DESC)"
+    )
+    conn.execute(_sql("""
+        CREATE TABLE IF NOT EXISTS WikiChunks (
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            PageID INTEGER NOT NULL,
+            Locator TEXT NOT NULL DEFAULT '',
+            Body TEXT NOT NULL DEFAULT '',
+            Embedding TEXT NOT NULL DEFAULT '',
+            UpdatedAt TEXT NOT NULL,
+            FOREIGN KEY (PageID) REFERENCES WikiPages(ID) ON DELETE CASCADE
+        )
+    """))
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_wiki_chunks_page ON WikiChunks (PageID, ID)"
+    )
+    if not has_column(conn, "WikiChunks", "SearchTsv"):
+        conn.execute(
+            """
+            ALTER TABLE WikiChunks ADD COLUMN SearchTsv tsvector
+            GENERATED ALWAYS AS (
+                to_tsvector('simple', coalesce(Locator, '') || ' ' || coalesce(Body, ''))
+            ) STORED
+            """
+        )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_wiki_chunks_tsv ON WikiChunks USING GIN (SearchTsv)")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS WikiIndexState (
+            ID INTEGER PRIMARY KEY CHECK (ID = 1),
+            LastIndexedAt TEXT NOT NULL DEFAULT '',
+            PageCount INTEGER NOT NULL DEFAULT 0,
+            ChunkCount INTEGER NOT NULL DEFAULT 0,
+            EmbeddedCount INTEGER NOT NULL DEFAULT 0
+        )
+    """)
 
 
 def _ensure_rag_fts(conn):
@@ -660,5 +715,8 @@ def migrate():
             _ensure_icb_fts(conn)
             rebuild_icb_fts(conn)
             _set_schema_version(conn, 7)
+        if current < 8:
+            _ensure_wiki_tables(conn)
+            _set_schema_version(conn, 8)
         if current < SCHEMA_VERSION:
             _set_schema_version(conn, SCHEMA_VERSION)

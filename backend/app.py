@@ -25,6 +25,7 @@ def create_app():
     from blueprints.health import bp as health_bp
     from blueprints.icb import bp as icb_bp
     from blueprints.unloco import bp as unloco_bp
+    from blueprints.wiki import bp as wiki_bp
     from blueprints.leave import bp as leave_bp
     from blueprints.lcl import bp as lcl_bp
     from blueprints.logs import bp as logs_bp
@@ -45,6 +46,7 @@ def create_app():
     app.register_blueprint(unloco_bp)
     app.register_blueprint(gca_bp)
     app.register_blueprint(remarks_bp)
+    app.register_blueprint(wiki_bp)
 
     @app.before_request
     def bind_request_id():
