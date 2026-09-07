@@ -949,6 +949,7 @@ td.copied {
   border-bottom: 4px solid var(--maersk-blue);
   background: var(--maersk-navy);
   color: var(--maersk-white);
+  flex-shrink: 0;
 }
 
 .modal-head h2,
@@ -978,6 +979,10 @@ td.copied {
   padding: 24px;
   overflow: auto;
   min-height: 0;
+}
+
+.modal > .grid {
+  flex: 1;
 }
 
 .grid label {
@@ -1279,6 +1284,7 @@ td.copied {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .modal-actions .secondary {

@@ -416,9 +416,9 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
     setForm({
       ctrlOrgcode: row.ctrlOrgcode,
       customer: row.customer,
-      remark1: row.remark1,
-      remark2: row.remark2,
-      remark3: row.remark3,
+      remark1: row.remark1 || "",
+      remark2: row.remark2 || "",
+      remark3: row.remark3 || "",
     });
     setModal(true);
   };

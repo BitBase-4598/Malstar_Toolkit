@@ -177,5 +177,7 @@ def ensure_leave_people():
         _result, error = replace_leave_people_from_workbook(path.read_bytes())
         if not error:
             return list_leave_people()
-    replace_leave_people([{"email": "", "name": name} for name in stored])
+    if stored:
+        return list_leave_people()
+    replace_leave_people([{"email": "", "name": name} for name in LEAVE_PEOPLE])
     return list_leave_people()

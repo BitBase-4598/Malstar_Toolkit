@@ -3,9 +3,9 @@ import { API_ROOT, request } from "./client";
 const LEAVE = `${API_ROOT}/leave-plans`;
 
 export const leaveApi = {
-  listLeavePeople: () => request(`${API_ROOT}/leave-people`),
-  listLeavePlans: (year, month) =>
-    request(`${LEAVE}?year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}`),
+  listLeavePeople: (options) => request(`${API_ROOT}/leave-people`, options),
+  listLeavePlans: (year, month, options) =>
+    request(`${LEAVE}?year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}`, options),
   createLeavePlan: (data) =>
     request(LEAVE, {
       method: "POST",

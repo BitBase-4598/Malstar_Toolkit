@@ -204,25 +204,41 @@ export default function LeaveForecast({ onNotice, onRefreshLogs }) {
   });
 
   calendarWidthRef.current = calendarWidth;
+  const peopleLoaded = useRef(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal) => {
     setLoading(true);
     try {
-      const [planResult, peopleResult] = await Promise.all([
-        api.listLeavePlans(year, month + 1),
-        api.listLeavePeople(),
-      ]);
+      const options = signal ? { signal } : undefined;
+      const planPromise = api.listLeavePlans(year, month + 1, options);
+      const peoplePromise = peopleLoaded.current
+        ? Promise.resolve(null)
+        : api.listLeavePeople(options);
+      const [planResult, peopleResult] = await Promise.all([planPromise, peoplePromise]);
+      if (signal?.aborted) {
+        return;
+      }
       setPlans(planResult.data || []);
-      setPeople(peopleResult.data || []);
+      if (peopleResult) {
+        setPeople(peopleResult.data || []);
+        peopleLoaded.current = true;
+      }
     } catch (error) {
+      if (error.name === "AbortError" || signal?.aborted) {
+        return;
+      }
       onNotice?.({ type: "error", text: error.message });
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) {
+        setLoading(false);
+      }
     }
   }, [year, month, onNotice]);
 
   useEffect(() => {
-    load();
+    const controller = new AbortController();
+    load(controller.signal);
+    return () => controller.abort();
   }, [load]);
 
   useEffect(() => {

@@ -38,22 +38,40 @@ export default function RecordModal({ editing, form, saving, onChange, onClose, 
         </label>
         <label className="wide">
           Remark1
-          <textarea rows="2" value={form.remark1} onChange={update("remark1")} disabled={saving} />
+          <textarea
+            name="remark1"
+            rows="2"
+            value={form.remark1 || ""}
+            onChange={update("remark1")}
+            disabled={saving}
+          />
         </label>
         <label className="wide">
           Remark2
-          <textarea rows="2" value={form.remark2} onChange={update("remark2")} disabled={saving} />
+          <textarea
+            name="remark2"
+            rows="2"
+            value={form.remark2 || ""}
+            onChange={update("remark2")}
+            disabled={saving}
+          />
         </label>
         <label className="wide">
           Remark3
-          <textarea rows="2" value={form.remark3} onChange={update("remark3")} disabled={saving} />
+          <textarea
+            name="remark3"
+            rows="2"
+            value={form.remark3 || ""}
+            onChange={update("remark3")}
+            disabled={saving}
+          />
         </label>
       </div>
       <div className="modal-actions">
         <button type="button" className="secondary" onClick={onClose} disabled={saving}>
           Cancel
         </button>
-        <button className="primary" disabled={saving}>
+        <button type="submit" className="primary" disabled={saving}>
           <Save size={16} />
           {saving ? "Saving..." : "Save"}
         </button>
