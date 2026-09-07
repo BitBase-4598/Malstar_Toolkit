@@ -100,6 +100,10 @@ class CompatCursor:
         self._cursor = cursor
         self.lastrowid = getattr(cursor, "lastrowid", None)
 
+    @property
+    def rowcount(self):
+        return int(getattr(self._cursor, "rowcount", 0) or 0)
+
     def execute(self, sql, params=None):
         if _BEGIN_IMMEDIATE.match(sql or ""):
             return self
