@@ -390,7 +390,8 @@ export default function LeaveForecast({ onNotice, onRefreshLogs }) {
         <div className="leave-calendar">
           {WEEKDAYS.map((day) => (
             <div key={day} className={`leave-weekday${day === "Sat" || day === "Sun" ? " weekend" : ""}`}>
-              {day}
+              <span className="leave-weekday-full">{day}</span>
+              <span className="leave-weekday-short" aria-hidden="true">{day.slice(0, 1)}</span>
             </div>
           ))}
           {cells.map((day, index) => {
