@@ -2809,37 +2809,34 @@ tbody tr.selected td {
     padding-top: env(safe-area-inset-top);
   }
 
+  .workspace {
+    order: 1;
+  }
+
   .sidebar {
+    order: 2;
     width: 100%;
     height: auto;
     max-height: none;
     min-height: 0;
-    position: static;
+    position: sticky;
+    bottom: 0;
+    z-index: 12;
     flex-direction: row;
-    align-items: center;
+    align-items: stretch;
     border-right: 0;
-    border-bottom: 4px solid var(--maersk-blue);
+    border-bottom: 0;
+    border-top: 4px solid var(--maersk-blue);
     flex: 0 0 auto;
     overflow: hidden;
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
-  .sidebar-brand {
-    flex-direction: row;
-    align-items: center;
-    gap: 8px;
-    width: auto;
-    flex-shrink: 0;
-    padding: 8px 12px;
-    border-bottom: 0;
-  }
-
-  .sidebar-brand h1 {
-    display: none;
-  }
-
-  .sidebar-nav-label {
+  .sidebar-brand,
+  .sidebar-nav-label,
+  .nav-item-label {
     display: none;
   }
 
@@ -2847,23 +2844,31 @@ tbody tr.selected td {
     flex: 1 1 auto;
     flex-direction: row;
     flex-wrap: nowrap;
-    align-items: center;
-    align-content: center;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding: 8px 8px 8px 0;
-    gap: 4px;
+    align-items: stretch;
+    align-content: stretch;
+    justify-content: space-around;
+    overflow: hidden;
+    padding: 4px 4px 6px;
+    gap: 0;
   }
 
   .nav-item {
     width: auto;
-    flex: 0 0 auto;
+    flex: 1 1 0;
     max-width: none;
-    min-height: 0;
-    align-self: center;
-    padding: 8px 10px;
-    font-size: var(--type-label);
-    white-space: nowrap;
+    min-width: 0;
+    min-height: 44px;
+    justify-content: center;
+    align-self: stretch;
+    padding: 8px 4px;
+    font-size: 0;
+    border-radius: var(--radius-sm);
+  }
+
+  .nav-item svg {
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
   }
 
   .workspace {
@@ -2893,7 +2898,7 @@ tbody tr.selected td {
     flex: 1 0 auto;
     height: auto;
     padding: 12px 14px;
-    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    padding-bottom: 12px;
     overflow: visible;
   }
 
@@ -3061,10 +3066,6 @@ tbody tr.selected td {
 
   .leave-holiday-name {
     font-size: 9px;
-  }
-
-  .nav-item {
-    padding: 8px;
   }
 }
 
