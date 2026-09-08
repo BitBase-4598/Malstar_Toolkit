@@ -2870,7 +2870,8 @@ tbody tr.selected td {
     flex: 1 1 auto;
     min-width: 0;
     min-height: 0;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
 
   .topbar {
@@ -2889,10 +2890,11 @@ tbody tr.selected td {
 
   .page {
     min-width: 0;
+    flex: 1 0 auto;
+    height: auto;
     padding: 12px 14px;
     padding-bottom: max(12px, env(safe-area-inset-bottom));
-    overflow-x: hidden;
-    overflow-y: auto;
+    overflow: visible;
   }
 
   .page-intro h2 {
