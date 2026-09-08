@@ -923,7 +923,7 @@ td.copied {
 
 .modal {
   background: var(--maersk-white);
-  width: min(700px, 100%);
+  width: min(700px, calc(100vw - 24px));
   max-height: min(92dvh, 900px);
   border: 1px solid var(--maersk-border);
   border-radius: var(--radius-lg);
@@ -1816,6 +1816,10 @@ tbody tr.selected td {
 
 .leave-weekday.weekend {
   color: #9a9a9a;
+}
+
+.leave-weekday-short {
+  display: none;
 }
 
 .leave-day {
@@ -2779,6 +2783,7 @@ tbody tr.selected td {
     display: none;
   }
 
+  .tool-split .card,
   .files-split .file-list-card,
   .leave-split .leave-calendar-card,
   .leave-split .leave-day-card {
@@ -2798,42 +2803,80 @@ tbody tr.selected td {
   }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 900px) {
   .app-shell {
     flex-direction: column;
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .workspace {
+    order: 1;
   }
 
   .sidebar {
+    order: 2;
     width: 100%;
     height: auto;
-    max-height: min(42dvh, 320px);
+    max-height: none;
     min-height: 0;
-    position: static;
+    position: sticky;
+    bottom: 0;
+    z-index: 12;
+    flex-direction: row;
+    align-items: stretch;
     border-right: 0;
-    border-bottom: 4px solid var(--maersk-blue);
+    border-bottom: 0;
+    border-top: 4px solid var(--maersk-blue);
     flex: 0 0 auto;
+    overflow: hidden;
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .sidebar-brand,
+  .sidebar-nav-label,
+  .nav-item-label {
+    display: none;
   }
 
   .sidebar-nav {
-    flex: 0 0 auto;
+    flex: 1 1 auto;
     flex-direction: row;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    align-content: flex-start;
-    overflow: auto;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    align-content: stretch;
+    justify-content: space-around;
+    overflow: hidden;
+    padding: 4px 4px 6px;
+    gap: 0;
   }
 
   .nav-item {
     width: auto;
-    flex: 1 1 148px;
-    max-width: 100%;
-    min-height: 0;
-    align-self: flex-start;
+    flex: 1 1 0;
+    max-width: none;
+    min-width: 0;
+    min-height: 44px;
+    justify-content: center;
+    align-self: stretch;
+    padding: 8px 4px;
+    font-size: 0;
+    border-radius: var(--radius-sm);
+  }
+
+  .nav-item svg {
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
   }
 
   .workspace {
     flex: 1 1 auto;
+    min-width: 0;
     min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
 
   .topbar {
@@ -2846,16 +2889,48 @@ tbody tr.selected td {
     font-size: var(--type-title);
   }
 
+  .topbar-actions {
+    width: 100%;
+  }
+
   .page {
+    min-width: 0;
+    flex: 1 0 auto;
+    height: auto;
     padding: 12px 14px;
+    padding-bottom: 12px;
+    overflow: visible;
   }
 
   .page-intro h2 {
     font-size: var(--type-section);
   }
 
-  .topbar-actions {
-    width: 100%;
+  .page-stack {
+    flex: 0 0 auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .page-panel.active {
+    flex: 0 0 auto;
+    overflow: visible;
+    height: auto;
+  }
+
+  .dash-sub,
+  .dash-sub.active {
+    min-height: 0;
+    height: auto;
+    flex: 0 0 auto;
+  }
+
+  .tool-split,
+  .ask-layout {
+    flex: 0 0 auto;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
   }
 
   .grid {
@@ -2871,8 +2946,16 @@ tbody tr.selected td {
     grid-template-columns: 1fr;
   }
 
+  .table-wrap,
+  .dash-layout .table-wrap,
+  .dash-data .table-wrap,
+  .dash-flagged .table-wrap {
+    overflow-x: auto;
+    max-width: 100%;
+  }
+
   .wide-table {
-    min-width: 0;
+    min-width: 640px;
     table-layout: auto;
   }
 
@@ -2888,10 +2971,23 @@ tbody tr.selected td {
     padding: 6px;
   }
 
+  .leave-weekday {
+    font-size: 11px;
+    letter-spacing: 0;
+    padding-bottom: 2px;
+  }
+
   .dash-kpis,
   .dash-charts,
-  .dash-lower {
+  .dash-lower,
+  .lcl-map-row,
+  .lcl-overview,
+  .lcl-kpis {
     grid-template-columns: 1fr;
+  }
+
+  .lcl-overview .lcl-kpis {
+    grid-column: auto;
   }
 
   .dash-kpi-highest {
@@ -2908,8 +3004,68 @@ tbody tr.selected td {
     justify-items: center;
   }
 
-  .dash-hours {
-    overflow: hidden;
+  .dash-hours,
+  .lcl-month-chart {
+    overflow-x: auto;
+  }
+
+  .modal-actions {
+    flex-wrap: wrap;
+  }
+
+  .tool-split {
+    flex-direction: column;
+  }
+
+  .split-handle {
+    display: none;
+  }
+
+  .tool-split .card,
+  .files-split .file-list-card,
+  .leave-split .leave-calendar-card,
+  .leave-split .leave-day-card {
+    width: auto !important;
+    max-width: none;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .card {
+    overflow: visible;
+    min-height: 0;
+  }
+
+  .leave-calendar,
+  .leave-day-body,
+  .log-list {
+    flex: 0 0 auto;
+    overflow: visible;
+  }
+
+  .page-panel .lcl-page.is-embedded {
+    height: auto;
+    overflow: visible;
+  }
+}
+
+@media (max-width: 480px) {
+  .leave-weekday-full {
+    display: none;
+  }
+
+  .leave-weekday-short {
+    display: inline;
+  }
+
+  .leave-day,
+  .leave-day.empty {
+    min-height: 40px;
+    padding: 4px;
+  }
+
+  .leave-holiday-name {
+    font-size: 9px;
   }
 }
 

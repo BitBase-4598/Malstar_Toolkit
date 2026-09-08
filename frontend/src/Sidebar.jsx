@@ -33,10 +33,11 @@ export default function Sidebar({ section, onSectionChange }) {
               className={active ? "nav-item active" : "nav-item"}
               onMouseEnter={() => item.Workspace?.preload?.()}
               onClick={() => onSectionChange(item.id)}
+              aria-label={item.label}
               aria-current={active ? "page" : undefined}
             >
               <Icon size={18} />
-              {item.label}
+              <span className="nav-item-label">{item.label}</span>
             </button>
           );
         })}
