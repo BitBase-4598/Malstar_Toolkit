@@ -9,6 +9,7 @@ Search matches **company name (Customer) only**. Pasted text is stripped to lett
 The **Ask** sidebar tool searches structured SOP pages and uploaded `.docx` / `.xlsx` files.
 
 - Saving an SOP or uploading a file updates the PostgreSQL `tsvector` index automatically.
+- **Wiki** (branch `MALSTAR-WIKI-TEST`) builds a searchable page layer from remarks, SOPs, files, cases, and GCA feedback. It does not wiki-ify LCL or UNLOCODE rows. Keyword search is default; set `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` to store JSON embeddings and rerank.
 - Use **Rebuild index** if older files were added before this feature.
 - Without Azure OpenAI, Ask returns matching excerpts and citations (opens the SOP or file preview).
 - With `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, and `AZURE_OPENAI_CHAT_DEPLOYMENT` set, Ask generates an answer from those excerpts. See [azure/app-settings.md](azure/app-settings.md).

@@ -3562,3 +3562,100 @@ html.lcl-html #root {
   padding-left: 0;
   padding-right: 0;
 }
+
+.wiki-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+
+.wiki-split {
+  min-height: 0;
+}
+
+.wiki-split .card:first-child {
+  flex: 0 0 320px;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.wiki-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 16px 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--maersk-border);
+  border-radius: var(--radius);
+  background: var(--maersk-white);
+}
+
+.wiki-search input {
+  border: 0;
+  outline: none;
+  width: 100%;
+  font: inherit;
+}
+
+.wiki-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 12px 16px;
+  overflow: auto;
+  flex: 1;
+}
+
+.wiki-list button {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.wiki-list button:hover,
+.wiki-list button.active {
+  background: var(--maersk-hover);
+  border-color: var(--maersk-blue);
+}
+
+.wiki-list strong {
+  color: var(--maersk-navy);
+}
+
+.wiki-list em,
+.wiki-list span {
+  font-style: normal;
+  color: var(--maersk-muted);
+  font-size: var(--type-label);
+}
+
+.wiki-article {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.wiki-article .summary span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wiki-article-body {
+  padding: 0 20px 24px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+  overflow: auto;
+}
