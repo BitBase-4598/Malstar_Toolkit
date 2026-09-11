@@ -4,12 +4,11 @@ from config import ASK_MAX_QUESTION, llm_enabled
 from db import get_connection
 from logging_util import audit
 from services.rag import (
-    chunk_to_citation,
     generate_answer,
     maybe_backfill_index,
     rag_status,
     reindex_all,
-    search_chunks,
+    retrieve_citations,
 )
 
 bp = Blueprint("ask", __name__)
@@ -42,21 +41,20 @@ def ask_question():
         question = question[:ASK_MAX_QUESTION]
     with get_connection() as conn:
         indexing = maybe_backfill_index(conn)
-        rows = search_chunks(conn, question)
-    if indexing and not rows:
+        citations = retrieve_citations(conn, question)
+    if indexing and not citations:
         audit("ask.query", summary=question[:200], extra={"mode": "indexing"})
         return jsonify({
             "success": True,
             "data": {
                 "question": question,
-                "answer": "Indexing files and SOPs. Try Ask again in a moment.",
+                "answer": "Indexing wiki notes, files, and SOPs. Try Ask again in a moment.",
                 "mode": "indexing",
                 "citations": [],
                 "llmEnabled": llm_enabled(),
                 "llmError": None,
             },
         })
-    citations = [chunk_to_citation(row) for row in rows]
     wanted_generate = llm_enabled()
     answer, llm_error = generate_answer(question, citations)
     mode = "generate" if wanted_generate and not llm_error else "retrieve"
@@ -64,7 +62,7 @@ def ask_question():
         mode = "retrieve"
         if citations:
             answer = (
-                "Could not reach Azure OpenAI, so here are the closest matches from Files and SOPs.\n\n"
+                "Could not reach Azure OpenAI, so here are the closest matches from the wiki and toolkit.\n\n"
                 + "\n".join(
                     f"[{index}] {item['title']} ({item['locator']})\n{item['excerpt']}"
                     for index, item in enumerate(citations, start=1)

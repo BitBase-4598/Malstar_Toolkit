@@ -38,7 +38,6 @@ export default function App() {
   const gcaRef = useRef();
   const recordsRef = useRef();
   const feedbackRef = useRef();
-  const pendingCitation = useRef(null);
   const [askReindexing, setAskReindexing] = useState(false);
   const [dashImporting, setDashImporting] = useState(false);
   const [lclImporting, setLclImporting] = useState(false);
@@ -115,29 +114,6 @@ export default function App() {
     setVisited((current) => (current[next] ? current : { ...current, [next]: true }));
   };
 
-  const openCitation = (citation) => {
-    if (!citation?.sourceId) {
-      return;
-    }
-    pendingCitation.current = citation;
-    changeSection(citation.sourceType === "sop" ? "sops" : "files");
-  };
-
-  useEffect(() => {
-    const citation = pendingCitation.current;
-    if (!citation) {
-      return;
-    }
-    if (citation.sourceType === "sop" && visited.sops && section === "sops") {
-      pendingCitation.current = null;
-      sopsRef.current?.openView(citation.sourceId);
-    }
-    if (citation.sourceType === "file" && visited.files && section === "files") {
-      pendingCitation.current = null;
-      filesRef.current?.openPreview(citation.sourceId);
-    }
-  }, [section, visited]);
-
   const current = TOOL_BY_ID[section];
   const Actions = current?.Actions;
   const actionProps = {
@@ -186,7 +162,6 @@ export default function App() {
       props.onImportingChange = setFeedbackImporting;
     }
     if (tool.id === "ask") {
-      props.onOpenCitation = openCitation;
       props.onReindexingChange = setAskReindexing;
     }
     return props;

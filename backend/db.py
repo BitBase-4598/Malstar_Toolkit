@@ -209,6 +209,42 @@ def _create_tables(conn):
         )
     """)
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS WikiPages (
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            Path TEXT NOT NULL UNIQUE,
+            Title TEXT NOT NULL DEFAULT '',
+            Folder TEXT NOT NULL DEFAULT '',
+            Body TEXT NOT NULL DEFAULT '',
+            Frontmatter TEXT NOT NULL DEFAULT '',
+            Origin TEXT NOT NULL DEFAULT 'vault',
+            CreatedAt TEXT NOT NULL,
+            UpdatedAt TEXT NOT NULL
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_wiki_pages_folder ON WikiPages (Folder, Title, ID)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_wiki_pages_title ON WikiPages (Title)")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS WikiAttachments (
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            RelPath TEXT NOT NULL UNIQUE,
+            StoredName TEXT NOT NULL,
+            OriginalName TEXT NOT NULL DEFAULT '',
+            Kind TEXT NOT NULL DEFAULT 'image',
+            Size INTEGER NOT NULL DEFAULT 0,
+            UploadedAt TEXT NOT NULL
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_wiki_attachments_path ON WikiAttachments (RelPath)")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS WikiImportMeta (
+            ID INTEGER PRIMARY KEY CHECK (ID = 1),
+            Filename TEXT NOT NULL DEFAULT '',
+            ImportedAt TEXT NOT NULL DEFAULT '',
+            PageCount INTEGER NOT NULL DEFAULT 0,
+            AttachmentCount INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS Cases (
             ID INTEGER PRIMARY KEY AUTOINCREMENT,
             Status TEXT NOT NULL DEFAULT 'pending_review',
@@ -689,5 +725,7 @@ def migrate():
         if current < 9:
             ensure_lcl_shipment_id_unique(conn)
             _set_schema_version(conn, 9)
+        if current < 10:
+            _set_schema_version(conn, 10)
         if current < SCHEMA_VERSION:
             _set_schema_version(conn, SCHEMA_VERSION)

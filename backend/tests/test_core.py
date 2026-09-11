@@ -1079,6 +1079,93 @@ def test_ask_empty_index_returns_without_reindex():
     assert body["data"]["mode"] in ("retrieve", "indexing", "generate")
 
 
+def test_wiki_note_is_indexed_and_editable():
+    migrate()
+    from app import app
+
+    client = app.test_client()
+    created = client.post("/api/wiki", json={
+        "title": "LCL booking cutoff",
+        "body": "# LCL booking cutoff\nCargo must be ready 24 hours before departure.\n",
+    })
+    assert created.status_code == 201
+    page = created.get_json()["data"]
+    asked = client.post("/api/ask", json={"question": "LCL booking cutoff cargo ready"})
+    assert asked.status_code == 200
+    types = [item["sourceType"] for item in asked.get_json()["data"]["citations"]]
+    assert "wiki" in types
+    listed = client.get("/api/wiki?q=cutoff")
+    assert any(item["id"] == page["id"] for item in listed.get_json()["data"])
+    updated = client.patch(
+        f"/api/wiki/{page['id']}",
+        json={"body": "Updated cutoff is 36 hours before departure.\n"},
+    )
+    assert updated.status_code == 200
+    asked_again = client.post("/api/ask", json={"question": "36 hours before departure cutoff"})
+    excerpts = " ".join(item["excerpt"] for item in asked_again.get_json()["data"]["citations"])
+    assert "36" in excerpts
+
+
+def test_wiki_vault_zip_skips_obsidian_and_indexes():
+    import io
+    import zipfile
+
+    migrate()
+    from app import app
+
+    client = app.test_client()
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr(
+            "SOPs/Hazardous cargo.md",
+            "---\ntitle: Hazardous cargo\n---\n# Hazardous cargo\nDo not load lithium batteries without approval.\n",
+        )
+        archive.writestr(".obsidian/app.json", "{}")
+        archive.writestr(".trash/old.md", "# ignored\n")
+    buffer.seek(0)
+    imported = client.post(
+        "/api/wiki/import",
+        data={"file": (buffer, "vault.zip")},
+    )
+    assert imported.status_code == 200, imported.get_data(as_text=True)
+    data = imported.get_json()["data"]
+    assert data["pageCount"] >= 1
+    asked = client.post("/api/ask", json={"question": "lithium batteries hazardous cargo"})
+    types = [item["sourceType"] for item in asked.get_json()["data"]["citations"]]
+    assert "wiki" in types
+
+
+def test_ask_indexes_remarks_and_live_icb():
+    migrate()
+    from db import get_connection
+    from services.rag import reindex_all
+
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO IcbStations (
+                Country, Location, Branch, Unloco, GroupCode, GroupName,
+                AgentCode, IcbCode, Notes, Direction
+            )
+            VALUES (
+                'Testland', 'Portville', 'PV1', 'TTPVL', 'PV1-FES', 'Export',
+                'AGT1', 'ICB99', 'Test ICB note', 'export'
+            )
+            """
+        )
+        reindex_all(conn)
+    from app import app
+
+    client = app.test_client()
+    remarks = client.post("/api/ask", json={"question": "Demo Customer A priority weekly review"})
+    assert remarks.status_code == 200
+    types = [item["sourceType"] for item in remarks.get_json()["data"]["citations"]]
+    assert "remark" in types
+    icb = client.post("/api/ask", json={"question": "ICB for Testland Portville"})
+    icb_types = [item["sourceType"] for item in icb.get_json()["data"]["citations"]]
+    assert "icb" in icb_types
+
+
 def test_gateway_get_timeout_is_raised_for_heavy_reads():
     from gateway import GET_TIMEOUT, WRITE_TIMEOUT, _forward_timeout
 

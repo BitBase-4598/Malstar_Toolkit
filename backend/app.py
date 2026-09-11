@@ -4,7 +4,7 @@ import threading
 from flask import Flask, abort, g, jsonify, request, send_from_directory
 from flask_cors import CORS
 
-from config import CORS_ORIGINS, LCL_MAX_UPLOAD_MB, MAX_UPLOAD_MB, STATIC_DIR
+from config import CORS_ORIGINS, LCL_MAX_UPLOAD_MB, MAX_UPLOAD_MB, STATIC_DIR, WIKI_MAX_ZIP_MB
 from db import migrate
 
 _migrate_lock = threading.Lock()
@@ -23,7 +23,7 @@ def ensure_migrated():
 
 def create_app():
     app = Flask(__name__, static_folder=None)
-    upload_cap_mb = max(MAX_UPLOAD_MB, LCL_MAX_UPLOAD_MB)
+    upload_cap_mb = max(MAX_UPLOAD_MB, LCL_MAX_UPLOAD_MB, WIKI_MAX_ZIP_MB)
     app.config["MAX_CONTENT_LENGTH"] = upload_cap_mb * 1024 * 1024
     app.config["MAX_FORM_MEMORY_SIZE"] = upload_cap_mb * 1024 * 1024
     app.config["MAX_FORM_PARTS"] = 10000
@@ -31,6 +31,7 @@ def create_app():
         CORS(app, resources={r"/api/*": {"origins": CORS_ORIGINS}})
 
     from blueprints.ask import bp as ask_bp
+    from blueprints.wiki import bp as wiki_bp
     from blueprints.cases import bp as cases_bp
     from blueprints.dashboard import bp as dashboard_bp
     from blueprints.files import bp as files_bp
@@ -51,6 +52,7 @@ def create_app():
     app.register_blueprint(sops_bp)
     app.register_blueprint(cases_bp)
     app.register_blueprint(ask_bp)
+    app.register_blueprint(wiki_bp)
     app.register_blueprint(leave_bp)
     app.register_blueprint(lcl_bp)
     app.register_blueprint(dashboard_bp)

@@ -589,8 +589,8 @@ select {
   font-size: var(--type-section);
 }
 
-.summary-count {
-  white-space: nowrap;
+.ask-card .summary-count {
+  white-space: normal;
 }
 
 .dash-layout .summary strong {
@@ -2225,6 +2225,189 @@ tbody tr.selected td {
   font-size: var(--type-ui);
 }
 
+.ask-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+
+.ask-primary {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.ask-knowledge {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ask-knowledge .summary {
+  align-items: center;
+}
+
+.ask-knowledge .summary em {
+  display: block;
+  font-style: normal;
+  color: var(--maersk-muted);
+  font-size: var(--type-label);
+}
+
+.ask-knowledge > label {
+  margin: 10px 16px 4px;
+  font-size: var(--type-label);
+  color: var(--maersk-muted);
+  font-weight: 600;
+}
+
+.ask-notes-search {
+  margin: 0 16px 8px;
+  width: calc(100% - 32px);
+  padding: 8px 10px;
+  border: 1px solid var(--maersk-border);
+  border-radius: var(--radius);
+}
+
+.ask-notes-list {
+  max-height: 180px;
+  overflow: auto;
+  border-bottom: 1px solid var(--maersk-border);
+}
+
+.ask-notes-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0 8px 8px;
+}
+
+.ask-notes-list button {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.ask-notes-list button:hover,
+.ask-notes-list button.active {
+  background: var(--maersk-hover);
+}
+
+.ask-notes-list strong {
+  color: var(--maersk-navy);
+}
+
+.ask-notes-list em {
+  font-style: normal;
+  color: var(--maersk-muted);
+  font-size: var(--type-label);
+}
+
+.ask-knowledge-preview {
+  flex: 1;
+  min-height: 160px;
+  overflow: auto;
+  padding: 12px 16px 16px;
+}
+
+.ask-note-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ask-note-editor input,
+.ask-note-editor textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--maersk-border);
+  border-radius: var(--radius);
+  font: inherit;
+}
+
+.ask-note-editor textarea {
+  min-height: 180px;
+  resize: vertical;
+}
+
+.ask-markdown {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.5;
+}
+
+.ask-markdown h1,
+.ask-markdown h2,
+.ask-markdown h3 {
+  color: var(--maersk-navy);
+  margin: 0.8em 0 0.4em;
+}
+
+.ask-markdown p,
+.ask-markdown ul {
+  margin: 0 0 0.8em;
+}
+
+.ask-markdown img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+}
+
+.ask-markdown pre {
+  overflow: auto;
+  padding: 10px;
+  background: var(--maersk-row);
+  border-radius: var(--radius-sm);
+  font-size: var(--type-label);
+}
+
+.wiki-link {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--maersk-blue-dark);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.ask-record {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+}
+
+.ask-record div {
+  display: grid;
+  gap: 2px;
+}
+
+.ask-record dt {
+  color: var(--maersk-muted);
+  font-size: var(--type-label);
+  text-transform: uppercase;
+}
+
+.ask-record dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .dash-layout {
   display: flex;
   flex-direction: column;
@@ -2930,6 +3113,15 @@ tbody tr.selected td {
     flex: 0 0 auto;
     height: auto;
     min-height: 0;
+    overflow: visible;
+  }
+
+  .ask-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .ask-primary,
+  .ask-knowledge {
     overflow: visible;
   }
 

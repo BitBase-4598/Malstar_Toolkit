@@ -93,6 +93,8 @@ az webapp config appsettings delete \
 
 Optional Ask LLM settings are unchanged: `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_CHAT_DEPLOYMENT`, `AZURE_OPENAI_API_VERSION`.
 
+Optional wiki vault zip size: `WIKI_MAX_ZIP_MB` (default 64). Import the Obsidian zip from the Ask tool.
+
 Oryx installs from **repo-root** `requirements.txt` and `backend/requirements.txt`. Both must list `psycopg[binary,pool]`. GitHub Actions does not need `DATABASE_URL` at build time.
 
 ## 3. Historical copy (optional)
