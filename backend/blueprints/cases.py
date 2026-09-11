@@ -139,7 +139,6 @@ def delete_case_route(case_id):
             audit("case.delete", "failure", resource_id=case_id, summary="not found")
             return jsonify({"success": False, "message": "Case not found"}), 404
         stored_names = case_file_disk_names(conn, case_id)
-        conn.execute("DELETE FROM RagChunks WHERE SourceType='case' AND SourceID=?", (case_id,))
         conn.execute("DELETE FROM Cases WHERE ID=?", (case_id,))
     unlink_stored_files(stored_names)
     audit("case.delete", resource_id=case_id, summary=case_heading(data))

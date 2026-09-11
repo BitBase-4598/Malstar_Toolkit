@@ -243,8 +243,6 @@ def create_case(conn, payload):
         f"INSERT INTO Cases ({columns}) VALUES ({placeholders})",
         [payload["status"], *_payload_column_values(payload), created, updated],
     )
-    from services.rag import index_case
-    index_case(conn, cur.lastrowid)
     return load_case(conn, cur.lastrowid)
 
 
@@ -263,8 +261,6 @@ def update_case_review(conn, case_id, payload):
             case_id,
         ),
     )
-    from services.rag import index_case
-    index_case(conn, case_id)
     return load_case(conn, case_id)
 
 

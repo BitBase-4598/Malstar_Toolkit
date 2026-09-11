@@ -63,11 +63,6 @@ ACTION_CATALOG = {
     "gca.import": {"module": "gca", "label": "GCA hypercare imported", "resource_type": "gca"},
     "ask.query": {"module": "ask", "label": "Ask", "resource_type": "ask"},
     "ask.reindex": {"module": "ask", "label": "Ask index rebuilt", "resource_type": "ask"},
-    "wiki.import": {"module": "ask", "label": "Wiki vault imported", "resource_type": "wiki"},
-    "wiki.create": {"module": "ask", "label": "Wiki note created", "resource_type": "wiki"},
-    "wiki.update": {"module": "ask", "label": "Wiki note updated", "resource_type": "wiki"},
-    "wiki.delete": {"module": "ask", "label": "Wiki note deleted", "resource_type": "wiki"},
-    "wiki.upload": {"module": "ask", "label": "Wiki note uploaded", "resource_type": "wiki"},
     "server.exception": {"module": "server", "label": "Unhandled exception", "resource_type": "server"},
 }
 

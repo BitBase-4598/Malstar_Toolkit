@@ -4,7 +4,6 @@ import { sopsApi } from "./sops";
 import { leaveApi } from "./leave";
 import { logsApi } from "./logs";
 import { askApi } from "./ask";
-import { wikiApi } from "./wiki";
 import { dashboardApi } from "./dashboard";
 import { lclApi } from "./lcl";
 import { icbApi } from "./icb";
@@ -21,7 +20,6 @@ export const api = {
   ...leaveApi,
   ...logsApi,
   ...askApi,
-  ...wikiApi,
   ...dashboardApi,
   ...lclApi,
   ...icbApi,

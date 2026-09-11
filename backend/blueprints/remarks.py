@@ -2,7 +2,6 @@ from flask import Blueprint, jsonify, request
 
 from db import IntegrityError, get_connection
 from logging_util import audit
-from services.rag import index_remark
 from services.remarks import (
     collect_import_payloads,
     parse_payload,
@@ -83,7 +82,6 @@ def create_record():
             row = conn.execute(
                 "SELECT * FROM CustomerRemarks WHERE ID=?", (cur.lastrowid,)
             ).fetchone()
-            index_remark(conn, row["ID"])
     except IntegrityError:
         audit(
             "record.create",
@@ -126,7 +124,6 @@ def update_record(record_id):
             row = conn.execute(
                 "SELECT * FROM CustomerRemarks WHERE ID=?", (record_id,)
             ).fetchone()
-            index_remark(conn, record_id)
     except IntegrityError:
         audit(
             "record.update",
@@ -150,7 +147,6 @@ def update_record(record_id):
 def delete_record(record_id):
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM CustomerRemarks WHERE ID=?", (record_id,)).fetchone()
-        conn.execute("DELETE FROM RagChunks WHERE SourceType='remark' AND SourceID=?", (record_id,))
         cur = conn.execute("DELETE FROM CustomerRemarks WHERE ID=?", (record_id,))
     if cur.rowcount == 0:
         audit("record.delete", "failure", resource_id=record_id, summary="not found")

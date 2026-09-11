@@ -4,37 +4,13 @@ Search and maintain organization-level customer remarks. Fields: CTRLOrgcode, Cu
 
 Search matches **company name (Customer) only**. Pasted text is stripped to letters automatically. Click a result cell to copy its value.
 
-## Ask (wiki + Files + SOPs + toolkit tables)
+## Ask (Files + SOPs)
 
-The **Ask** tool is the knowledge hub. It searches wiki notes, structured SOP pages, uploaded `.docx` / `.xlsx` / images, customer remarks, feedback cases, and GCA feedback. ICB stations and UNLOCODE are queried live when the question looks like a port, agent, or location lookup.
+The **Ask** sidebar tool searches structured SOP pages and uploaded `.docx` / `.xlsx` files.
 
-### Obsidian vault (authoring)
-
-Keep writing in Obsidian, then import a zip into Ask. Suggested folders:
-
-- `00 Inbox/` raw dumps
-- `SOPs/` narrative process notes (the SOP editor stays the operational step list)
-- `Customers/` article-style customer knowledge
-- `LCL/`, `GCA/`, `ICB/`, `UNLOCODE/`
-- `Attachments/` images
-
-Use YAML frontmatter (`title`, `tags`) and `[[wikilinks]]`. One topic per note. Convert PDFs to markdown before import. Do not zip `.obsidian/`, `.trash/`, or `.git/`. Do not paste UNLOCODE/ICB CSVs into notes; those tables already live in SearchBar.
-
-Keep secrets out of the vault. The zip is stored on the server and note text is stored in Postgres.
-
-### Update knowledge from Ask
-
-Users can maintain the published wiki without opening Obsidian:
-
-- **New note** / **edit** / **delete** in the Ask knowledge pane (markdown). Saves immediately and reindexes that note.
-- **Upload** a `.md` note, a vault `.zip`, or a `.docx` / `.xlsx` / image (files go to the existing Files library and are indexed).
-- **Import vault** replaces vault-origin notes by path. Notes you edited in Ask (`origin=app`) are kept unless you import with replace.
-
-Online edits update MALSTAR_Toolkit only. They do not write back to a laptop Obsidian vault unless you copy the markdown out.
-
-- Saving an SOP, uploading a file, or saving a wiki note updates the PostgreSQL `tsvector` index automatically.
+- Saving an SOP or uploading a file updates the PostgreSQL `tsvector` index automatically.
 - Use **Rebuild index** if older files were added before this feature.
-- Without Azure OpenAI, Ask returns matching excerpts and citations (opens the source in Ask).
+- Without Azure OpenAI, Ask returns matching excerpts and citations (opens the SOP or file preview).
 - With `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, and `AZURE_OPENAI_CHAT_DEPLOYMENT` set, Ask generates an answer from those excerpts. See [azure/app-settings.md](azure/app-settings.md).
 
 On the CVM, rebuild the frontend with `VITE_BASE=/remarks/` so assets load under `/remarks/`.

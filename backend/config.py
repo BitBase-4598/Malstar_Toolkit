@@ -15,8 +15,6 @@ LOG_PATH = _path("LOG_PATH", BASE_DIR / "malstar_toolkit.log")
 UPLOAD_DIR = _path("UPLOAD_DIR", BASE_DIR / "uploads")
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "32"))
 MAX_JSON_UPLOAD_MB = int(os.environ.get("MAX_JSON_UPLOAD_MB", "4"))
-WIKI_MAX_ZIP_MB = int(os.environ.get("WIKI_MAX_ZIP_MB", "64"))
-WIKI_MAX_PAGES = int(os.environ.get("WIKI_MAX_PAGES", "4000"))
 PREVIEW_ROWS = 200
 PREVIEW_COLS = 30
 ALLOWED_FILE_KINDS = {
@@ -68,7 +66,7 @@ CORS_ORIGINS = [
     ).split(",")
     if origin.strip()
 ]
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 9
 
 
 def resolve_static_dir():

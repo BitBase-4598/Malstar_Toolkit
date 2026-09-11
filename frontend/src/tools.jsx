@@ -95,24 +95,10 @@ function SopsActions({ sopsRef }) {
 
 function AskActions({ askRef, askReindexing }) {
   return (
-    <>
-      <button className="ghost" type="button" onClick={() => askRef.current?.openNewNote()}>
-        <Plus size={16} />
-        New note
-      </button>
-      <button className="ghost" type="button" onClick={() => askRef.current?.openUpload()}>
-        <Upload size={16} />
-        Upload
-      </button>
-      <button className="ghost" type="button" onClick={() => askRef.current?.openVault()}>
-        <FolderOpen size={16} />
-        Import vault
-      </button>
-      <button className="ghost" type="button" onClick={() => askRef.current?.reindex()} disabled={askReindexing}>
-        <RefreshCw size={16} />
-        {askReindexing ? "Rebuilding..." : "Rebuild index"}
-      </button>
-    </>
+    <button className="ghost" type="button" onClick={() => askRef.current?.reindex()} disabled={askReindexing}>
+      <RefreshCw size={16} />
+      {askReindexing ? "Rebuilding..." : "Rebuild index"}
+    </button>
   );
 }
 
