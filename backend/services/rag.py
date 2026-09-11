@@ -30,6 +30,32 @@ from services.files_store import cell_to_text, preview_docx, stored_path
 from services.sops import load_sop
 from util import now_stamp
 
+SOURCE_LABELS = {
+    "wiki": "Wiki",
+    "sop": "SOP",
+    "file": "File",
+    "remark": "Remark",
+    "case": "Case",
+    "gca": "GCA",
+    "icb": "ICB",
+    "unloco": "UNLOCODE",
+}
+CATALOG_HINTS = {
+    "unloco",
+    "unlocode",
+    "locode",
+    "port",
+    "harbour",
+    "harbor",
+    "icb",
+    "agent",
+    "station",
+    "country",
+    "branch",
+    "controlling",
+}
+UNLOCO_CODE_RE = re.compile(r"\b[A-Z]{2}[A-Z0-9]{3}\b")
+
 _INDEX_LOCK = threading.Lock()
 _INDEXING = False
 
@@ -209,12 +235,130 @@ def index_file(conn, file_id, touch=True):
     replace_source_chunks(conn, "file", file_id, chunks, touch=touch)
 
 
+def index_wiki(conn, page_id, touch=True):
+    row = conn.execute("SELECT * FROM WikiPages WHERE ID=?", (page_id,)).fetchone()
+    if not row:
+        replace_source_chunks(conn, "wiki", page_id, [], touch=touch)
+        return
+    from services.wiki import markdown_sections
+
+    title = row["Title"] or row["Path"]
+    chunks = []
+    header = [f"Wiki: {title}", f"Path: {row['Path']}"]
+    if row["Folder"]:
+        header.append(f"Folder: {row['Folder']}")
+    chunks.append({
+        "title": title,
+        "locator": "overview",
+        "body": "\n".join(header),
+    })
+    for heading, section in markdown_sections(row["Body"] or ""):
+        for index, piece in enumerate(chunk_text(section), start=1):
+            locator = heading if index == 1 else f"{heading} {index}"
+            chunks.append({
+                "title": title,
+                "locator": locator[:120],
+                "body": f"{title} ({locator}): {piece}",
+            })
+    replace_source_chunks(conn, "wiki", page_id, chunks, touch=touch)
+
+
+def index_remark(conn, remark_id, touch=True):
+    row = conn.execute("SELECT * FROM CustomerRemarks WHERE ID=?", (remark_id,)).fetchone()
+    if not row:
+        replace_source_chunks(conn, "remark", remark_id, [], touch=touch)
+        return
+    title = f"{row['CTRLOrgcode']} / {row['Customer']}"
+    parts = [f"Customer remark {title}"]
+    for label, key in (("Remark1", "Remark1"), ("Remark2", "Remark2"), ("Remark3", "Remark3")):
+        value = str(row[key] or "").strip()
+        if value:
+            parts.append(f"{label}: {value}")
+    replace_source_chunks(
+        conn,
+        "remark",
+        remark_id,
+        [{"title": title, "locator": "record", "body": "\n".join(parts)}],
+        touch=touch,
+    )
+
+
+def index_case(conn, case_id, touch=True):
+    row = conn.execute("SELECT * FROM Cases WHERE ID=?", (case_id,)).fetchone()
+    if not row:
+        replace_source_chunks(conn, "case", case_id, [], touch=touch)
+        return
+    title = row["HBL"] or row["Name"] or f"Case {case_id}"
+    parts = [
+        f"Feedback case {title}",
+        f"Status: {row['Status']}",
+        f"Category: {row['Category']}",
+    ]
+    for label, key in (
+        ("Description", "Description"),
+        ("Wrongly identified", "WronglyIdentified"),
+        ("Incorrect", "Incorrect"),
+        ("Corrected", "Corrected"),
+        ("Cause", "CauseOfError"),
+        ("Action", "Action"),
+    ):
+        value = str(row[key] or "").strip()
+        if value:
+            parts.append(f"{label}: {value}")
+    replace_source_chunks(
+        conn,
+        "case",
+        case_id,
+        [{"title": title, "locator": row["Category"] or "case", "body": "\n".join(parts)}],
+        touch=touch,
+    )
+
+
+def index_gca_feedback(conn, feedback_id, touch=True):
+    row = conn.execute("SELECT * FROM GcaFeedback WHERE ID=?", (feedback_id,)).fetchone()
+    if not row:
+        replace_source_chunks(conn, "gca", feedback_id, [], touch=touch)
+        return
+    title = row["Hbl"] or row["HblKey"] or f"GCA {feedback_id}"
+    parts = [
+        f"GCA feedback {title}",
+        f"Category: {row['Category']}",
+        f"Lane: {row['Lane']}",
+    ]
+    for label, key in (
+        ("Wrongly identified", "WronglyIdentified"),
+        ("Incorrect", "Incorrect"),
+        ("Corrected", "Corrected"),
+        ("Cause", "Cause"),
+        ("Description", "Description"),
+        ("Action", "Action"),
+    ):
+        value = str(row[key] or "").strip()
+        if value:
+            parts.append(f"{label}: {value}")
+    replace_source_chunks(
+        conn,
+        "gca",
+        feedback_id,
+        [{"title": title, "locator": row["Category"] or "feedback", "body": "\n".join(parts)}],
+        touch=touch,
+    )
+
+
 def reindex_all(conn):
     conn.execute("DELETE FROM RagChunks")
     for row in conn.execute("SELECT ID FROM Sops").fetchall():
         index_sop(conn, row["ID"], touch=False)
     for row in conn.execute("SELECT ID FROM ToolkitFiles").fetchall():
         index_file(conn, row["ID"], touch=False)
+    for row in conn.execute("SELECT ID FROM WikiPages").fetchall():
+        index_wiki(conn, row["ID"], touch=False)
+    for row in conn.execute("SELECT ID FROM CustomerRemarks").fetchall():
+        index_remark(conn, row["ID"], touch=False)
+    for row in conn.execute("SELECT ID FROM Cases").fetchall():
+        index_case(conn, row["ID"], touch=False)
+    for row in conn.execute("SELECT ID FROM GcaFeedback").fetchall():
+        index_gca_feedback(conn, row["ID"], touch=False)
     touch_index_state(conn)
 
 
@@ -238,7 +382,11 @@ def start_backfill_if_needed(conn):
         return False
     files = conn.execute("SELECT COUNT(*) FROM ToolkitFiles").fetchone()[0]
     sops = conn.execute("SELECT COUNT(*) FROM Sops").fetchone()[0]
-    if not (files or sops):
+    wiki = conn.execute("SELECT COUNT(*) FROM WikiPages").fetchone()[0]
+    remarks = conn.execute("SELECT COUNT(*) FROM CustomerRemarks").fetchone()[0]
+    cases = conn.execute("SELECT COUNT(*) FROM Cases").fetchone()[0]
+    gca = conn.execute("SELECT COUNT(*) FROM GcaFeedback").fetchone()[0]
+    if not (files or sops or wiki or remarks or cases or gca):
         return False
     with _INDEX_LOCK:
         if _INDEXING:
@@ -252,15 +400,18 @@ def maybe_backfill_index(conn):
     return start_backfill_if_needed(conn)
 
 
+def _source_count(conn, source_type):
+    return conn.execute(
+        "SELECT COUNT(DISTINCT SourceID) FROM RagChunks WHERE SourceType=?",
+        (source_type,),
+    ).fetchone()[0]
+
+
 def rag_status(conn):
     indexing = start_backfill_if_needed(conn)
     state = conn.execute("SELECT LastIndexedAt, ChunkCount FROM RagIndexState WHERE ID=1").fetchone()
-    sop_sources = conn.execute(
-        "SELECT COUNT(DISTINCT SourceID) FROM RagChunks WHERE SourceType='sop'"
-    ).fetchone()[0]
-    file_sources = conn.execute(
-        "SELECT COUNT(DISTINCT SourceID) FROM RagChunks WHERE SourceType='file'"
-    ).fetchone()[0]
+    icb_count = conn.execute("SELECT COUNT(*) FROM IcbStations").fetchone()[0]
+    unloco_count = conn.execute("SELECT COUNT(*) FROM Unlocodes").fetchone()[0]
     chunk_count = state["ChunkCount"] if state else 0
     return {
         "chunkCount": chunk_count,
@@ -268,8 +419,14 @@ def rag_status(conn):
         "llmEnabled": llm_enabled(),
         "indexing": bool(indexing or _INDEXING),
         "sources": {
-            "sops": sop_sources,
-            "files": file_sources,
+            "sops": _source_count(conn, "sop"),
+            "files": _source_count(conn, "file"),
+            "wiki": _source_count(conn, "wiki"),
+            "remarks": _source_count(conn, "remark"),
+            "cases": _source_count(conn, "case"),
+            "gca": _source_count(conn, "gca"),
+            "icb": icb_count,
+            "unloco": unloco_count,
         },
     }
 
@@ -328,34 +485,124 @@ def search_chunks(conn, question, limit=RAG_TOP_K):
     ).fetchall()
 
 
+def should_search_catalog(question):
+    text = str(question or "")
+    if UNLOCO_CODE_RE.search(text):
+        return True
+    tokens = {token.casefold() for token in re.findall(r"[A-Za-z0-9]+", text)}
+    return bool(tokens & CATALOG_HINTS)
+
+
+def _clip_excerpt(body):
+    text = str(body or "").strip()
+    if len(text) <= RAG_EXCERPT:
+        return text
+    clipped = text[: RAG_EXCERPT - 1]
+    space = clipped.rfind(" ")
+    return (clipped[:space] if space > 80 else clipped) + "…"
+
+
 def chunk_to_citation(row):
-    body = str(row["Body"] or "").strip()
-    if len(body) > RAG_EXCERPT:
-        clipped = body[: RAG_EXCERPT - 1]
-        space = clipped.rfind(" ")
-        excerpt = (clipped[:space] if space > 80 else clipped) + "…"
-    else:
-        excerpt = body
+    source_type = row["SourceType"]
     return {
-        "sourceType": row["SourceType"],
+        "sourceType": source_type,
         "sourceId": row["SourceID"],
         "title": row["Title"],
         "locator": row["Locator"],
-        "excerpt": excerpt,
+        "excerpt": _clip_excerpt(row["Body"]),
+        "label": SOURCE_LABELS.get(source_type, source_type),
     }
+
+
+def icb_to_citation(item):
+    title = " ".join(
+        part for part in (item.get("country"), item.get("icbCode") or item.get("branch")) if part
+    ).strip() or "ICB station"
+    excerpt = " · ".join(
+        str(part) for part in (
+            item.get("location"),
+            item.get("unloco"),
+            item.get("agentCode"),
+            item.get("notes"),
+        ) if part
+    )
+    return {
+        "sourceType": "icb",
+        "sourceId": item.get("id"),
+        "title": title,
+        "locator": item.get("icbCode") or item.get("branch") or "station",
+        "excerpt": _clip_excerpt(excerpt or title),
+        "label": "ICB",
+        "record": item,
+    }
+
+
+def unloco_to_citation(item):
+    title = " ".join(
+        part for part in (item.get("unCode"), item.get("portName")) if part
+    ).strip() or "UNLOCODE"
+    excerpt = " · ".join(
+        str(part) for part in (
+            item.get("countryName"),
+            item.get("countryCode"),
+            item.get("category"),
+        ) if part
+    )
+    return {
+        "sourceType": "unloco",
+        "sourceId": item.get("id"),
+        "title": title,
+        "locator": item.get("unCode") or "location",
+        "excerpt": _clip_excerpt(excerpt or title),
+        "label": "UNLOCODE",
+        "record": item,
+    }
+
+
+def catalog_citations(question, limit=3):
+    if not should_search_catalog(question):
+        return []
+    from services.icb import list_icb_stations
+    from services.unloco import list_unlocodes
+
+    citations = []
+    icb = list_icb_stations(question, page=1, page_size=limit)
+    for item in icb.get("data") or []:
+        citations.append(icb_to_citation(item))
+    unloco = list_unlocodes(question, page=1, page_size=limit)
+    for item in unloco.get("data") or []:
+        citations.append(unloco_to_citation(item))
+    return citations
+
+
+def retrieve_citations(conn, question, limit=RAG_TOP_K):
+    rows = search_chunks(conn, question, limit=limit)
+    citations = [chunk_to_citation(row) for row in rows]
+    extra = catalog_citations(question)
+    seen = {(item["sourceType"], item["sourceId"]) for item in citations}
+    for item in extra:
+        key = (item["sourceType"], item["sourceId"])
+        if key in seen:
+            continue
+        citations.append(item)
+        seen.add(key)
+        if len(citations) >= limit + 4:
+            break
+    return citations
 
 
 def retrieve_only_answer(citations):
     if not citations:
         return (
-            "No matching SOP or file excerpts were found. "
-            "Try different words, or rebuild the index after uploading files or saving SOPs."
+            "No matching wiki notes, SOP, file, or toolkit excerpts were found. "
+            "Try different words, edit a note, upload a file, or rebuild the index."
         )
     lines = [
-        "Azure OpenAI is not configured, so here are the closest matches from Files and SOPs."
+        "Azure OpenAI is not configured, so here are the closest matches from the wiki and toolkit."
     ]
     for index, item in enumerate(citations, start=1):
-        lines.append(f"[{index}] {item['title']} ({item['locator']})")
+        label = item.get("label") or item["sourceType"]
+        lines.append(f"[{index}] {item['title']} ({label} · {item['locator']})")
         lines.append(item["excerpt"])
     return "\n".join(lines)
 
@@ -363,25 +610,27 @@ def retrieve_only_answer(citations):
 def generate_answer(question, citations):
     if not citations:
         return (
-            "I could not find this in the indexed Files and SOPs. "
-            "Try different words, or rebuild the index after uploading files or saving SOPs."
+            "I could not find this in the indexed wiki notes, Files, SOPs, or toolkit tables. "
+            "Try different words, or rebuild the index after uploading notes or files."
         ), None
     if not llm_enabled():
         return retrieve_only_answer(citations), None
     numbered = []
     for index, item in enumerate(citations, start=1):
+        label = item.get("label") or item["sourceType"]
         numbered.append(
-            f"[{index}] {item['sourceType'].upper()} \"{item['title']}\" ({item['locator']})\n{item['excerpt']}"
+            f"[{index}] {label} \"{item['title']}\" ({item['locator']})\n{item['excerpt']}"
         )
     payload = {
         "messages": [
             {
                 "role": "system",
                 "content": (
-                    "You answer questions using only the provided SOP and file excerpts. "
+                    "You answer questions using only the provided wiki notes, SOP, file, "
+                    "customer remark, case, GCA, ICB, and UNLOCODE excerpts. "
                     "If the excerpts do not contain the answer, say you could not find it "
-                    "in the indexed Files and SOPs. Cite sources as [1], [2], and so on. "
-                    "Do not invent procedures or file contents."
+                    "in the indexed knowledge. Cite sources as [1], [2], and so on. "
+                    "Do not invent procedures, file contents, or table values."
                 ),
             },
             {

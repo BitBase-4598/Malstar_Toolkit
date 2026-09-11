@@ -346,6 +346,11 @@ def import_gca_workbook(filename, data):
             """,
             ((filename or "gca.xlsx")[:200], stamp, len(bookings), len(feedback)),
         )
+        conn.execute("DELETE FROM RagChunks WHERE SourceType='gca'")
+        from services.rag import index_gca_feedback, touch_index_state
+        for row in conn.execute("SELECT ID FROM GcaFeedback").fetchall():
+            index_gca_feedback(conn, row["ID"], touch=False)
+        touch_index_state(conn)
     from services.leave import parse_name_mapping_rows, replace_leave_people
 
     people = parse_name_mapping_rows(name_rows)

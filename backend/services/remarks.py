@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from db import get_connection
+from services.rag import index_remark
 from util import letters_only, now_stamp
 
 
@@ -73,9 +74,10 @@ def upsert_imported_records(records):
                         existing["ID"],
                     ),
                 )
+                index_remark(conn, existing["ID"], touch=False)
             else:
                 created += 1
-                conn.execute(
+                cur = conn.execute(
                     """
                     INSERT INTO CustomerRemarks
                         (CTRLOrgcode, Customer, CustomerLetters, Remark1, Remark2, Remark3)
@@ -83,6 +85,9 @@ def upsert_imported_records(records):
                     """,
                     record_values(payload),
                 )
+                index_remark(conn, cur.lastrowid, touch=False)
+        from services.rag import touch_index_state
+        touch_index_state(conn)
     return created, updated
 
 
