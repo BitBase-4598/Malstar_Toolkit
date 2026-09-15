@@ -5,9 +5,7 @@ This app is a **Linux Python 3.12 Web App** deployed from **GitHub** (Oryx / `SC
 Live site: `https://malstar-toolkit-djexgna2eghtgkep.eastasia-01.azurewebsites.net`  
 Kudu / SCM: `https://malstar-toolkit-djexgna2eghtgkep.scm.eastasia-01.azurewebsites.net`
 
-The running app uses **SQLite only**. Default file is `backend/malstar.db`. Override with `DATABASE_PATH` or `DATABASE_URL=sqlite:///...`. A leftover `postgresql://` `DATABASE_URL` will fail on boot.
-
-Do **not** merge this cutover to `main` until App Service `DATABASE_URL` is changed to a persisted SQLite path (for example `/home/data/malstar.db`) and a copied `.db` is placed there. Until then, production can keep Azure Flexible Server.
+The running app uses **SQLite only**. Put the database file at `/home/data/malstar.db` and set `DATABASE_PATH` to that path. A leftover `postgresql://` `DATABASE_URL` will fail on boot.
 
 Startup command (Configuration → General settings). Keep this exact string:
 
@@ -67,7 +65,16 @@ Keep:
 | `FLASK_DEBUG` | `false` |
 | `CORS_ORIGINS` | *(empty)* |
 
-When you are ready to run SQLite on App Service (after an explicit merge decision):
+When this SQLite runtime is on App Service, set:
+
+| Name | Action | Value |
+| --- | --- | --- |
+| `DATABASE_PATH` | **Add / set** | `/home/data/malstar.db` |
+| `DATABASE_URL` | **Delete** | *(was the `postgresql://nathan@malstar.postgres...` string)* |
+
+Do not leave `DATABASE_URL` as a Postgres URL. The process exits if it starts with `postgres`. You can use `DATABASE_URL=sqlite:////home/data/malstar.db` instead of `DATABASE_PATH`; do not set both to different files.
+
+Copy `malstar.db` onto `/home/data` (Kudu → File Manager) **before** the new code starts. `WEBSITES_ENABLE_APP_SERVICE_STORAGE` must stay `true` so `/home/data` persists.
 
 ```bash
 az webapp config appsettings set \
@@ -80,8 +87,6 @@ az webapp config appsettings delete \
   --name MALSTAR-Toolkit \
   --setting-names DATABASE_URL
 ```
-
-Copy `malstar.db` onto `/home/data` first. Do not point production at a missing file.
 
 Optional Ask LLM settings are unchanged: `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_CHAT_DEPLOYMENT`, `AZURE_OPENAI_API_VERSION`.
 
