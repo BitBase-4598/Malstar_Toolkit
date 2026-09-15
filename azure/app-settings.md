@@ -5,9 +5,7 @@ This app is a **Linux Python 3.12 Web App** deployed from **GitHub** (Oryx / `SC
 Live site: `https://malstar-toolkit-djexgna2eghtgkep.eastasia-01.azurewebsites.net`  
 Kudu / SCM: `https://malstar-toolkit-djexgna2eghtgkep.scm.eastasia-01.azurewebsites.net`
 
-If you still have an old App Service `.db`, `backend/scripts/sqlite_to_postgres.py` can copy it once. Otherwise `backend/scripts/live_api_to_postgres.py` copies the public API tables (remarks, leave, logs, ICB, UNLOCODE, GCA, dashboard). It cannot copy `/home` uploads or raw `LclShipments`. The running app no longer opens SQLite.
-
-Database: **Azure Database for PostgreSQL Flexible Server**. Uploads stay on App Service `/home` storage.
+The running app uses **SQLite only**. Put the database file at `/home/data/malstar.db` and set `DATABASE_PATH` to that path. A leftover `postgresql://` `DATABASE_URL` will fail on boot.
 
 Startup command (Configuration → General settings). Keep this exact string:
 
@@ -17,32 +15,31 @@ gunicorn --bind=0.0.0.0:8000 --chdir backend --workers 1 --threads 8 --timeout 1
 
 Do not use `source`, `antenv/bin/gunicorn`, or `WEBSITES_PORT=8080` on this code-deploy app.
 
-## 1. Flexible Server (already created)
+## 1. Local SQLite and the Azure Postgres copy
+
+App tables used to live on **Azure Database for PostgreSQL Flexible Server**. That server is now only a **read-only source** for `backend/scripts/postgres_to_sqlite.py`.
 
 | Item | Value |
 | --- | --- |
 | Host | `malstar.postgres.database.azure.com` |
 | Port | `5432` |
-| App database | `malstar` (created; do not put app tables in the default `postgres` database) |
+| Copy script default database | `postgres` (falls back to `malstar` if remarks/leave tables are missing) |
 | App user | `nathan` |
 | TLS | `sslmode=require` |
 
-`nathan` can create databases. The default `postgres` database already has an unrelated `public.shipment` test table and an empty `Malstar_PROD` schema. App tables go in the dedicated `malstar` database.
+Never commit the password, paste it into a PR, or store it in this file. URL-encode `$` as `%24` if you put it in a URL.
 
-Connection string (URL-encode `$` in the password as `%24`):
+From a machine allowed by the Flexible Server firewall:
 
+```powershell
+cd backend
+pip install "psycopg[binary]"
+python scripts/postgres_to_sqlite.py --sqlite malstar.db
 ```
-postgresql://nathan:<url-encoded-password>@malstar.postgres.database.azure.com:5432/malstar?sslmode=require
-```
 
-Put that value only in:
+The script copies only `CustomerRemarks`, `LeavePeople`, and `LeavePlans`. Other tables are created empty (upload Dashboard / LCL / GCA later). It does not INSERT/UPDATE/DELETE on Azure Postgres.
 
-- a local gitignored `.env` (for the copy script)
-- Azure App Service application settings (`DATABASE_URL`)
-
-Never commit the password, paste it into the PR, or store it in this file.
-
-Allow Azure services (the F1 Web App has no VNet) and the machine that runs the copy script:
+Allow the machine that runs the copy script:
 
 ```bash
 az postgres flexible-server firewall-rule create \
@@ -54,13 +51,6 @@ az postgres flexible-server firewall-rule create \
 ```
 
 Do not open `0.0.0.0–255.255.255.255`. Flexible Server usernames are `nathan`, not `nathan@malstar`.
-
-After the first migrate / copy, confirm:
-
-```sql
-GRANT ALL ON ALL TABLES IN SCHEMA public TO nathan;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO nathan;
-```
 
 ## 2. Application settings
 
@@ -75,60 +65,47 @@ Keep:
 | `FLASK_DEBUG` | `false` |
 | `CORS_ORIGINS` | *(empty)* |
 
-Required:
+When this SQLite runtime is on App Service, set:
+
+| Name | Action | Value |
+| --- | --- | --- |
+| `DATABASE_PATH` | **Add / set** | `/home/data/malstar.db` |
+| `DATABASE_URL` | **Delete** | *(was the `postgresql://nathan@malstar.postgres...` string)* |
+
+Do not leave `DATABASE_URL` as a Postgres URL. The process exits if it starts with `postgres`. You can use `DATABASE_URL=sqlite:////home/data/malstar.db` instead of `DATABASE_PATH`; do not set both to different files.
+
+Copy `malstar.db` onto `/home/data` (Kudu → File Manager) **before** the new code starts. `WEBSITES_ENABLE_APP_SERVICE_STORAGE` must stay `true` so `/home/data` persists.
 
 ```bash
 az webapp config appsettings set \
   --resource-group <RG> \
   --name MALSTAR-Toolkit \
-  --settings DATABASE_URL='postgresql://nathan:<url-encoded-password>@malstar.postgres.database.azure.com:5432/malstar?sslmode=require'
+  --settings DATABASE_PATH=/home/data/malstar.db
 
 az webapp config appsettings delete \
   --resource-group <RG> \
   --name MALSTAR-Toolkit \
-  --setting-names DATABASE_PATH
+  --setting-names DATABASE_URL
 ```
-
-`DATABASE_URL` is required. The process exits on boot if it is missing or not a PostgreSQL URL. Delete leftover `DATABASE_PATH`; it is unused.
 
 Optional Ask LLM settings are unchanged: `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_CHAT_DEPLOYMENT`, `AZURE_OPENAI_API_VERSION`.
 
-Oryx installs from **repo-root** `requirements.txt` and `backend/requirements.txt`. Both must list `psycopg[binary,pool]`. GitHub Actions does not need `DATABASE_URL` at build time.
+Oryx installs from **repo-root** `requirements.txt` and `backend/requirements.txt`. The app no longer needs `psycopg`. Install `psycopg[binary]` only on the machine that runs the copy script. GitHub Actions does not need `DATABASE_URL` at build time.
 
-## 3. Historical copy (optional)
+## 3. Archival copy scripts
 
-Live App Service already uses Azure Flexible Server. There is no SQLite fallback or rollback.
-
-If you still have an old `.db` and need to load it into a fresh database, from a machine on the Flexible Server firewall:
-
-```powershell
-cd backend
-python scripts/sqlite_to_postgres.py --sqlite <downloaded-customer_remark.db>
-```
-
-The script reads `DATABASE_URL` from `.env` if you omit `--database-url`.
-
-To copy from the public APIs instead:
-
-```powershell
-cd backend
-python scripts/live_api_to_postgres.py --app-url "https://malstar-toolkit-djexgna2eghtgkep.eastasia-01.azurewebsites.net"
-```
-
-Compare row counts for `CustomerRemarks`, `LeavePeople`, `LeavePlans`, `ToolkitFiles`, `ActivityLogs`. Confirm `GET /api/health` returns 200, then check remarks, leave, dashboard, file download, Ask, and logs.
-
-Uploads stay on `/home/data/uploads`. They are not moved into Postgres.
+`backend/scripts/sqlite_to_postgres.py` and `backend/scripts/live_api_to_postgres.py` wrote into Postgres. They are unused by the SQLite runtime.
 
 ## 4. Health check and scale
 
-Portal: Monitoring → Health check → `/api/health`. That path now fails with 503 if Postgres is unreachable.
+Portal: Monitoring → Health check → `/api/health`. That path returns 503 if the SQLite file cannot be opened.
 
-Keep **one instance**. Postgres can scale out; `/home/data/uploads` cannot until it is an Azure Files mount.
+Keep **one instance**. `/home/data` is not safe across scale-out until it is an Azure Files mount.
 
-Keep `--workers 1 --threads 8` on F1. The app pool max is 10 so Burstable `max_connections` is not exhausted.
+Keep `--workers 1 --threads 8` on F1.
 
-Always On and custom domains are plan-SKU limits, not database limits. Entra Easy Auth is unchanged.
+Always On and custom domains are plan-SKU limits. Entra Easy Auth is unchanged.
 
 ## 5. Do not use deploy.ps1 for this app
 
-`azure/deploy.ps1` builds a **container** named `autorating-web` and is not used for MALSTAR-Toolkit. This app is GitHub code deploy plus Flexible Server as above.
+`azure/deploy.ps1` builds a **container** named `autorating-web` and is not used for MALSTAR-Toolkit. This app is GitHub code deploy as above.

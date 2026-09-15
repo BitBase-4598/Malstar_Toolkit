@@ -4,6 +4,7 @@
 **/*.pyc
 backend/.venv
 backend/customer_remark.db
+backend/malstar.db
 backend/*.db-wal
 backend/*.db-shm
 backend/uploads

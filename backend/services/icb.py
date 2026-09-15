@@ -238,19 +238,19 @@ def list_icb_stations(query="", page=1, page_size=100):
             total = 0
             if match and icb_fts_available(conn):
                 try:
-                    tsquery = match.replace("*", ":*").replace(" OR ", " | ")
                     total = conn.execute(
-                        "SELECT COUNT(*) FROM IcbStations WHERE SearchTsv @@ to_tsquery('simple', ?)",
-                        (tsquery,),
+                        "SELECT COUNT(*) FROM IcbStationsFts WHERE IcbStationsFts MATCH ?",
+                        (match,),
                     ).fetchone()[0]
                     rows = conn.execute(
                         f"""
-                        SELECT * FROM IcbStations
-                        WHERE SearchTsv @@ to_tsquery('simple', ?)
-                        ORDER BY ts_rank(SearchTsv, to_tsquery('simple', ?)) DESC, ID
+                        SELECT s.* FROM IcbStationsFts
+                        JOIN IcbStations s ON s.ID = IcbStationsFts.rowid
+                        WHERE IcbStationsFts MATCH ?
+                        ORDER BY rank, s.ID
                         LIMIT ? OFFSET ?
                         """,
-                        (tsquery, tsquery, page_size, offset),
+                        (match, page_size, offset),
                     ).fetchall()
                     used_fts = True
                 except OperationalError:
@@ -300,8 +300,8 @@ def bump_icb_row_count(conn, delta=1):
     conn.execute(
         """
         INSERT INTO IcbImportMeta (ID, Filename, ImportedAt, RowCount)
-        VALUES (1, 'manual', '', GREATEST(?, 0))
-        ON CONFLICT(ID) DO UPDATE SET RowCount=GREATEST(IcbImportMeta.RowCount + ?, 0)
+        VALUES (1, 'manual', '', MAX(?, 0))
+        ON CONFLICT(ID) DO UPDATE SET RowCount=MAX(IcbImportMeta.RowCount + ?, 0)
         """,
         (delta, delta),
     )

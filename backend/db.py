@@ -2,8 +2,8 @@ from config import SCHEMA_VERSION, UPLOAD_DIR
 from db_engine import (
     DatabaseError,
     IntegrityError,
+    OperationalError,
     connect,
-    has_column,
     pk_autoincrement,
     table_columns,
     table_exists,
@@ -16,7 +16,7 @@ def get_connection():
 
 
 def fts_ready(conn, sqlite_name, table, column="SearchTsv"):
-    return has_column(conn, table, column)
+    return table_exists(conn, sqlite_name)
 
 
 def _sql(text):
@@ -395,19 +395,39 @@ def _create_tables(conn):
 
 
 def _ensure_rag_fts(conn):
-    if not has_column(conn, "RagChunks", "SearchTsv"):
-        conn.execute(
-            """
-            ALTER TABLE RagChunks ADD COLUMN SearchTsv tsvector
-            GENERATED ALWAYS AS (
-                to_tsvector(
-                    'simple',
-                    coalesce(Title, '') || ' ' || coalesce(Locator, '') || ' ' || coalesce(Body, '')
-                )
-            ) STORED
-            """
-        )
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_rag_chunks_tsv ON RagChunks USING GIN (SearchTsv)")
+    try:
+        conn.execute("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS RagChunksFts USING fts5(
+                Title,
+                Locator,
+                Body,
+                content='RagChunks',
+                content_rowid='ID',
+                tokenize='porter unicode61'
+            )
+        """)
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS rag_chunks_ai AFTER INSERT ON RagChunks BEGIN
+                INSERT INTO RagChunksFts(rowid, Title, Locator, Body)
+                VALUES (new.ID, new.Title, new.Locator, new.Body);
+            END
+        """)
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS rag_chunks_ad AFTER DELETE ON RagChunks BEGIN
+                INSERT INTO RagChunksFts(RagChunksFts, rowid, Title, Locator, Body)
+                VALUES ('delete', old.ID, old.Title, old.Locator, old.Body);
+            END
+        """)
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS rag_chunks_au AFTER UPDATE ON RagChunks BEGIN
+                INSERT INTO RagChunksFts(RagChunksFts, rowid, Title, Locator, Body)
+                VALUES ('delete', old.ID, old.Title, old.Locator, old.Body);
+                INSERT INTO RagChunksFts(rowid, Title, Locator, Body)
+                VALUES (new.ID, new.Title, new.Locator, new.Body);
+            END
+        """)
+    except OperationalError:
+        pass
 
 
 LCL_TABLES = {"LclShipments", "LclShipments_staging"}
@@ -459,11 +479,15 @@ def ensure_lcl_shipment_id_unique(conn):
         return
     conn.execute(
         """
-        DELETE FROM LclShipments AS older
-        USING LclShipments AS newer
-        WHERE older.ShipmentID = newer.ShipmentID
-          AND older.ShipmentID <> ''
-          AND older.ID < newer.ID
+        DELETE FROM LclShipments
+        WHERE ShipmentID <> ''
+          AND ID NOT IN (
+            SELECT ID FROM (
+              SELECT MAX(ID) AS ID FROM LclShipments
+              WHERE ShipmentID <> ''
+              GROUP BY ShipmentID
+            )
+          )
         """
     )
     conn.execute(
@@ -478,25 +502,47 @@ def ensure_lcl_shipment_id_unique(conn):
 
 
 def _ensure_unlocodes_fts(conn):
-    if not has_column(conn, "Unlocodes", "SearchTsv"):
-        conn.execute(
-            """
-            ALTER TABLE Unlocodes ADD COLUMN SearchTsv tsvector
-            GENERATED ALWAYS AS (
-                to_tsvector(
-                    'simple',
-                    coalesce(PortName, '') || ' ' || coalesce(UnCode, '') || ' ' ||
-                    coalesce(CountryCode, '') || ' ' || coalesce(CountryName, '') || ' ' ||
-                    coalesce(SearchText, '')
-                )
-            ) STORED
-            """
-        )
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_unlocodes_tsv ON Unlocodes USING GIN (SearchTsv)")
+    try:
+        conn.execute("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS UnlocodesFts USING fts5(
+                PortName,
+                UnCode,
+                CountryCode,
+                CountryName,
+                content='Unlocodes',
+                content_rowid='ID',
+                tokenize='unicode61'
+            )
+        """)
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS unlocodes_ai AFTER INSERT ON Unlocodes BEGIN
+                INSERT INTO UnlocodesFts(rowid, PortName, UnCode, CountryCode, CountryName)
+                VALUES (new.ID, new.PortName, new.UnCode, new.CountryCode, new.CountryName);
+            END
+        """)
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS unlocodes_ad AFTER DELETE ON Unlocodes BEGIN
+                INSERT INTO UnlocodesFts(UnlocodesFts, rowid, PortName, UnCode, CountryCode, CountryName)
+                VALUES ('delete', old.ID, old.PortName, old.UnCode, old.CountryCode, old.CountryName);
+            END
+        """)
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS unlocodes_au AFTER UPDATE ON Unlocodes BEGIN
+                INSERT INTO UnlocodesFts(UnlocodesFts, rowid, PortName, UnCode, CountryCode, CountryName)
+                VALUES ('delete', old.ID, old.PortName, old.UnCode, old.CountryCode, old.CountryName);
+                INSERT INTO UnlocodesFts(rowid, PortName, UnCode, CountryCode, CountryName)
+                VALUES (new.ID, new.PortName, new.UnCode, new.CountryCode, new.CountryName);
+            END
+        """)
+    except OperationalError:
+        pass
 
 
 def rebuild_unlocodes_fts(conn):
-    return None
+    try:
+        conn.execute("INSERT INTO UnlocodesFts(UnlocodesFts) VALUES('rebuild')")
+    except OperationalError:
+        pass
 
 
 ICB_FTS_COLS = (
@@ -513,19 +559,55 @@ ICB_FTS_COLS = (
 
 
 def _ensure_icb_fts(conn):
-    if not has_column(conn, "IcbStations", "SearchTsv"):
-        expr = " || ' ' || ".join(f"coalesce({name}, '')" for name in ICB_FTS_COLS)
+    cols = ", ".join(ICB_FTS_COLS)
+    new_vals = ", ".join(f"new.{name}" for name in ICB_FTS_COLS)
+    old_vals = ", ".join(f"old.{name}" for name in ICB_FTS_COLS)
+    try:
         conn.execute(
             f"""
-            ALTER TABLE IcbStations ADD COLUMN SearchTsv tsvector
-            GENERATED ALWAYS AS (to_tsvector('simple', {expr})) STORED
+            CREATE VIRTUAL TABLE IF NOT EXISTS IcbStationsFts USING fts5(
+                {cols},
+                content='IcbStations',
+                content_rowid='ID',
+                tokenize='unicode61'
+            )
             """
         )
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_icb_stations_tsv ON IcbStations USING GIN (SearchTsv)")
+        conn.execute(
+            f"""
+            CREATE TRIGGER IF NOT EXISTS icb_stations_ai AFTER INSERT ON IcbStations BEGIN
+                INSERT INTO IcbStationsFts(rowid, {cols})
+                VALUES (new.ID, {new_vals});
+            END
+            """
+        )
+        conn.execute(
+            f"""
+            CREATE TRIGGER IF NOT EXISTS icb_stations_ad AFTER DELETE ON IcbStations BEGIN
+                INSERT INTO IcbStationsFts(IcbStationsFts, rowid, {cols})
+                VALUES ('delete', old.ID, {old_vals});
+            END
+            """
+        )
+        conn.execute(
+            f"""
+            CREATE TRIGGER IF NOT EXISTS icb_stations_au AFTER UPDATE ON IcbStations BEGIN
+                INSERT INTO IcbStationsFts(IcbStationsFts, rowid, {cols})
+                VALUES ('delete', old.ID, {old_vals});
+                INSERT INTO IcbStationsFts(rowid, {cols})
+                VALUES (new.ID, {new_vals});
+            END
+            """
+        )
+    except OperationalError:
+        pass
 
 
 def rebuild_icb_fts(conn):
-    return None
+    try:
+        conn.execute("INSERT INTO IcbStationsFts(IcbStationsFts) VALUES('rebuild')")
+    except OperationalError:
+        pass
 
 
 def _ensure_activity_log_columns(conn):

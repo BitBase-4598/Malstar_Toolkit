@@ -430,8 +430,8 @@ def shipment_counts(conn):
         """
         SELECT
             COUNT(*) AS total,
-            COALESCE(SUM(CASE WHEN Direction ILIKE 'import' THEN 1 ELSE 0 END), 0) AS import_count,
-            COALESCE(SUM(CASE WHEN Direction NOT ILIKE 'import' THEN 1 ELSE 0 END), 0) AS export_count
+            COALESCE(SUM(CASE WHEN Direction LIKE 'import' COLLATE NOCASE THEN 1 ELSE 0 END), 0) AS import_count,
+            COALESCE(SUM(CASE WHEN Direction NOT LIKE 'import' COLLATE NOCASE THEN 1 ELSE 0 END), 0) AS export_count
         FROM LclShipments
         """
     ).fetchone()

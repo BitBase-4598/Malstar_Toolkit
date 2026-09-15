@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Copy live MALSTAR App Service API data into PostgreSQL.
+"""Archival: copy live MALSTAR App Service API data into PostgreSQL.
 
-Use this only when the SQLite file cannot be downloaded from Kudu.
-Uploads and raw LCL shipment rows are not exposed by the public APIs.
+The running app no longer opens Postgres. Uploads and raw LCL shipment rows
+are not exposed by the public APIs.
 """
 
 from __future__ import annotations

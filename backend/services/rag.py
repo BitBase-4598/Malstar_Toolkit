@@ -289,16 +289,16 @@ def search_chunks(conn, question, limit=RAG_TOP_K):
     rows = []
     if query and fts_available(conn):
         try:
-            tsquery = " | ".join(f"{term}:*" for term in re.findall(r"[A-Za-z0-9]{2,}", query)[:24]) or query
             rows = conn.execute(
                 """
-                SELECT ID, SourceType, SourceID, Title, Locator, Body
-                FROM RagChunks
-                WHERE SearchTsv @@ to_tsquery('simple', ?)
-                ORDER BY ts_rank(SearchTsv, to_tsquery('simple', ?)) DESC, ID DESC
+                SELECT c.ID, c.SourceType, c.SourceID, c.Title, c.Locator, c.Body
+                FROM RagChunksFts
+                JOIN RagChunks c ON c.ID = RagChunksFts.rowid
+                WHERE RagChunksFts MATCH ?
+                ORDER BY bm25(RagChunksFts)
                 LIMIT ?
                 """,
-                (tsquery, tsquery, limit),
+                (query, limit),
             ).fetchall()
         except OperationalError:
             rows = []

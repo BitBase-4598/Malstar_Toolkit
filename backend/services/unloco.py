@@ -251,19 +251,19 @@ def list_unlocodes(query="", page=1, page_size=50):
             used_fts = False
             if match and fts_available(conn):
                 try:
-                    tsquery = match.replace("*", ":*").replace(" OR ", " | ")
                     total = conn.execute(
-                        "SELECT COUNT(*) FROM Unlocodes WHERE SearchTsv @@ to_tsquery('simple', ?)",
-                        (tsquery,),
+                        "SELECT COUNT(*) FROM UnlocodesFts WHERE UnlocodesFts MATCH ?",
+                        (match,),
                     ).fetchone()[0]
                     rows = conn.execute(
                         f"""
-                        SELECT {UNLOCO_TABLE_COLS} FROM Unlocodes
-                        WHERE SearchTsv @@ to_tsquery('simple', ?)
-                        ORDER BY ts_rank(SearchTsv, to_tsquery('simple', ?)) DESC, ID
+                        SELECT {UNLOCO_LIST_COLS} FROM UnlocodesFts
+                        JOIN Unlocodes u ON u.ID = UnlocodesFts.rowid
+                        WHERE UnlocodesFts MATCH ?
+                        ORDER BY rank, u.ID
                         LIMIT ? OFFSET ?
                         """,
-                        (tsquery, tsquery, page_size, offset),
+                        (match, page_size, offset),
                     ).fetchall()
                     used_fts = True
                 except OperationalError:
@@ -303,8 +303,8 @@ def bump_unloco_row_count(conn, delta=1):
     conn.execute(
         """
         INSERT INTO UnlocoImportMeta (ID, Filename, ImportedAt, RowCount)
-        VALUES (1, 'manual', '', GREATEST(?, 0))
-        ON CONFLICT(ID) DO UPDATE SET RowCount=GREATEST(UnlocoImportMeta.RowCount + ?, 0)
+        VALUES (1, 'manual', '', MAX(?, 0))
+        ON CONFLICT(ID) DO UPDATE SET RowCount=MAX(UnlocoImportMeta.RowCount + ?, 0)
         """,
         (delta, delta),
     )
