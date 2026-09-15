@@ -200,6 +200,8 @@ def open_source(args):
             continue
         names = public_tables(conn)
         if copy_tables_present(names):
+            if tried:
+                print(f"Database {dbname!r} has the copy tables; earlier: {'; '.join(tried)}")
             return conn, dbname, names
         conn.close()
         preview = ", ".join(sorted(names)[:20]) or "(none)"

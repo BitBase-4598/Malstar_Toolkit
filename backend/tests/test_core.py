@@ -81,7 +81,7 @@ def test_migrate_existing_schema_8_adds_lcl_shipment_id():
         version = conn.execute("SELECT Version FROM SchemaVersion WHERE ID=1").fetchone()[0]
         assert version == SCHEMA_VERSION
         index = conn.execute(
-            "SELECT 1 FROM pg_indexes WHERE indexname = 'idx_lcl_shipment_id'"
+            "SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_lcl_shipment_id'"
         ).fetchone()
         assert index is not None
 
