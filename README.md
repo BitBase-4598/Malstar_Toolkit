@@ -8,7 +8,7 @@ Search matches **company name (Customer) only**. Pasted text is stripped to lett
 
 The **Ask** sidebar tool searches structured SOP pages and uploaded `.docx` / `.xlsx` files.
 
-- Saving an SOP or uploading a file updates the PostgreSQL `tsvector` index automatically.
+- Saving an SOP or uploading a file updates the SQLite FTS5 index automatically.
 - Use **Rebuild index** if older files were added before this feature.
 - Without Azure OpenAI, Ask returns matching excerpts and citations (opens the SOP or file preview).
 - With `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, and `AZURE_OPENAI_CHAT_DEPLOYMENT` set, Ask generates an answer from those excerpts. See [azure/app-settings.md](azure/app-settings.md).
@@ -23,7 +23,15 @@ On the CVM, rebuild the frontend with `VITE_BASE=/remarks/` so assets load under
 
 CSV headers must be: `CTRLOrgcode,Customer,Remark1,Remark2,Remark3`. Existing rows are updated by the combined key CTRLOrgcode + Customer.
 
-PostgreSQL is required. Set `DATABASE_URL` in a gitignored `.env` (see `.env.example`). The app will not start without a `postgres://` or `postgresql://` URL.
+The app uses SQLite. The default file is `backend/malstar.db` (gitignored). Override with `DATABASE_PATH` or `DATABASE_URL=sqlite:///...` in a gitignored `.env` (see `.env.example`). PostgreSQL is not used at runtime.
+
+To copy SearchBar and Leave Forecast rows from Azure Flexible Server into a local file:
+
+```bash
+cd backend
+pip install 'psycopg[binary]'
+python scripts/postgres_to_sqlite.py --sqlite malstar.db
+```
 
 ## Run on this machine (no Docker)
 
@@ -52,9 +60,9 @@ Build and run the production image locally:
 docker compose up --build
 ```
 
-Then open `http://localhost:8080`. Docker Compose and local `python app.py` both require `DATABASE_URL` (Compose default: `postgresql://malstar:malstar@postgres:5432/malstar`).
+Then open `http://localhost:8080`. Docker Compose stores the SQLite file and uploads under `/home/data` (`DATABASE_PATH=/home/data/malstar.db`).
 
-`scripts/sqlite_to_postgres.py` is an archival one-shot reader for an old `.db` file. New runtimes do not open SQLite. `python scripts/live_api_to_postgres.py` copies public App Service APIs into Postgres. Azure settings are in [azure/app-settings.md](azure/app-settings.md).
+`scripts/postgres_to_sqlite.py` copies `CustomerRemarks`, `LeavePeople`, and `LeavePlans` from Azure Postgres into a local `.db`. `scripts/sqlite_to_postgres.py` and `scripts/live_api_to_postgres.py` are archival (the app no longer speaks Postgres). Azure settings are in [azure/app-settings.md](azure/app-settings.md).
 
 ## Azure App Service
 

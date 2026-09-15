@@ -11,6 +11,7 @@ def _path(env_name, default):
 
 
 DATABASE_URL = (os.environ.get("DATABASE_URL") or "").strip()
+DB_PATH = _path("DATABASE_PATH", BASE_DIR / "malstar.db")
 LOG_PATH = _path("LOG_PATH", BASE_DIR / "malstar_toolkit.log")
 UPLOAD_DIR = _path("UPLOAD_DIR", BASE_DIR / "uploads")
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "32"))

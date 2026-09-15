@@ -7,10 +7,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 TMP = Path(tempfile.mkdtemp())
 os.environ["MALSTAR_SKIP_DOTENV"] = "1"
-os.environ["DATABASE_URL"] = os.environ.get(
-    "TEST_DATABASE_URL",
-    "postgresql://malstar:malstar@127.0.0.1:5432/malstar_test",
-)
+os.environ.pop("DATABASE_URL", None)
+os.environ["DATABASE_PATH"] = str(TMP / "malstar_test.db")
 os.environ["UPLOAD_DIR"] = str(TMP / "uploads")
 os.environ["LOG_PATH"] = str(TMP / "test.log")
 os.environ["GCA_XLSX_PATH"] = str(TMP / "missing-gca.xlsx")
@@ -26,13 +24,6 @@ from db_engine import table_exists
 from config import SCHEMA_VERSION
 
 
-def _reset_test_database():
-    with get_connection() as conn:
-        conn.execute("DROP SCHEMA IF EXISTS public CASCADE")
-        conn.execute("CREATE SCHEMA public")
-
-
-_reset_test_database()
 from services.dashboard_analytics import format_minutes, minutes_between, parse_dashboard_record
 from services.files_store import stored_path
 from util import letters_only
@@ -138,7 +129,7 @@ def test_api_health_leave_dashboard():
     assert "kpis" in gca.get_json()["data"]
 
 
-def test_audit_writes_postgres_and_json():
+def test_audit_writes_sqlite_and_json():
     migrate()
     from config import LOG_PATH
     from logging_util import audit

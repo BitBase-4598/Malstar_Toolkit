@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Archival one-shot: copy an old MALSTAR SQLite file into PostgreSQL.
 
-The running app no longer opens SQLite. Use this only to load a leftover .db.
+The running app no longer opens Postgres. Keep this only if you still need
+to load a leftover .db into Flexible Server.
 
 Usage (from the backend directory):
 
