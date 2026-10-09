@@ -1,13 +1,19 @@
 import { API_ROOT, request } from "./client";
 
 export const dashboardApi = {
-  getDashboard: (dateFrom = "", dateTo = "") => {
+  getDashboard: (dateFrom = "", dateTo = "", mailbox = "") => {
     const params = new URLSearchParams();
     if (dateFrom) {
       params.set("dateFrom", dateFrom);
     }
     if (dateTo) {
       params.set("dateTo", dateTo);
+    }
+    const mailboxes = Array.isArray(mailbox) ? mailbox : mailbox ? [mailbox] : [];
+    for (const name of mailboxes) {
+      if (name) {
+        params.append("mailbox", name);
+      }
     }
     const query = params.toString();
     return request(`${API_ROOT}/dashboard${query ? `?${query}` : ""}`);

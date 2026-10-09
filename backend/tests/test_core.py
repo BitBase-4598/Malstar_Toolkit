@@ -25,7 +25,14 @@ from db_engine import table_exists
 from config import SCHEMA_VERSION
 
 
-from services.dashboard_analytics import average_process_times, format_minutes, mean_without_abnormal, minutes_between, parse_dashboard_record
+from services.dashboard_analytics import (
+    average_process_times,
+    build_dashboard_payload,
+    format_minutes,
+    mean_without_abnormal,
+    minutes_between,
+    parse_dashboard_record,
+)
 from services.files_store import stored_path
 from util import letters_only
 
@@ -81,6 +88,45 @@ def test_parse_dashboard_record():
         __import__("datetime").datetime(2026, 8, 21, 8, 0, 0),
         __import__("datetime").datetime(2026, 8, 21, 8, 10, 0),
     ) == 10
+
+
+def test_dashboard_mailbox_filter():
+    migrate()
+    with get_connection() as conn:
+        conn.execute("DELETE FROM DashboardBookings")
+        try:
+            _assert_dashboard_mailbox_filter(conn)
+        finally:
+            conn.execute("DELETE FROM DashboardBookings")
+
+
+def _assert_dashboard_mailbox_filter(conn):
+    conn.executemany(
+        """
+        INSERT INTO DashboardBookings (
+            OrderNumber, ShipmentNumber, MessageId, ReportDate, EmailReceived,
+            EmailStatus, HandledBy, HandlingTime, BookingConvertedTime,
+            Subject, Mailbox, HandleWaitMinutes, ProcessMinutes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            ("A1", "", "", "2026-09-21", "", "Converted", "ann", "", "", "", "ops@example.com", None, 10),
+            ("B1", "", "", "2026-09-22", "", "Processing", "bob", "", "", "", "desk@example.com", None, 20),
+            ("C1", "", "", "2026-09-22", "", "Converted", "cara", "", "", "", "", None, 15),
+        ],
+    )
+    payload = build_dashboard_payload(conn, "2026-09-21", "2026-09-29", "ops@example.com")
+    assert payload["meta"]["mailboxes"] == ["desk@example.com", "ops@example.com"]
+    assert payload["meta"]["hasBlankMailbox"] is True
+    assert payload["meta"]["filteredCount"] == 1
+    assert [row["orderNumber"] for row in payload["rows"]] == ["A1"]
+    assert payload["kpis"]["total"] == 1
+    blank = build_dashboard_payload(conn, "2026-09-21", "2026-09-29", "(blank)")
+    assert [row["orderNumber"] for row in blank["rows"]] == ["C1"]
+    both = build_dashboard_payload(
+        conn, "2026-09-21", "2026-09-29", ["ops@example.com", "desk@example.com"]
+    )
+    assert [row["orderNumber"] for row in both["rows"]] == ["A1", "B1"]
 
 
 def test_migrate_schema_version_once():

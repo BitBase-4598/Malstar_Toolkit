@@ -219,7 +219,12 @@ function HourChart({ items }) {
 
 const DASH_TABLE_PAGE_SIZE = 50;
 
-function DataTable({ rows, maxProcessOrder }) {
+function DataTable({
+  rows,
+  maxProcessOrder,
+  emptyMessage = "No bookings in this date range.",
+  note = "Complete rows for the selected date range",
+}) {
   const [page, setPage] = useState(1);
   const total = rows.length;
   const totalPages = Math.max(1, Math.ceil(total / DASH_TABLE_PAGE_SIZE) || 1);
@@ -240,7 +245,7 @@ function DataTable({ rows, maxProcessOrder }) {
       <div className="summary">
         <div>
           <strong>All bookings</strong>
-          <p className="dash-section-note">Complete rows for the selected date range</p>
+          <p className="dash-section-note">{note}</p>
         </div>
         <span className="dash-count-chip">
           {total} {total === 1 ? "row" : "rows"}
@@ -269,7 +274,7 @@ function DataTable({ rows, maxProcessOrder }) {
             {visible.length === 0 ? (
               <tr>
                 <td colSpan="13" className="empty">
-                  No bookings in this date range.
+                  {emptyMessage}
                 </td>
               </tr>
             ) : (
@@ -335,13 +340,33 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
   const [dateTo, setDateTo] = useState("");
   const [hourWeekday, setHourWeekday] = useState("all");
   const [includeOver8h, setIncludeOver8h] = useState(false);
+  const [mailboxes, setMailboxes] = useState([]);
+  const loadSeq = useRef(0);
 
   const load = useCallback(
-    async (from = dateFrom, to = dateTo) => {
+    async (from = dateFrom, to = dateTo, box = mailboxes) => {
+      const seq = ++loadSeq.current;
       setLoading(true);
       try {
-        const result = await api.getDashboard(from, to);
-        const payload = result.data || null;
+        const selected = (Array.isArray(box) ? box : box ? [box] : []).map(String).filter(Boolean);
+        const result = await api.getDashboard(from, to, selected);
+        if (seq !== loadSeq.current) {
+          return;
+        }
+        let payload = result.data || null;
+        const allowed = new Set(payload?.meta?.mailboxes || []);
+        if (payload?.meta?.hasBlankMailbox) {
+          allowed.add("(blank)");
+        }
+        const valid = selected.filter((name) => allowed.has(name));
+        if (valid.length !== selected.length) {
+          setMailboxes(valid);
+          const cleared = await api.getDashboard(from, to, valid);
+          if (seq !== loadSeq.current) {
+            return;
+          }
+          payload = cleared.data || null;
+        }
         setData(payload);
         if (!from && payload?.meta?.dateFrom) {
           setDateFrom(payload.meta.dateFrom);
@@ -350,12 +375,16 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
           setDateTo(payload.meta.dateTo);
         }
       } catch (error) {
-        onNotice?.({ type: "error", text: error.message });
+        if (seq === loadSeq.current) {
+          onNotice?.({ type: "error", text: error.message });
+        }
       } finally {
-        setLoading(false);
+        if (seq === loadSeq.current) {
+          setLoading(false);
+        }
       }
     },
-    [dateFrom, dateTo, onNotice]
+    [dateFrom, dateTo, mailboxes, onNotice]
   );
 
   useEffect(() => {
@@ -382,6 +411,7 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
       setData(result.data || null);
       setDateFrom(result.data?.meta?.dateFrom || "");
       setDateTo(result.data?.meta?.dateTo || "");
+      setMailboxes([]);
       onNotice?.({ type: "success", text: result.message || "Dashboard updated" });
       await onRefreshLogs?.();
     } catch (error) {
@@ -399,6 +429,22 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
   const kpis = data?.kpis;
   const meta = data?.meta;
   const empty = !meta?.rowCount;
+  const mailboxOptions = useMemo(() => {
+    const items = [{ value: "", label: "All mailboxes" }];
+    if (meta?.hasBlankMailbox) {
+      items.push({ value: "(blank)", label: "(blank)" });
+    }
+    for (const name of meta?.mailboxes || []) {
+      items.push({ value: name, label: name });
+    }
+    return items;
+  }, [meta?.hasBlankMailbox, meta?.mailboxes]);
+  const tableEmptyMessage = mailboxes.length
+    ? "No bookings for the selected mailboxes in these dates."
+    : "No bookings in this date range.";
+  const tableNote = mailboxes.length
+    ? "Complete rows for the selected dates and mailboxes"
+    : "Complete rows for the selected date range";
   const rows = data?.rows || [];
   const hourItems = useMemo(() => volumeByHour(rows, hourWeekday), [rows, hourWeekday]);
   const hourWeekdayLabel = WEEKDAY_FILTERS.find((item) => item.id === hourWeekday)?.label || "All";
@@ -450,6 +496,20 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
                 max={meta?.dateMax || undefined}
                 disabled={empty}
                 onChange={(event) => applyDates(dateFrom, event.target.value)}
+              />
+            </label>
+            <label className="dash-mailbox">
+              Mailbox
+              <FieldSelect
+                multiple
+                fitMenu
+                value={mailboxes}
+                disabled={empty || mailboxOptions.length <= 1}
+                searchable={(meta?.mailboxes || []).length > 8}
+                placeholder="All mailboxes"
+                ariaLabel="Filter by mailbox"
+                options={mailboxOptions}
+                onChange={setMailboxes}
               />
             </label>
           </div>
@@ -658,7 +718,12 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
               </div>
             </section>
           </div>
-          <DataTable rows={rows} maxProcessOrder={kpis.maxProcessOrder} />
+          <DataTable
+            rows={rows}
+            maxProcessOrder={kpis.maxProcessOrder}
+            emptyMessage={tableEmptyMessage}
+            note={tableNote}
+          />
         </>
       ) : null}
     </div>

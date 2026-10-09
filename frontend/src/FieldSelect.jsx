@@ -14,6 +14,20 @@ function selectedSetFrom(value, multiple) {
   return new Set([String(value ?? "")]);
 }
 
+function menuContentWidth(labels, font, extra) {
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return 0;
+  }
+  context.font = font;
+  let max = 0;
+  for (const label of labels) {
+    max = Math.max(max, context.measureText(String(label || "")).width);
+  }
+  return Math.ceil(max + extra);
+}
+
 function triggerLabel(options, selected, multiple, placeholder) {
   if (!multiple) {
     const current = [...selected][0] ?? "";
@@ -47,6 +61,7 @@ export default function FieldSelect({
   placeholder = "Select",
   ariaLabel,
   className = "",
+  fitMenu = false,
 }) {
   const wrapRef = useRef(null);
   const menuRef = useRef(null);
@@ -93,10 +108,19 @@ export default function FieldSelect({
       const gap = 4;
       const spaceBelow = window.innerHeight - rect.bottom - gap;
       const openUp = spaceBelow < 160 && rect.top > spaceBelow;
-      const width = Math.max(rect.width, compact ? 88 : rect.width);
+      const font = getComputedStyle(wrapRef.current).font;
+      const extra = (multiple ? 44 : 20) + 28;
+      const fitted = fitMenu
+        ? menuContentWidth(options.map((option) => option.label), font, extra)
+        : 0;
+      const width = Math.min(
+        Math.max(rect.width, compact ? 88 : rect.width, fitted),
+        window.innerWidth - 16
+      );
+      const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
       setMenuStyle({
         position: "fixed",
-        left: Math.min(rect.left, window.innerWidth - width - 8),
+        left,
         width,
         maxHeight,
         ...(openUp
@@ -111,7 +135,7 @@ export default function FieldSelect({
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
-  }, [open, compact, matches.length]);
+  }, [open, compact, matches.length, fitMenu, multiple, options]);
 
   useEffect(() => {
     if (open && searchable && menuStyle) {
@@ -212,7 +236,7 @@ export default function FieldSelect({
         ? createPortal(
             <div
               ref={menuRef}
-              className={`field-select-menu${compact ? " is-compact" : ""}`}
+              className={`field-select-menu${compact ? " is-compact" : ""}${fitMenu ? " is-fit" : ""}`}
               role="listbox"
               aria-multiselectable={multiple || undefined}
               style={menuStyle}

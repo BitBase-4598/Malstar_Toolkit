@@ -34,8 +34,13 @@ def get_dashboard():
     date_to, error = parse_dashboard_date_arg("dateTo")
     if error:
         return jsonify({"success": False, "message": error}), 400
+    mailboxes = []
+    for value in request.args.getlist("mailbox"):
+        text = str(value or "").strip()[:160]
+        if text:
+            mailboxes.append(text)
     with get_connection() as conn:
-        data = build_dashboard_payload(conn, date_from, date_to)
+        data = build_dashboard_payload(conn, date_from, date_to, mailboxes)
     return jsonify({"success": True, "data": data})
 
 

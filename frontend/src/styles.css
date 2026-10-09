@@ -1142,6 +1142,14 @@ td.copied {
   min-width: 88px;
 }
 
+.field-select-menu.is-fit {
+  overflow-x: hidden;
+}
+
+.field-select-menu.is-fit button {
+  white-space: nowrap;
+}
+
 .field-select-search {
   display: block;
   width: 100%;
@@ -2321,10 +2329,14 @@ tbody tr.selected td {
   justify-content: space-between;
   gap: 16px;
   flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 4;
   background: var(--maersk-white);
   border: 1px solid var(--maersk-border);
   border-radius: var(--radius-lg);
   padding: 16px 20px;
+  box-shadow: 0 8px 16px rgba(0, 36, 61, 0.06);
 }
 
 .dash-toolbar-kicker {
@@ -2359,6 +2371,10 @@ tbody tr.selected td {
   min-width: 0;
   width: min(220px, 100%);
   background: var(--maersk-white);
+}
+
+.dash-dates .dash-mailbox .field-select {
+  width: min(280px, 100%);
 }
 
 .dash-switch {

@@ -150,7 +150,28 @@ def average_process_times(items):
     )
 
 
-def build_dashboard_payload(conn, date_from="", date_to=""):
+BLANK_MAILBOX = "(blank)"
+
+
+def selected_mailbox_keys(mailbox):
+    if mailbox is None:
+        raw = []
+    elif isinstance(mailbox, str):
+        raw = [mailbox]
+    else:
+        raw = list(mailbox)
+    selected = []
+    seen = set()
+    for value in raw:
+        text = str(value or "").strip()[:160]
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        selected.append(text)
+    return selected
+
+
+def build_dashboard_payload(conn, date_from="", date_to="", mailbox=""):
     bounds = conn.execute(
         """
         SELECT MIN(ReportDate), MAX(ReportDate), COUNT(*)
@@ -175,7 +196,18 @@ def build_dashboard_payload(conn, date_from="", date_to=""):
         f"SELECT * FROM DashboardBookings {where} ORDER BY ReportDate, HandlingTime, ID",
         params,
     ).fetchall()
-    items = [dashboard_row_to_dict(row) for row in rows]
+    date_items = [dashboard_row_to_dict(row) for row in rows]
+    mailbox_names = sorted(
+        {item["mailbox"] for item in date_items if item["mailbox"]},
+        key=str.casefold,
+    )
+    has_blank_mailbox = any(not item["mailbox"] for item in date_items)
+    selected_mailboxes = selected_mailbox_keys(mailbox)
+    selected_keys = set(selected_mailboxes)
+    if selected_keys:
+        items = [item for item in date_items if (item["mailbox"] or BLANK_MAILBOX) in selected_keys]
+    else:
+        items = date_items
     total = len(items)
     converted = [item for item in items if is_converted_status(item["emailStatus"])]
     processing = [item for item in items if is_processing_status(item["emailStatus"])]
@@ -325,7 +357,11 @@ def build_dashboard_payload(conn, date_from="", date_to=""):
     if not items:
         conclusions.append({
             "kind": "empty",
-            "text": "No bookings in this date range. Upload a daily report CSV or widen the dates.",
+            "text": (
+                "No bookings for the selected mailboxes in these dates."
+                if selected_mailboxes
+                else "No bookings in this date range. Upload a daily report CSV or widen the dates."
+            ),
         })
 
     flagged_map = {}
@@ -364,6 +400,9 @@ def build_dashboard_payload(conn, date_from="", date_to=""):
             "dateMax": date_max,
             "dateFrom": date_from or date_min,
             "dateTo": date_to or date_max,
+            "mailboxes": mailbox_names,
+            "hasBlankMailbox": has_blank_mailbox,
+            "mailbox": selected_mailboxes[0] if len(selected_mailboxes) == 1 else "",
         },
         "kpis": {
             "total": total,
