@@ -23,23 +23,16 @@ On the CVM, rebuild the frontend with `VITE_BASE=/remarks/` so assets load under
 
 CSV headers must be: `CTRLOrgcode,Customer,Remark1,Remark2,Remark3`. Existing rows are updated by the combined key CTRLOrgcode + Customer.
 
-The app uses SQLite. The default file is `backend/malstar.db` (gitignored). Override with `DATABASE_PATH` or `DATABASE_URL=sqlite:///...` in a gitignored `.env` (see `.env.example`). PostgreSQL is not used at runtime.
+The app uses SQLite. The default file is `backend/malstar.db` (gitignored). Override with `DATABASE_PATH` or `DATABASE_URL=sqlite:///...` in a gitignored `.env` (see `.env.example`).
 
-To copy SearchBar and Leave Forecast rows from Azure Flexible Server into a local file:
+## Run on this CVM
 
-```bash
-cd backend
-pip install 'psycopg[binary]'
-python scripts/postgres_to_sqlite.py --sqlite malstar.db
-```
-
-## Run on this machine (no Docker)
-
-Docker is optional. On a Windows CVM you can serve the built SPA from Flask:
+`start-service.ps1` is the NSSM production start (waitress on port 8080). To build the frontend and start once by hand:
 
 ```powershell
 cd frontend
 npm install
+$env:VITE_BASE="/remarks/"
 npm run build
 cd ..\backend
 python -m venv .venv
@@ -50,29 +43,11 @@ $env:FLASK_DEBUG="false"
 .\.venv\Scripts\python app.py
 ```
 
-Then open `http://localhost:8080` on the CVM, or `http://<cvm-ip>:8080` from another machine (port 8080 must be allowed in the firewall).
-
-## Docker
-
-Build and run the production image locally:
-
-```bash
-docker compose up --build
-```
-
-Then open `http://localhost:8080`. Docker Compose stores the SQLite file and uploads under `/home/data` (`DATABASE_PATH=/home/data/malstar.db`).
-
-`scripts/postgres_to_sqlite.py` copies `CustomerRemarks`, `LeavePeople`, and `LeavePlans` from Azure Postgres into a local `.db`. `scripts/sqlite_to_postgres.py` and `scripts/live_api_to_postgres.py` are archival (the app no longer speaks Postgres). Azure settings are in [azure/app-settings.md](azure/app-settings.md).
+`backend/gateway.py` listens on port 80 and forwards `/remarks/` to `http://127.0.0.1:8080`.
 
 ## Azure App Service
 
-Deploy as a **Linux** Web App with a **custom container**. See [azure/app-settings.md](azure/app-settings.md) for required settings.
-
-From a machine logged in with Azure CLI (`az login`):
-
-```powershell
-.\azure\deploy.ps1
-```
+Deploy is **GitHub Actions** on `main`: [`.github/workflows/main_malstar-toolkit.yml`](.github/workflows/main_malstar-toolkit.yml) builds the frontend and deploys the Python app to the Linux Web App `MALSTAR-Toolkit` (Oryx). Runtime is SQLite. Settings and the gunicorn startup command are in [azure/app-settings.md](azure/app-settings.md).
 
 Use a **single instance**. Uploads stay on `/home` (`WEBSITES_ENABLE_APP_SERVICE_STORAGE=true`) and are not safe across scale-out until they are on Azure Files.
 

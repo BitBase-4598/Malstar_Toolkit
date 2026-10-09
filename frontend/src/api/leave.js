@@ -19,4 +19,10 @@ export const leaveApi = {
       body: JSON.stringify(data),
     }),
   deleteLeavePlan: (id) => request(`${LEAVE}/${id}`, { method: "DELETE" }),
+  exportLeavePlans: async (year, month) => {
+    const response = await request(
+      `${LEAVE}/export?year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}`
+    );
+    return response.blob();
+  },
 };

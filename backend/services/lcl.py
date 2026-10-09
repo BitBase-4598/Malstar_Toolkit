@@ -576,6 +576,12 @@ def _store_dashboard(key, payload):
         _DASHBOARD_CACHE[key] = payload
 
 
+BRANCH_DEST_ALIASES = {
+    "HK1": ("HK",),
+    "TPE": ("TW",),
+}
+
+
 def build_filters(args):
     clauses = []
     params = []
@@ -590,7 +596,20 @@ def build_filters(args):
 
     add_in("Year", split_csv_param(args.get("year")))
     add_in("MonthName", split_csv_param(args.get("month")))
-    add_in("JobBranch", split_csv_param(args.get("branch")))
+    branches = split_csv_param(args.get("branch"))
+    dest_aliases = []
+    for item in branches:
+        dest_aliases.extend(BRANCH_DEST_ALIASES.get(item.upper(), ()))
+    dest_aliases = list(dict.fromkeys(dest_aliases))
+    if dest_aliases:
+        vals = [item for item in branches if item]
+        placeholders = ",".join("?" * len(vals))
+        dest_ph = ",".join("?" * len(dest_aliases))
+        clauses.append(f"(JobBranch IN ({placeholders}) OR DestCtry IN ({dest_ph}))")
+        params.extend(vals)
+        params.extend(dest_aliases)
+    else:
+        add_in("JobBranch", branches)
     add_in("Direction", split_csv_param(args.get("direction")))
     add_in("DestCtry", [item.upper() for item in split_csv_param(args.get("country"))])
     bosch_vals = {part.strip().lower() for part in split_csv_param(args.get("bosch"))}
@@ -640,7 +659,10 @@ def list_filter_options():
         data = {
             "years": distinct_values(conn, "Year"),
             "months": months,
-            "branches": distinct_values(conn, "JobBranch"),
+            "branches": sorted(
+                {*(distinct_values(conn, "JobBranch") or []), *EXTRA_JOB_BRANCHES},
+                key=str,
+            ),
             "directions": distinct_values(conn, "Direction"),
             "countries": countries,
             "meta": {
@@ -743,7 +765,10 @@ BRANCH_COORDS = {
     "QDO": (36.07, 120.38),
     "NG1": (29.87, 121.55),
     "SIN": (1.35, 103.82),
+    "HK1": (22.32, 114.17),
+    "TPE": (25.03, 121.57),
 }
+EXTRA_JOB_BRANCHES = ("HK1", "TPE")
 CHINA_HUB = (31.23, 121.47)
 
 

@@ -1,13 +1,15 @@
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, send_file
 
 from db import IntegrityError, get_connection
 from logging_util import audit
 from services.leave import (
+    build_leave_export,
     ensure_leave_people,
     leave_change_summary,
     leave_to_dict,
+    list_leave_plans_for_month,
     parse_leave_payload,
 )
 from util import now_stamp
@@ -20,25 +22,36 @@ def list_leave_people_route():
     return jsonify({"success": True, "data": ensure_leave_people()})
 
 
-@bp.get("/api/leave-plans")
-def list_leave_plans():
+def _year_month():
     now = datetime.now()
     year = request.args.get("year", now.year, type=int) or now.year
     month = request.args.get("month", now.month, type=int) or now.month
     if month < 1 or month > 12 or year < 2000 or year > 2100:
-        return jsonify({"success": False, "message": "Invalid year or month."}), 400
-    start = datetime(year, month, 1)
-    end = datetime(year + 1, 1, 1) if month == 12 else datetime(year, month + 1, 1)
-    with get_connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT * FROM LeavePlans
-            WHERE LeaveDate >= ? AND LeaveDate < ?
-            ORDER BY LeaveDate, LOWER(Person), ID
-            """,
-            (start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")),
-        ).fetchall()
-    return jsonify({"success": True, "data": [leave_to_dict(row) for row in rows]})
+        return None, None, jsonify({"success": False, "message": "Invalid year or month."}), 400
+    return year, month, None, None
+
+
+@bp.get("/api/leave-plans")
+def list_leave_plans():
+    year, month, error, status = _year_month()
+    if error:
+        return error, status
+    return jsonify({"success": True, "data": list_leave_plans_for_month(year, month)})
+
+
+@bp.get("/api/leave-plans/export")
+def export_leave_plans():
+    year, month, error, status = _year_month()
+    if error:
+        return error, status
+    buffer, filename = build_leave_export(year, month)
+    audit("leave.export", summary=f"{year}-{month:02d}")
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 
 @bp.post("/api/leave-plans")
@@ -52,14 +65,15 @@ def create_leave_plan():
         with get_connection() as conn:
             cur = conn.execute(
                 """
-                INSERT INTO LeavePlans (LeaveDate, Person, LeaveType, Status, CreatedAt, UpdatedAt)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO LeavePlans (LeaveDate, Person, LeaveType, Status, Remark, CreatedAt, UpdatedAt)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     payload["leaveDate"],
                     payload["person"],
                     payload["leaveType"],
                     payload["status"],
+                    payload["remark"],
                     stamp,
                     stamp,
                 ),
@@ -98,7 +112,7 @@ def update_leave_plan(plan_id):
             conn.execute(
                 """
                 UPDATE LeavePlans
-                SET LeaveDate=?, Person=?, LeaveType=?, Status=?, UpdatedAt=?
+                SET LeaveDate=?, Person=?, LeaveType=?, Status=?, Remark=?, UpdatedAt=?
                 WHERE ID=?
                 """,
                 (
@@ -106,6 +120,7 @@ def update_leave_plan(plan_id):
                     payload["person"],
                     payload["leaveType"],
                     payload["status"],
+                    payload["remark"],
                     now_stamp(),
                     plan_id,
                 ),

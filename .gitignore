@@ -9,6 +9,8 @@ __pycache__/
 *.db
 *.db-wal
 *.db-shm
+*.db.bak*
+logs/
 backend/malstar_toolkit.log
 backend/malstar_toolkit.log.*
 backend/uploads/

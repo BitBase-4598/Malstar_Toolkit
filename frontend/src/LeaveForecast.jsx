@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Pencil, Save, Trash2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Pencil, Save, Trash2, X } from "lucide-react";
 import { api } from "./api";
 import FieldSelect from "./FieldSelect";
 import { holidayInfo, isOffDay } from "./chinaHolidays";
@@ -11,6 +11,7 @@ const LEAVE_TYPES = [
   { value: "sick", label: "Sick" },
   { value: "wfh", label: "WFH" },
   { value: "half_day", label: "Half day" },
+  { value: "on_duty", label: "On duty" },
   { value: "other", label: "Other" },
 ];
 const STATUSES = [
@@ -21,6 +22,7 @@ const emptyForm = {
   person: "",
   leaveType: "annual",
   status: "planned",
+  remark: "",
 };
 
 function pad(value) {
@@ -68,6 +70,19 @@ function monthCells(year, monthIndex) {
 
 function typeLabel(value) {
   return LEAVE_TYPES.find((item) => item.value === value)?.label || value;
+}
+
+function dayTypeClass(types) {
+  if (!types?.length) {
+    return "";
+  }
+  if (types.includes("on_duty")) {
+    return "type-on_duty";
+  }
+  if (types.length === 1) {
+    return `type-${types[0]}`;
+  }
+  return "type-mixed";
 }
 
 function matchPerson(query, names) {
@@ -191,6 +206,7 @@ export default function LeaveForecast({ onNotice, onRefreshLogs }) {
   const [people, setPeople] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [confirm, confirmDialog] = useConfirm();
@@ -265,6 +281,18 @@ export default function LeaveForecast({ onNotice, onRefreshLogs }) {
     return map;
   }, [plans]);
 
+  const typesByDate = useMemo(() => {
+    const map = {};
+    plans.forEach((plan) => {
+      const list = map[plan.leaveDate] || [];
+      if (plan.leaveType && !list.includes(plan.leaveType)) {
+        list.push(plan.leaveType);
+      }
+      map[plan.leaveDate] = list;
+    });
+    return map;
+  }, [plans]);
+
   const dayPlans = plans.filter((plan) => plan.leaveDate === selected);
   const personOptions = useMemo(() => {
     const names = people.map((item) => item.name).filter(Boolean);
@@ -292,6 +320,7 @@ export default function LeaveForecast({ onNotice, onRefreshLogs }) {
       person: plan.person,
       leaveType: plan.leaveType,
       status: plan.status,
+      remark: plan.remark || "",
     });
   };
 
@@ -321,6 +350,26 @@ export default function LeaveForecast({ onNotice, onRefreshLogs }) {
       onNotice?.({ type: "error", text: error.message });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const exportMonth = async () => {
+    setExporting(true);
+    try {
+      const blob = await api.exportLeavePlans(year, month + 1);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `leave-forecast-${year}-${String(month + 1).padStart(2, "0")}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      onNotice?.({ type: "success", text: "Leave arrangement exported." });
+    } catch (error) {
+      onNotice?.({ type: "error", text: error.message });
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -379,12 +428,24 @@ export default function LeaveForecast({ onNotice, onRefreshLogs }) {
     >
       <section className="card leave-calendar-card" style={{ width: `${calendarWidth}px` }}>
         <div className="summary leave-month-bar">
-          <button type="button" className="ghost" onClick={() => shiftMonth(-1)} aria-label="Previous month">
-            <ChevronLeft size={18} />
-          </button>
-          <strong>{monthTitle(year, month)}</strong>
-          <button type="button" className="ghost" onClick={() => shiftMonth(1)} aria-label="Next month">
-            <ChevronRight size={18} />
+          <div className="leave-month-nav">
+            <button type="button" className="ghost" onClick={() => shiftMonth(-1)} aria-label="Previous month">
+              <ChevronLeft size={18} />
+            </button>
+            <strong>{monthTitle(year, month)}</strong>
+            <button type="button" className="ghost" onClick={() => shiftMonth(1)} aria-label="Next month">
+              <ChevronRight size={18} />
+            </button>
+          </div>
+          <button
+            type="button"
+            className="leave-export"
+            onClick={exportMonth}
+            disabled={exporting}
+            aria-label="Export Excel"
+          >
+            <Download size={16} />
+            {exporting ? "Exporting..." : "Export Excel"}
           </button>
         </div>
         <div className="leave-calendar">
@@ -407,6 +468,7 @@ export default function LeaveForecast({ onNotice, onRefreshLogs }) {
               iso === selected ? "selected" : "",
               iso === today ? "today" : "",
               count ? "has-leave" : "",
+              dayTypeClass(typesByDate[iso]),
               off ? "off" : "",
             ]
               .filter(Boolean)
@@ -467,6 +529,7 @@ export default function LeaveForecast({ onNotice, onRefreshLogs }) {
                     <strong>{plan.person}</strong>
                     <span className={`status-pill ${plan.leaveType}`}>{typeLabel(plan.leaveType)}</span>
                     <span className={`status-pill ${plan.status}`}>{plan.status}</span>
+                    {plan.remark ? <p className="leave-plan-remark">{plan.remark}</p> : null}
                   </div>
                   <div className="actions">
                     <button type="button" onClick={() => startEdit(plan)} aria-label={`Edit ${plan.person}`}>
@@ -526,6 +589,19 @@ export default function LeaveForecast({ onNotice, onRefreshLogs }) {
                 />
               </label>
             </div>
+            {form.leaveType === "on_duty" ? (
+              <label>
+                Remark
+                <textarea
+                  rows="3"
+                  value={form.remark}
+                  onChange={update("remark")}
+                  disabled={saving}
+                  placeholder="Type a remark"
+                  maxLength={500}
+                />
+              </label>
+            ) : null}
             <div className="leave-form-actions">
               {editing ? (
                 <button type="button" className="ghost" onClick={cancelEdit} disabled={saving}>

@@ -1788,6 +1788,36 @@ tbody tr.selected td {
 .leave-month-bar {
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
+}
+
+.leave-month-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.leave-export {
+  padding: 6px 12px;
+  font-size: var(--type-ui);
+  font-weight: 600;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  cursor: pointer;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--maersk-navy);
+  color: var(--maersk-white);
+}
+
+.leave-export:hover:not(:disabled) {
+  background: #0a2f4a;
+}
+
+.leave-export:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .leave-month-bar strong {
@@ -1901,6 +1931,13 @@ tbody tr.selected td {
 
 .leave-day.selected em {
   background: var(--maersk-white);
+  color: var(--maersk-navy);
+}
+
+.leave-day.type-on_duty em,
+.leave-day.selected.type-on_duty em {
+  background: #5b2a86;
+  color: #ffffff;
 }
 
 .leave-day-body {
@@ -1954,7 +1991,16 @@ tbody tr.selected td {
   color: var(--maersk-navy);
 }
 
-.leave-form input {
+.leave-plan-remark {
+  margin: 6px 0 0;
+  color: var(--maersk-muted);
+  font-size: var(--type-ui);
+  font-weight: 400;
+  white-space: pre-wrap;
+}
+
+.leave-form input,
+.leave-form textarea {
   display: block;
   width: 100%;
   margin-top: 6px;
@@ -1964,6 +2010,11 @@ tbody tr.selected td {
   font: inherit;
   background-color: var(--maersk-white);
   color: var(--maersk-navy);
+}
+
+.leave-form textarea {
+  min-height: 72px;
+  resize: vertical;
 }
 
 .leave-form select {
@@ -2050,6 +2101,11 @@ tbody tr.selected td {
 .status-pill.half_day {
   background: #e8eef3;
   color: var(--maersk-navy);
+}
+
+.status-pill.on_duty {
+  background: #5b2a86;
+  color: #ffffff;
 }
 
 .status-pill.confirmed {
@@ -2303,6 +2359,67 @@ tbody tr.selected td {
   min-width: 0;
   width: min(220px, 100%);
   background: var(--maersk-white);
+}
+
+.dash-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  font-size: var(--type-ui);
+  font-weight: 600;
+  color: var(--maersk-navy);
+  cursor: pointer;
+  user-select: none;
+}
+
+.dash-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.dash-switch-ui {
+  width: 40px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--maersk-border);
+  position: relative;
+  transition: background 0.15s ease;
+}
+
+.dash-switch-ui::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--maersk-white);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s ease;
+}
+
+.dash-switch input:checked + .dash-switch-ui {
+  background: var(--maersk-blue);
+}
+
+.dash-switch input:checked + .dash-switch-ui::after {
+  transform: translateX(18px);
+}
+
+.dash-switch input:focus-visible + .dash-switch-ui {
+  outline: 2px solid var(--maersk-blue);
+  outline-offset: 2px;
+}
+
+.dash-switch input:disabled + .dash-switch-ui,
+.dash-switch:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .dash-meta {
@@ -3561,4 +3678,24 @@ html.lcl-html #root {
 .dash-layout .filter-chips {
   padding-left: 0;
   padding-right: 0;
+}
+
+.dash-weekday-chips {
+  flex: 1 1 auto;
+  justify-content: flex-end;
+  max-width: 100%;
+  padding: 0;
+}
+
+.dash-hour-summary {
+  flex-wrap: wrap;
+}
+
+.dash-weekday-chips button {
+  min-width: 40px;
+  padding: 5px 8px;
+}
+
+.dash-weekday-chips button.active {
+  color: var(--maersk-white);
 }

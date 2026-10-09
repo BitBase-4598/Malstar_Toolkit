@@ -1,6 +1,6 @@
 # Azure App Service settings (MALSTAR-Toolkit)
 
-This app is a **Linux Python 3.12 Web App** deployed from **GitHub** (Oryx / `SCM_DO_BUILD_DURING_DEPLOYMENT=true`). It is **not** the container script in `deploy.ps1`.
+This app is a **Linux Python 3.12 Web App** deployed from **GitHub** (Oryx / `SCM_DO_BUILD_DURING_DEPLOYMENT=true`). The workflow is [`.github/workflows/main_malstar-toolkit.yml`](../.github/workflows/main_malstar-toolkit.yml).
 
 Live site: `https://malstar-toolkit-djexgna2eghtgkep.eastasia-01.azurewebsites.net`  
 Kudu / SCM: `https://malstar-toolkit-djexgna2eghtgkep.scm.eastasia-01.azurewebsites.net`
@@ -15,44 +15,7 @@ gunicorn --bind=0.0.0.0:8000 --chdir backend --workers 1 --threads 8 --timeout 1
 
 Do not use `source`, `antenv/bin/gunicorn`, or `WEBSITES_PORT=8080` on this code-deploy app.
 
-## 1. Local SQLite and the Azure Postgres copy
-
-App tables used to live on **Azure Database for PostgreSQL Flexible Server**. That server is now only a **read-only source** for `backend/scripts/postgres_to_sqlite.py`.
-
-| Item | Value |
-| --- | --- |
-| Host | `malstar.postgres.database.azure.com` |
-| Port | `5432` |
-| Copy script default database | `postgres` (falls back to `malstar` if remarks/leave tables are missing) |
-| App user | `nathan` |
-| TLS | `sslmode=require` |
-
-Never commit the password, paste it into a PR, or store it in this file. URL-encode `$` as `%24` if you put it in a URL.
-
-From a machine allowed by the Flexible Server firewall:
-
-```powershell
-cd backend
-pip install "psycopg[binary]"
-python scripts/postgres_to_sqlite.py --sqlite malstar.db
-```
-
-The script copies only `CustomerRemarks`, `LeavePeople`, and `LeavePlans`. Other tables are created empty (upload Dashboard / LCL / GCA later). It does not INSERT/UPDATE/DELETE on Azure Postgres.
-
-Allow the machine that runs the copy script:
-
-```bash
-az postgres flexible-server firewall-rule create \
-  --resource-group <RG> \
-  --name malstar \
-  --rule-name AllowCopyClient \
-  --start-ip-address <YOUR_IP> \
-  --end-ip-address <YOUR_IP>
-```
-
-Do not open `0.0.0.0–255.255.255.255`. Flexible Server usernames are `nathan`, not `nathan@malstar`.
-
-## 2. Application settings
+## 1. Application settings
 
 Keep:
 
@@ -65,12 +28,12 @@ Keep:
 | `FLASK_DEBUG` | `false` |
 | `CORS_ORIGINS` | *(empty)* |
 
-When this SQLite runtime is on App Service, set:
+Set the database path and remove any Postgres URL:
 
 | Name | Action | Value |
 | --- | --- | --- |
 | `DATABASE_PATH` | **Add / set** | `/home/data/malstar.db` |
-| `DATABASE_URL` | **Delete** | *(was the `postgresql://nathan@malstar.postgres...` string)* |
+| `DATABASE_URL` | **Delete** | *(must not be a `postgresql://` string)* |
 
 Do not leave `DATABASE_URL` as a Postgres URL. The process exits if it starts with `postgres`. You can use `DATABASE_URL=sqlite:////home/data/malstar.db` instead of `DATABASE_PATH`; do not set both to different files.
 
@@ -88,15 +51,11 @@ az webapp config appsettings delete \
   --setting-names DATABASE_URL
 ```
 
-Optional Ask LLM settings are unchanged: `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_CHAT_DEPLOYMENT`, `AZURE_OPENAI_API_VERSION`.
+Optional Ask LLM settings: `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_CHAT_DEPLOYMENT`, `AZURE_OPENAI_API_VERSION`.
 
-Oryx installs from **repo-root** `requirements.txt` and `backend/requirements.txt`. The app no longer needs `psycopg`. Install `psycopg[binary]` only on the machine that runs the copy script. GitHub Actions does not need `DATABASE_URL` at build time.
+Oryx installs from **repo-root** `requirements.txt` and `backend/requirements.txt`. GitHub Actions does not need `DATABASE_URL` at build time.
 
-## 3. Archival copy scripts
-
-`backend/scripts/sqlite_to_postgres.py` and `backend/scripts/live_api_to_postgres.py` wrote into Postgres. They are unused by the SQLite runtime.
-
-## 4. Health check and scale
+## 2. Health check and scale
 
 Portal: Monitoring → Health check → `/api/health`. That path returns 503 if the SQLite file cannot be opened.
 
@@ -105,7 +64,3 @@ Keep **one instance**. `/home/data` is not safe across scale-out until it is an 
 Keep `--workers 1 --threads 8` on F1.
 
 Always On and custom domains are plan-SKU limits. Entra Easy Auth is unchanged.
-
-## 5. Do not use deploy.ps1 for this app
-
-`azure/deploy.ps1` builds a **container** named `autorating-web` and is not used for MALSTAR-Toolkit. This app is GitHub code deploy as above.

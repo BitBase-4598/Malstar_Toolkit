@@ -1,8 +1,94 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { api } from "./api";
 import FieldSelect from "./FieldSelect";
 
 const DONUT_COLORS = ["#42b0d5", "#00243d", "#0077b2", "#4c4c4c", "#77c6e0"];
+const WEEKDAY_FILTERS = [
+  { id: "all", label: "All" },
+  { id: "0", label: "Sun" },
+  { id: "1", label: "Mon" },
+  { id: "2", label: "Tue" },
+  { id: "3", label: "Wed" },
+  { id: "4", label: "Thu" },
+  { id: "5", label: "Fri" },
+  { id: "6", label: "Sat" },
+];
+
+function parseReceivedStamp(value) {
+  const match = String(value || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}))?/);
+  if (!match) {
+    return null;
+  }
+  return {
+    weekday: new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])).getDay(),
+    hour: match[4] != null ? Number(match[4]) : 0,
+  };
+}
+
+function volumeByHour(rows, weekdayId) {
+  const counts = Array(24).fill(0);
+  const wanted = weekdayId === "all" ? null : Number(weekdayId);
+  for (const row of rows) {
+    const stamp = parseReceivedStamp(row.emailReceived);
+    if (!stamp) {
+      continue;
+    }
+    if (wanted != null && stamp.weekday !== wanted) {
+      continue;
+    }
+    if (stamp.hour >= 0 && stamp.hour <= 23) {
+      counts[stamp.hour] += 1;
+    }
+  }
+  return counts.map((count, hour) => ({
+    label: `${String(hour).padStart(2, "0")}:00`,
+    count,
+  }));
+}
+
+const OVER_8H_MINUTES = 8 * 60;
+
+function roundOne(value) {
+  return Math.round(value * 10) / 10;
+}
+
+function processAverages(rows, includeOver8h) {
+  const all = [];
+  const byHandler = new Map();
+  for (const row of rows) {
+    if (row.processMinutes == null || row.processMinutes === "") {
+      continue;
+    }
+    const value = Number(row.processMinutes);
+    if (!Number.isFinite(value)) {
+      continue;
+    }
+    if (!includeOver8h && Math.abs(value) > OVER_8H_MINUTES) {
+      continue;
+    }
+    all.push(value);
+    const handler = row.handledBy || "(blank)";
+    const list = byHandler.get(handler);
+    if (list) {
+      list.push(value);
+    } else {
+      byHandler.set(handler, [value]);
+    }
+  }
+  const avg = all.length ? roundOne(all.reduce((sum, value) => sum + value, 0) / all.length) : null;
+  const processByHandler = [...byHandler.entries()]
+    .map(([label, values]) => ({
+      label,
+      minutes: roundOne(values.reduce((sum, value) => sum + value, 0) / values.length),
+      count: values.length,
+    }))
+    .sort((left, right) => right.minutes - left.minutes || left.label.localeCompare(right.label));
+  const peak = processByHandler[0]?.minutes;
+  for (const item of processByHandler) {
+    item.isMax = item.minutes === peak;
+  }
+  return { avg, count: all.length, processByHandler };
+}
 
 function shortHandler(value) {
   const text = String(value || "").trim();
@@ -247,6 +333,8 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
   const [importing, setImporting] = useState(false);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [hourWeekday, setHourWeekday] = useState("all");
+  const [includeOver8h, setIncludeOver8h] = useState(false);
 
   const load = useCallback(
     async (from = dateFrom, to = dateTo) => {
@@ -312,6 +400,28 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
   const meta = data?.meta;
   const empty = !meta?.rowCount;
   const rows = data?.rows || [];
+  const hourItems = useMemo(() => volumeByHour(rows, hourWeekday), [rows, hourWeekday]);
+  const hourWeekdayLabel = WEEKDAY_FILTERS.find((item) => item.id === hourWeekday)?.label || "All";
+  const processStats = useMemo(() => processAverages(rows, includeOver8h), [rows, includeOver8h]);
+  const avgProcessLabel = processStats.avg == null ? "—" : `${processStats.avg} min`;
+  const avgProcessNote = includeOver8h ? "including over 8 hours" : "excluding over 8 hours";
+  const conclusions = useMemo(() => {
+    const items = data?.conclusions || [];
+    if (processStats.avg == null) {
+      return items;
+    }
+    return items.map((item) => {
+      if (item.kind !== "average-process") {
+        return item;
+      }
+      return {
+        ...item,
+        text: includeOver8h
+          ? `Average process-time is ${processStats.avg} min across ${processStats.count} bookings including process times over 8 hours.`
+          : `Average process-time is ${processStats.avg} min across ${processStats.count} bookings after removing process times over 8 hours.`,
+      };
+    });
+  }, [data?.conclusions, includeOver8h, processStats]);
 
   return (
     <div className="dash-layout">
@@ -343,6 +453,17 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
               />
             </label>
           </div>
+          <label className="dash-switch">
+            <input
+              type="checkbox"
+              role="switch"
+              checked={includeOver8h}
+              disabled={empty}
+              onChange={(event) => setIncludeOver8h(event.target.checked)}
+            />
+            <span className="dash-switch-ui" aria-hidden="true" />
+            Include over 8 hours in averages
+          </label>
         </div>
         <p className="dash-meta">
           {empty
@@ -387,7 +508,8 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
               </article>
               <article className="dash-kpi">
                 <span>Average process-time</span>
-                <strong className="dash-kpi-count">{kpis.avgProcessLabel}</strong>
+                <strong className="dash-kpi-count">{avgProcessLabel}</strong>
+                <em>{avgProcessNote}</em>
               </article>
               <article className="dash-kpi dash-kpi-highest">
                 <span>
@@ -434,22 +556,42 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
                 <div className="summary">
                   <div>
                     <strong>Avg process-time by handler</strong>
-                    <p className="dash-section-note">Converted time minus handling time</p>
+                    <p className="dash-section-note">
+                      Converted time minus handling time, {avgProcessNote}
+                    </p>
                   </div>
                 </div>
                 <div className="dash-chart-body">
-                  <BarList items={data.series?.processByHandler || []} valueKey="minutes" highlightKey="isMax" />
+                  <BarList items={processStats.processByHandler} valueKey="minutes" highlightKey="isMax" />
                 </div>
               </section>
               <section className="card">
-                <div className="summary">
+                <div className="summary dash-hour-summary">
                   <div>
                     <strong>Volume by hour received</strong>
-                    <p className="dash-section-note">Inbound email hour</p>
+                    <p className="dash-section-note">
+                      {hourWeekday === "all"
+                        ? "Inbound email hour"
+                        : `Inbound email hour · ${hourWeekdayLabel}`}
+                    </p>
+                  </div>
+                  <div className="filter-chips dash-weekday-chips" role="tablist" aria-label="Filter by weekday">
+                    {WEEKDAY_FILTERS.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={hourWeekday === item.id}
+                        className={hourWeekday === item.id ? "active" : ""}
+                        onClick={() => setHourWeekday(item.id)}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
                 <div className="dash-chart-body dash-chart-hours">
-                  <HourChart items={data.series?.byHour || []} />
+                  <HourChart items={hourItems} />
                 </div>
               </section>
             </div>
@@ -463,7 +605,7 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
                 </div>
               </div>
               <ul className="dash-conclusions">
-                {(data.conclusions || []).map((item) => (
+                {(conclusions || []).map((item) => (
                   <li key={item.kind} className={item.kind === "highest-process" ? "is-highest" : ""}>
                     {item.text}
                   </li>

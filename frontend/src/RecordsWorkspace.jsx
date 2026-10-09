@@ -3,11 +3,13 @@ import { Search, X } from "lucide-react";
 import { api, RECORDS_PAGE_SIZE } from "./api";
 import { ICB_PAGE_SIZE } from "./api/icb";
 import { UNLOCO_PAGE_SIZE } from "./api/unloco";
+import { DELCL_PAGE_SIZE } from "./api/delcl";
 import RecordTable from "./RecordTable";
 import RecordModal from "./RecordModal";
 import CatalogInsertModal from "./CatalogInsertModal";
 import IcbTable from "./IcbTable";
 import UnlocoTable from "./UnlocoTable";
+import DeLclTable from "./DeLclTable";
 import useConfirm from "./useConfirm";
 
 const emptyForm = {
@@ -38,10 +40,20 @@ const emptyUnloco = {
   category: "",
 };
 
+const emptyDelcl = {
+  consignee: "",
+  consigneeName: "",
+  orgaCode: "",
+  remark: "",
+  senator: "",
+  deliveryAgent: "",
+};
+
 const SEARCH_TABS = [
   { id: "remarks", label: "Controlling Customer" },
   { id: "icb", label: "Controlling Agent" },
   { id: "unlocode", label: "UNLOCODE" },
+  { id: "delcl", label: "DE-LCL" },
 ];
 
 const RecordsWorkspace = forwardRef(function RecordsWorkspace(
@@ -51,6 +63,7 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
   const remarksFileRef = useRef();
   const icbFileRef = useRef();
   const unlocoFileRef = useRef();
+  const delclFileRef = useRef();
   const [confirm, confirmDialog] = useConfirm();
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -67,6 +80,7 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
   const [form, setForm] = useState(emptyForm);
   const [icbForm, setIcbForm] = useState(emptyIcb);
   const [unlocoForm, setUnlocoForm] = useState(emptyUnloco);
+  const [delclForm, setDelclForm] = useState(emptyDelcl);
   const pageCache = useRef(new Map());
   const pageInflight = useRef(new Map());
   const loadSeq = useRef(0);
@@ -74,6 +88,8 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
   const icbInflight = useRef(new Map());
   const unlocoCache = useRef(new Map());
   const unlocoInflight = useRef(new Map());
+  const delclCache = useRef(new Map());
+  const delclInflight = useRef(new Map());
   const [icbRows, setIcbRows] = useState([]);
   const [icbPage, setIcbPage] = useState(1);
   const [icbPagination, setIcbPagination] = useState({
@@ -97,6 +113,18 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
   const [unlocoMeta, setUnlocoMeta] = useState({ filename: "", importedAt: "", rowCount: 0 });
   const [unlocoLoading, setUnlocoLoading] = useState(false);
   const unlocoLoadSeq = useRef(0);
+  const [delclImporting, setDelclImporting] = useState(false);
+  const [delclRows, setDelclRows] = useState([]);
+  const [delclPage, setDelclPage] = useState(1);
+  const [delclPagination, setDelclPagination] = useState({
+    page: 1,
+    total: 0,
+    totalPages: 1,
+    pageSize: DELCL_PAGE_SIZE,
+  });
+  const [delclMeta, setDelclMeta] = useState({ filename: "", importedAt: "", rowCount: 0 });
+  const [delclLoading, setDelclLoading] = useState(false);
+  const delclLoadSeq = useRef(0);
 
   const remarksQuery = debounced.trim();
   const cacheKey = (q, targetPage) => `${q}|${targetPage}`;
@@ -108,6 +136,8 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
     icbInflight.current.clear();
     unlocoCache.current.clear();
     unlocoInflight.current.clear();
+    delclCache.current.clear();
+    delclInflight.current.clear();
   };
 
   const fetchRecords = useCallback(async (q, targetPage, signal) => {
@@ -156,6 +186,7 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
       setPage(1);
       setIcbPage(1);
       setUnlocoPage(1);
+      setDelclPage(1);
     };
     if (!query) {
       applyQuery("");
@@ -166,8 +197,8 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
   }, [query]);
 
   useEffect(() => {
-    onImportingChange?.(importing || icbImporting || unlocoImporting);
-  }, [importing, icbImporting, unlocoImporting, onImportingChange]);
+    onImportingChange?.(importing || icbImporting || unlocoImporting || delclImporting);
+  }, [importing, icbImporting, unlocoImporting, delclImporting, onImportingChange]);
 
   const load = useCallback(async (signal) => {
     const seq = ++loadSeq.current;
@@ -247,6 +278,29 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
         throw error;
       });
     unlocoInflight.current.set(key, pending);
+    return pending;
+  }, []);
+
+  const fetchDelcl = useCallback(async (q, targetPage, signal) => {
+    const key = cacheKey(q, targetPage);
+    if (delclCache.current.has(key)) {
+      return delclCache.current.get(key);
+    }
+    if (delclInflight.current.has(key)) {
+      return delclInflight.current.get(key);
+    }
+    const pending = api
+      .listDelcl(q, targetPage, DELCL_PAGE_SIZE, signal ? { signal } : undefined)
+      .then((result) => {
+        delclCache.current.set(key, result);
+        delclInflight.current.delete(key);
+        return result;
+      })
+      .catch((error) => {
+        delclInflight.current.delete(key);
+        throw error;
+      });
+    delclInflight.current.set(key, pending);
     return pending;
   }, []);
 
@@ -348,6 +402,55 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
     }
   }, [debounced, unlocoPage, fetchUnloco, onNotice]);
 
+  const loadDelcl = useCallback(async (signal) => {
+    const seq = ++delclLoadSeq.current;
+    const key = cacheKey(debounced, delclPage);
+    const cached = delclCache.current.get(key);
+    if (cached) {
+      if (seq !== delclLoadSeq.current) {
+        return;
+      }
+      setDelclRows(cached.data || []);
+      setDelclPagination(cached.pagination || { page: 1, total: 0, totalPages: 1, pageSize: DELCL_PAGE_SIZE });
+      setDelclMeta(cached.meta || { filename: "", importedAt: "", rowCount: 0 });
+      setDelclLoading(false);
+      const totalPages = cached.pagination?.totalPages || 1;
+      if (delclPage + 1 <= totalPages) {
+        fetchDelcl(debounced, delclPage + 1);
+      }
+      if (delclPage - 1 >= 1) {
+        fetchDelcl(debounced, delclPage - 1);
+      }
+      return;
+    }
+    setDelclLoading(true);
+    try {
+      const result = await fetchDelcl(debounced, delclPage, signal);
+      if (seq !== delclLoadSeq.current) {
+        return;
+      }
+      setDelclRows(result.data || []);
+      setDelclPagination(result.pagination || { page: 1, total: 0, totalPages: 1, pageSize: DELCL_PAGE_SIZE });
+      setDelclMeta(result.meta || { filename: "", importedAt: "", rowCount: 0 });
+      const totalPages = result.pagination?.totalPages || 1;
+      if (delclPage + 1 <= totalPages) {
+        fetchDelcl(debounced, delclPage + 1);
+      }
+      if (delclPage - 1 >= 1) {
+        fetchDelcl(debounced, delclPage - 1);
+      }
+    } catch (error) {
+      if (error.name === "AbortError" || seq !== delclLoadSeq.current) {
+        return;
+      }
+      onNotice?.({ type: "error", text: error.message });
+    } finally {
+      if (seq === delclLoadSeq.current) {
+        setDelclLoading(false);
+      }
+    }
+  }, [debounced, delclPage, fetchDelcl, onNotice]);
+
   useEffect(() => {
     if (searchTab !== "remarks") {
       return undefined;
@@ -375,6 +478,15 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
     return () => controller.abort();
   }, [loadUnloco, searchTab]);
 
+  useEffect(() => {
+    if (searchTab !== "delcl") {
+      return undefined;
+    }
+    const controller = new AbortController();
+    loadDelcl(controller.signal);
+    return () => controller.abort();
+  }, [loadDelcl, searchTab]);
+
   const openNew = () => {
     setEditing(null);
     if (searchTab === "icb") {
@@ -385,6 +497,11 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
     if (searchTab === "unlocode") {
       setUnlocoForm(emptyUnloco);
       setCatalogKind("unlocode");
+      return;
+    }
+    if (searchTab === "delcl") {
+      setDelclForm(emptyDelcl);
+      setCatalogKind("delcl");
       return;
     }
     setCatalogKind("");
@@ -401,13 +518,17 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
       unlocoFileRef.current?.click();
       return;
     }
+    if (searchTab === "delcl") {
+      delclFileRef.current?.click();
+      return;
+    }
     remarksFileRef.current?.click();
   };
 
   useImperativeHandle(ref, () => ({
     openNew,
     openUpload,
-    importing: importing || icbImporting || unlocoImporting,
+    importing: importing || icbImporting || unlocoImporting || delclImporting,
   }));
 
   const openEdit = (row) => {
@@ -451,6 +572,20 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
       category: row.category || "",
     });
     setCatalogKind("unlocode");
+  };
+
+  const openEditDelcl = (row) => {
+    setModal(false);
+    setEditing(row);
+    setDelclForm({
+      consignee: row.consignee || "",
+      consigneeName: row.consigneeName || "",
+      orgaCode: row.orgaCode || "",
+      remark: row.remark || "",
+      senator: row.senator || "",
+      deliveryAgent: row.deliveryAgent || "",
+    });
+    setCatalogKind("delcl");
   };
 
   const closeModal = useCallback(() => {
@@ -499,6 +634,17 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
     setUnlocoPage(targetPage);
   };
 
+  const reloadDelcl = async (targetPage = 1) => {
+    delclCache.current.clear();
+    delclInflight.current.clear();
+    const listed = await api.listDelcl(debounced, targetPage, DELCL_PAGE_SIZE);
+    delclCache.current.set(cacheKey(debounced, targetPage), listed);
+    setDelclRows(listed.data || []);
+    setDelclPagination(listed.pagination || { page: 1, total: 0, totalPages: 1, pageSize: DELCL_PAGE_SIZE });
+    setDelclMeta(listed.meta || { filename: "", importedAt: "", rowCount: 0 });
+    setDelclPage(targetPage);
+  };
+
   const saveIcb = async (event) => {
     event.preventDefault();
     setSaving(true);
@@ -525,6 +671,24 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
       onNotice?.({ type: "success", text: result.message });
       setCatalogKind("");
       await reloadUnloco(editing ? unlocoPage : 1);
+      await onRefreshLogs?.();
+    } catch (error) {
+      onNotice?.({ type: "error", text: error.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveDelcl = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const result = editing
+        ? await api.updateDelcl(editing.id, delclForm)
+        : await api.createDelcl(delclForm);
+      onNotice?.({ type: "success", text: result.message });
+      setCatalogKind("");
+      await reloadDelcl(editing ? delclPage : 1);
       await onRefreshLogs?.();
     } catch (error) {
       onNotice?.({ type: "error", text: error.message });
@@ -590,6 +754,26 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
       onNotice?.({ type: "success", text: result.message });
       const target = unlocoRows.length === 1 && unlocoPage > 1 ? unlocoPage - 1 : unlocoPage;
       await reloadUnloco(target);
+      await onRefreshLogs?.();
+    } catch (error) {
+      onNotice?.({ type: "error", text: error.message });
+    }
+  };
+
+  const removeDelcl = async (row) => {
+    const label = [row.orgaCode, row.consigneeName || row.consignee].filter(Boolean).join(" / ") || "this DE-LCL";
+    const ok = await confirm({
+      title: "Delete DE-LCL",
+      message: `Delete ${label}?`,
+    });
+    if (!ok) {
+      return;
+    }
+    try {
+      const result = await api.removeDelcl(row.id);
+      onNotice?.({ type: "success", text: result.message });
+      const target = delclRows.length === 1 && delclPage > 1 ? delclPage - 1 : delclPage;
+      await reloadDelcl(target);
       await onRefreshLogs?.();
     } catch (error) {
       onNotice?.({ type: "error", text: error.message });
@@ -675,6 +859,32 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
     }
   };
 
+  const uploadDelcl = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    setDelclImporting(true);
+    try {
+      const result = await api.importDelcl(file);
+      onNotice?.({ type: "success", text: result.message });
+      setDelclPage(1);
+      delclCache.current.clear();
+      delclInflight.current.clear();
+      const listed = await api.listDelcl(debounced, 1, DELCL_PAGE_SIZE);
+      delclCache.current.set(cacheKey(debounced, 1), listed);
+      setDelclRows(listed.data || []);
+      setDelclPagination(listed.pagination || { page: 1, total: 0, totalPages: 1, pageSize: DELCL_PAGE_SIZE });
+      setDelclMeta(listed.meta || { filename: "", importedAt: "", rowCount: 0 });
+      await onRefreshLogs?.();
+    } catch (error) {
+      onNotice?.({ type: "error", text: error.message });
+    } finally {
+      setDelclImporting(false);
+      event.target.value = "";
+    }
+  };
+
   const changePage = (next) => {
     const target = typeof next === "function" ? next(page) : Number(next);
     if (!Number.isFinite(target) || target < 1 || target === page) {
@@ -698,8 +908,15 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
       <input ref={remarksFileRef} hidden type="file" accept=".csv,text/csv" onChange={uploadRemarks} />
       <input ref={icbFileRef} hidden type="file" accept=".csv,text/csv" onChange={uploadIcb} />
       <input ref={unlocoFileRef} hidden type="file" accept=".csv,text/csv" onChange={uploadUnloco} />
+      <input
+        ref={delclFileRef}
+        hidden
+        type="file"
+        accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
+        onChange={uploadDelcl}
+      />
       <div className="page-intro">
-        <p>Search controlling customer, controlling agent, or UNLOCODE.</p>
+        <p>Search controlling customer, controlling agent, UNLOCODE, or DE-LCL.</p>
       </div>
       <div className="search">
         <Search size={19} />
@@ -707,11 +924,13 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder={
-            searchTab === "unlocode"
-              ? "Country name, country, UNLOCODE, or port"
-              : searchTab === "icb"
-                ? "Company, port, UNLOCODE, or ICB code"
-                : "Company name or CTRLOrgcode"
+            searchTab === "delcl"
+              ? "Consignee, orga code, senator, or delivery agent"
+              : searchTab === "unlocode"
+                ? "Country name, country, UNLOCODE, or port"
+                : searchTab === "icb"
+                  ? "Company, port, UNLOCODE, or ICB code"
+                  : "Company name or CTRLOrgcode"
           }
           aria-describedby="search-hint"
         />
@@ -736,17 +955,34 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
         ))}
       </div>
       <p id="search-hint" className="search-hint">
-        {searchTab === "unlocode"
-          ? unlocoMeta.rowCount
-            ? `${unlocoMeta.filename || "UNLOCODE.csv"} · ${unlocoMeta.rowCount.toLocaleString()} locations${unlocoMeta.importedAt ? ` · ${unlocoMeta.importedAt}` : ""}. Search country name, country, UNLOCODE, or port.`
-            : "Import UNLOCODE.csv to load locations. Search country name, country, UNLOCODE, or port."
-          : searchTab === "icb"
-            ? icbMeta.rowCount
-              ? `${icbMeta.filename || "ICB.csv"} · ${icbMeta.rowCount} stations${icbMeta.importedAt ? ` · ${icbMeta.importedAt}` : ""}. Search country, branch, UNLOCO, agent, or ICB.`
-              : "Import ICB.csv to load stations. Search country, branch, UNLOCO, agent, or ICB."
-            : "Company names match letters only. CTRLOrgcode matches the code as typed."}
+        {searchTab === "delcl"
+          ? delclMeta.rowCount
+            ? `${delclMeta.filename || "DE-LCL.xlsx"} · ${delclMeta.rowCount.toLocaleString()} consignees${delclMeta.importedAt ? ` · ${delclMeta.importedAt}` : ""}. Search consignee, orga code, senator, or delivery agent.`
+            : "Import DE-LCL.xlsx to load consignees. Search consignee, orga code, senator, or delivery agent."
+          : searchTab === "unlocode"
+            ? unlocoMeta.rowCount
+              ? `${unlocoMeta.filename || "UNLOCODE.csv"} · ${unlocoMeta.rowCount.toLocaleString()} locations${unlocoMeta.importedAt ? ` · ${unlocoMeta.importedAt}` : ""}. Search country name, country, UNLOCODE, or port.`
+              : "Import UNLOCODE.csv to load locations. Search country name, country, UNLOCODE, or port."
+            : searchTab === "icb"
+              ? icbMeta.rowCount
+                ? `${icbMeta.filename || "ICB.csv"} · ${icbMeta.rowCount} stations${icbMeta.importedAt ? ` · ${icbMeta.importedAt}` : ""}. Search country, branch, UNLOCO, agent, or ICB.`
+                : "Import ICB.csv to load stations. Search country, branch, UNLOCO, agent, or ICB."
+              : "Company names match letters only. CTRLOrgcode matches the code as typed."}
       </p>
-      {searchTab === "unlocode" ? (
+      {searchTab === "delcl" ? (
+        <DeLclTable
+          rows={delclRows}
+          loading={delclLoading}
+          pagination={delclPagination}
+          page={delclPage}
+          meta={delclMeta}
+          onPageChange={setDelclPage}
+          onEdit={openEditDelcl}
+          onDelete={removeDelcl}
+          onCopied={copied}
+          onCopyError={(message) => onNotice?.({ type: "error", text: message })}
+        />
+      ) : searchTab === "unlocode" ? (
         <UnlocoTable
           rows={unlocoRows}
           loading={unlocoLoading}
@@ -798,12 +1034,12 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
       {catalogKind ? (
         <CatalogInsertModal
           kind={catalogKind}
-          form={catalogKind === "icb" ? icbForm : unlocoForm}
+          form={catalogKind === "icb" ? icbForm : catalogKind === "delcl" ? delclForm : unlocoForm}
           saving={saving}
           editing={editing}
-          onChange={catalogKind === "icb" ? setIcbForm : setUnlocoForm}
+          onChange={catalogKind === "icb" ? setIcbForm : catalogKind === "delcl" ? setDelclForm : setUnlocoForm}
           onClose={closeModal}
-          onSubmit={catalogKind === "icb" ? saveIcb : saveUnloco}
+          onSubmit={catalogKind === "icb" ? saveIcb : catalogKind === "delcl" ? saveDelcl : saveUnloco}
         />
       ) : null}
       {confirmDialog}

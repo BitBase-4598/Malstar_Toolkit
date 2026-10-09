@@ -20,19 +20,41 @@ const UNLOCO_FIELDS = [
   { key: "category", label: "LCL Category" },
 ];
 
+const DELCL_FIELDS = [
+  { key: "consigneeName", label: "Consignee Name" },
+  { key: "orgaCode", label: "Orga code" },
+  { key: "remark", label: "Remark" },
+  { key: "senator", label: "Senator" },
+  { key: "deliveryAgent", label: "Delivery Agent" },
+];
+
+const KIND = {
+  icb: {
+    fields: ICB_FIELDS,
+    addTitle: "Add ICB station",
+    editTitle: "Edit ICB station",
+    hint: "Country, CW1 Branch, or ICB code identifies the station.",
+  },
+  unlocode: {
+    fields: UNLOCO_FIELDS,
+    addTitle: "Add UNLOCODE",
+    editTitle: "Edit UNLOCODE",
+    hint: "Country and UNLOCODE identify the location.",
+  },
+  delcl: {
+    fields: DELCL_FIELDS,
+    addTitle: "Add DE-LCL",
+    editTitle: "Edit DE-LCL",
+    hint: "Consignee name or orga code identifies the row.",
+  },
+};
+
 export default function CatalogInsertModal({ kind, form, saving, editing, onChange, onClose, onSubmit }) {
   const isIcb = kind === "icb";
-  const fields = isIcb ? ICB_FIELDS : UNLOCO_FIELDS;
-  const title = editing
-    ? isIcb
-      ? "Edit ICB station"
-      : "Edit UNLOCODE"
-    : isIcb
-      ? "Add ICB station"
-      : "Add UNLOCODE";
-  const hint = isIcb
-    ? "Country, CW1 Branch, or ICB code identifies the station."
-    : "Country and UNLOCODE identify the location.";
+  const spec = KIND[kind] || KIND.unlocode;
+  const fields = spec.fields;
+  const title = editing ? spec.editTitle : spec.addTitle;
+  const hint = spec.hint;
 
   const update = (field) => (event) => onChange({ ...form, [field]: event.target.value });
 
@@ -49,7 +71,7 @@ export default function CatalogInsertModal({ kind, form, saving, editing, onChan
       </div>
       <div className="grid">
         {fields.map((field) => (
-          <label key={field.key} className={field.key === "notes" || field.key === "category" ? "wide" : undefined}>
+          <label key={field.key} className={field.key === "notes" || field.key === "category" || field.key === "remark" || field.key === "deliveryAgent" ? "wide" : undefined}>
             {field.label}
             {field.required ? " *" : ""}
             <input

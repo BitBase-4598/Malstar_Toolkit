@@ -126,6 +126,30 @@ def median_value(values):
     return (ordered[mid - 1] + ordered[mid]) / 2
 
 
+ABNORMAL_PROCESS_MINUTES = 8 * 60
+
+
+def is_abnormal_process_time(minutes):
+    if minutes is None:
+        return True
+    return abs(minutes) > ABNORMAL_PROCESS_MINUTES
+
+
+def mean_without_abnormal(values):
+    remaining = [value for value in values if not is_abnormal_process_time(value)]
+    if not remaining:
+        return None
+    return round(sum(remaining) / len(remaining), 1), len(remaining)
+
+
+def average_process_times(items):
+    return mean_without_abnormal(
+        item["processMinutes"]
+        for item in items
+        if item.get("processMinutes") is not None
+    )
+
+
 def build_dashboard_payload(conn, date_from="", date_to=""):
     bounds = conn.execute(
         """
@@ -171,11 +195,8 @@ def build_dashboard_payload(conn, date_from="", date_to=""):
         for item in items
         if item["handleWaitMinutes"] is not None
     ]
-    avg_process = (
-        round(sum(item["processMinutes"] for item in process_ok) / len(process_ok), 1)
-        if process_ok
-        else None
-    )
+    avg_result = average_process_times(items)
+    avg_process, avg_process_count = avg_result if avg_result else (None, 0)
     max_process = None
     if process_ok:
         max_process = max(process_ok, key=lambda item: item["processMinutes"])
@@ -184,7 +205,7 @@ def build_dashboard_payload(conn, date_from="", date_to=""):
     for item in items:
         handler = item["handledBy"] or "(blank)"
         handler_counts[handler] = handler_counts.get(handler, 0) + 1
-        if item["processMinutes"] is not None and item["processMinutes"] >= 0:
+        if item["processMinutes"] is not None:
             handler_process.setdefault(handler, []).append(item["processMinutes"])
     by_handler = sorted(
         [{"label": name, "count": count} for name, count in handler_counts.items()],
@@ -207,12 +228,19 @@ def build_dashboard_payload(conn, date_from="", date_to=""):
     by_hour = [{"label": f"{hour:02d}:00", "count": hour_counts[hour]} for hour in range(24)]
     avg_by_handler = []
     for name, values in handler_process.items():
+        result = mean_without_abnormal(values)
+        if result is None:
+            continue
+        minutes, count = result
         avg_by_handler.append({
             "label": name,
-            "minutes": round(sum(values) / len(values), 1),
-            "count": len(values),
-            "isMax": bool(max_process and name == (max_process["handledBy"] or "(blank)")),
+            "minutes": minutes,
+            "count": count,
         })
+    if avg_by_handler:
+        peak = max(item["minutes"] for item in avg_by_handler)
+        for item in avg_by_handler:
+            item["isMax"] = item["minutes"] == peak
     avg_by_handler.sort(key=lambda item: (-item["minutes"], item["label"]))
 
     wait_median = median_value(waits)
@@ -251,7 +279,10 @@ def build_dashboard_payload(conn, date_from="", date_to=""):
     if avg_process is not None:
         conclusions.append({
             "kind": "average-process",
-            "text": f"Average process-time is {format_minutes(avg_process)} across {len(process_ok)} converted bookings.",
+            "text": (
+                f"Average process-time is {avg_process} min across {avg_process_count} "
+                "bookings after removing process times over 8 hours."
+            ),
         })
     if top_handler:
         conclusions.append({
@@ -342,7 +373,7 @@ def build_dashboard_payload(conn, date_from="", date_to=""):
             "handlers": len(handler_counts),
             "missingShipment": len(missing_ship),
             "avgProcessMinutes": avg_process,
-            "avgProcessLabel": format_minutes(avg_process) if avg_process is not None else "—",
+            "avgProcessLabel": f"{avg_process} min" if avg_process is not None else "—",
             "maxProcessMinutes": max_process["processMinutes"] if max_process else None,
             "maxProcessLabel": format_minutes(max_process["processMinutes"]) if max_process else "—",
             "maxProcessOrder": max_process["orderNumber"] if max_process else "",

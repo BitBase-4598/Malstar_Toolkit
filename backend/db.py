@@ -144,12 +144,14 @@ def _create_tables(conn):
             Person TEXT NOT NULL,
             LeaveType TEXT NOT NULL DEFAULT 'annual',
             Status TEXT NOT NULL DEFAULT 'planned',
+            Remark TEXT NOT NULL DEFAULT '',
             CreatedAt TEXT NOT NULL,
             UpdatedAt TEXT NOT NULL,
             UNIQUE (Person, LeaveDate)
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_leave_plans_date ON LeavePlans (LeaveDate)")
+    _ensure_leave_plan_columns(conn)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS LeavePeople (
             ID INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -320,6 +322,32 @@ def _create_tables(conn):
     _ensure_unlocodes_fts(conn)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS UnlocoImportMeta (
+            ID INTEGER PRIMARY KEY CHECK (ID = 1),
+            Filename TEXT NOT NULL DEFAULT '',
+            ImportedAt TEXT NOT NULL DEFAULT '',
+            RowCount INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS DeLclRecords (
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            Consignee TEXT NOT NULL DEFAULT '',
+            ConsigneeName TEXT NOT NULL DEFAULT '',
+            OrgaCode TEXT NOT NULL DEFAULT '',
+            Remark TEXT NOT NULL DEFAULT '',
+            Senator TEXT NOT NULL DEFAULT '',
+            DeliveryAgent TEXT NOT NULL DEFAULT '',
+            SearchText TEXT NOT NULL DEFAULT ''
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_delcl_orga ON DeLclRecords (OrgaCode)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_delcl_search ON DeLclRecords (SearchText)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_delcl_list "
+        "ON DeLclRecords (Senator, ConsigneeName, OrgaCode, ID)"
+    )
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS DeLclImportMeta (
             ID INTEGER PRIMARY KEY CHECK (ID = 1),
             Filename TEXT NOT NULL DEFAULT '',
             ImportedAt TEXT NOT NULL DEFAULT '',
@@ -610,6 +638,12 @@ def rebuild_icb_fts(conn):
         pass
 
 
+def _ensure_leave_plan_columns(conn):
+    columns = table_columns(conn, "LeavePlans")
+    if "Remark" not in columns and "remark" not in columns:
+        conn.execute("ALTER TABLE LeavePlans ADD COLUMN Remark TEXT NOT NULL DEFAULT ''")
+
+
 def _ensure_activity_log_columns(conn):
     columns = table_columns(conn, "ActivityLogs")
     additions = (
@@ -771,5 +805,10 @@ def migrate():
         if current < 9:
             ensure_lcl_shipment_id_unique(conn)
             _set_schema_version(conn, 9)
+        if current < 10:
+            _set_schema_version(conn, 10)
+        if current < 11:
+            _ensure_leave_plan_columns(conn)
+            _set_schema_version(conn, 11)
         if current < SCHEMA_VERSION:
             _set_schema_version(conn, SCHEMA_VERSION)

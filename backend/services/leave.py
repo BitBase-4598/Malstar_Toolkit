@@ -1,15 +1,21 @@
 from datetime import datetime
+from io import BytesIO
+
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 
 from config import GCA_XLSX_PATH
 from db import get_connection
 
-LEAVE_TYPES = {"annual", "sick", "wfh", "half_day", "other"}
+LEAVE_TYPES = {"annual", "sick", "wfh", "half_day", "on_duty", "other"}
 LEAVE_STATUSES = {"planned", "confirmed"}
 LEAVE_TYPE_LABELS = {
     "annual": "Annual",
     "sick": "Sick",
     "wfh": "WFH",
     "half_day": "Half day",
+    "on_duty": "On duty",
     "other": "Other",
 }
 LEAVE_PEOPLE = (
@@ -34,6 +40,7 @@ def leave_to_dict(row):
         "person": row["Person"],
         "leaveType": row["LeaveType"],
         "status": row["Status"],
+        "remark": row["Remark"] if "Remark" in row.keys() else "",
         "createdAt": row["CreatedAt"],
         "updatedAt": row["UpdatedAt"],
     }
@@ -44,6 +51,8 @@ def parse_leave_payload(data):
     leave_date = str(data.get("leaveDate") or data.get("date") or "").strip()
     leave_type = str(data.get("leaveType") or "annual").strip().lower().replace(" ", "_")
     status = str(data.get("status") or "planned").strip().lower()
+    remark = str(data.get("remark") or "").replace("\r\n", "\n").replace("\r", "\n")
+    remark = "\n".join(line.rstrip() for line in remark.split("\n")).strip()
     if not person:
         return None, "Person is required."
     try:
@@ -52,8 +61,10 @@ def parse_leave_payload(data):
         return None, "A valid leave date is required."
     if leave_type in ("halfday", "half-day"):
         leave_type = "half_day"
+    if leave_type in ("onduty", "on-duty"):
+        leave_type = "on_duty"
     if leave_type not in LEAVE_TYPES:
-        return None, "Leave type must be annual, sick, WFH, half day, or other."
+        return None, "Leave type must be annual, sick, WFH, half day, on duty, or other."
     if status not in LEAVE_STATUSES:
         return None, "Status must be planned or confirmed."
     return {
@@ -61,7 +72,96 @@ def parse_leave_payload(data):
         "leaveDate": leave_date,
         "leaveType": leave_type,
         "status": status,
+        "remark": remark[:500],
     }, None
+
+
+def month_bounds(year, month):
+    start = datetime(year, month, 1)
+    end = datetime(year + 1, 1, 1) if month == 12 else datetime(year, month + 1, 1)
+    return start, end
+
+
+def list_leave_plans_for_month(year, month):
+    start, end = month_bounds(year, month)
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM LeavePlans
+            WHERE LeaveDate >= ? AND LeaveDate < ?
+            ORDER BY LeaveDate, LOWER(Person), ID
+            """,
+            (start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")),
+        ).fetchall()
+    return [leave_to_dict(row) for row in rows]
+
+
+def build_leave_export(year, month):
+    people = [item["name"] for item in ensure_leave_people()]
+    plans = list_leave_plans_for_month(year, month)
+    days = (month_bounds(year, month)[1] - month_bounds(year, month)[0]).days
+    title = datetime(year, month, 1).strftime("%B %Y")
+    by_person_date = {}
+    for plan in plans:
+        key = (plan["person"].casefold(), plan["leaveDate"])
+        label = LEAVE_TYPE_LABELS.get(plan["leaveType"], plan["leaveType"] or "")
+        if plan.get("remark"):
+            label = f"{label}: {plan['remark']}"
+        by_person_date[key] = label
+
+    workbook = Workbook()
+    calendar = workbook.active
+    calendar.title = "Calendar"
+    calendar["A1"] = f"Leave Forecast · {title}"
+    calendar["A1"].font = Font(bold=True, size=14)
+    calendar.merge_cells(start_row=1, start_column=1, end_row=1, end_column=days + 1)
+    calendar.cell(2, 1, "Person")
+    for day in range(1, days + 1):
+        cell = calendar.cell(2, day + 1, day)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center")
+    header_fill = PatternFill("solid", fgColor="D6EAF8")
+    for col in range(1, days + 2):
+        calendar.cell(2, col).fill = header_fill
+    duty_fill = PatternFill("solid", fgColor="EFE7FB")
+    for row_index, name in enumerate(people, start=3):
+        calendar.cell(row_index, 1, name)
+        for day in range(1, days + 1):
+            iso = f"{year:04d}-{month:02d}-{day:02d}"
+            value = by_person_date.get((name.casefold(), iso), "")
+            cell = calendar.cell(row_index, day + 1, value)
+            cell.alignment = Alignment(wrap_text=True, vertical="center")
+            if value.lower().startswith("on duty"):
+                cell.fill = duty_fill
+    calendar.column_dimensions["A"].width = 22
+    for day in range(1, days + 1):
+        calendar.column_dimensions[get_column_letter(day + 1)].width = 14
+    calendar.freeze_panes = "B3"
+
+    plans_sheet = workbook.create_sheet("Plans")
+    headers = ("Date", "Person", "Type", "Status", "Remark")
+    plans_sheet.append(headers)
+    for cell in plans_sheet[1]:
+        cell.font = Font(bold=True)
+        cell.fill = header_fill
+    for plan in plans:
+        plans_sheet.append(
+            [
+                plan["leaveDate"],
+                plan["person"],
+                LEAVE_TYPE_LABELS.get(plan["leaveType"], plan["leaveType"]),
+                plan["status"],
+                plan.get("remark") or "",
+            ]
+        )
+    for index, width in enumerate((14, 22, 14, 12, 40), start=1):
+        plans_sheet.column_dimensions[get_column_letter(index)].width = width
+    plans_sheet.freeze_panes = "A2"
+
+    buffer = BytesIO()
+    workbook.save(buffer)
+    buffer.seek(0)
+    return buffer, f"leave-forecast-{year:04d}-{month:02d}.xlsx"
 
 
 def leave_change_summary(payload):

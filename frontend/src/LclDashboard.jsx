@@ -26,6 +26,22 @@ function formatNumber(value, digits = 0) {
   });
 }
 
+const EXTRA_JOB_BRANCHES = ["HK1", "TPE"];
+
+function withJobBranches(branches) {
+  const seen = new Set();
+  const merged = [];
+  for (const item of [...(branches || []), ...EXTRA_JOB_BRANCHES]) {
+    const value = String(item || "").trim();
+    if (!value || seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    merged.push(value);
+  }
+  return merged.sort((left, right) => left.localeCompare(right));
+}
+
 function FilterSelect({ label, options, value, onChange, getKey, getText }) {
   const selected = Array.isArray(value) ? value.map(String) : value ? [String(value)] : [];
   const items = [
@@ -487,7 +503,7 @@ const LclDashboard = forwardRef(function LclDashboard({ embedded = false, onNoti
               />
               <FilterSelect
                 label="Job branch"
-                options={options.branches || []}
+                options={withJobBranches(options.branches)}
                 value={filters.branch}
                 onChange={(branch) => setFilters((current) => ({ ...current, branch }))}
                 getKey={(item) => item}

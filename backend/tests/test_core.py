@@ -14,6 +14,7 @@ os.environ["LOG_PATH"] = str(TMP / "test.log")
 os.environ["GCA_XLSX_PATH"] = str(TMP / "missing-gca.xlsx")
 os.environ["LCL_XLSX_PATH"] = str(TMP / "missing-lcl.xlsx")
 os.environ["UNLOCODE_CSV_PATH"] = str(TMP / "missing-unlocode.csv")
+os.environ["DE_LCL_XLSX_PATH"] = str(TMP / "missing-delcl.xlsx")
 sys.path.insert(0, str(ROOT))
 
 from flask import Flask
@@ -24,7 +25,7 @@ from db_engine import table_exists
 from config import SCHEMA_VERSION
 
 
-from services.dashboard_analytics import format_minutes, minutes_between, parse_dashboard_record
+from services.dashboard_analytics import average_process_times, format_minutes, mean_without_abnormal, minutes_between, parse_dashboard_record
 from services.files_store import stored_path
 from util import letters_only
 
@@ -39,6 +40,30 @@ def test_format_minutes():
     assert format_minutes(17) == "17 min"
     assert format_minutes(120) == "2h"
     assert format_minutes(235) == "3h 55m"
+
+
+def test_mean_without_abnormal():
+    assert mean_without_abnormal([]) is None
+    assert mean_without_abnormal([500]) is None
+    assert mean_without_abnormal([-500, 500]) is None
+    assert mean_without_abnormal([-5, 500]) == (-5.0, 1)
+    assert mean_without_abnormal([10, 20, 30]) == (20.0, 3)
+    assert mean_without_abnormal([-12, 10, 20, 481]) == (6.0, 3)
+    assert mean_without_abnormal([-481, 10, 20]) == (15.0, 2)
+    assert mean_without_abnormal([480, 60]) == (270.0, 2)
+    assert mean_without_abnormal([-480, 60]) == (-210.0, 2)
+
+
+def test_average_process_times():
+    items = [
+        {"processMinutes": 10},
+        {"processMinutes": 500},
+        {"processMinutes": -12},
+        {"processMinutes": -500},
+        {"processMinutes": None},
+    ]
+    assert average_process_times(items) == (-1.0, 2)
+    assert average_process_times([{"processMinutes": 481}]) is None
 
 
 def test_parse_dashboard_record():
@@ -124,6 +149,8 @@ def test_api_health_leave_dashboard():
     assert icb.status_code == 200
     unloco = client.get("/api/unlocode")
     assert unloco.status_code == 200
+    delcl = client.get("/api/de-lcl")
+    assert delcl.status_code == 200
     gca = client.get("/api/gca/summary")
     assert gca.status_code == 200
     assert "kpis" in gca.get_json()["data"]
@@ -453,6 +480,25 @@ def test_leave_name_mapping_and_half_day():
         "status": "planned",
     })
     assert rejected.status_code == 400
+    on_duty = client.post("/api/leave-plans", json={
+        "person": "Wenjie Yan",
+        "leaveDate": "2026-08-14",
+        "leaveType": "on duty",
+        "status": "planned",
+        "remark": "Cover SZ1 desk",
+    })
+    assert on_duty.status_code == 201
+    assert on_duty.get_json()["data"]["leaveType"] == "on_duty"
+    assert on_duty.get_json()["data"]["remark"] == "Cover SZ1 desk"
+    exported = client.get("/api/leave-plans/export?year=2026&month=8")
+    assert exported.status_code == 200
+    assert "spreadsheetml" in (exported.mimetype or "")
+    from openpyxl import load_workbook
+    book = load_workbook(BytesIO(exported.data))
+    assert "Calendar" in book.sheetnames
+    assert "Plans" in book.sheetnames
+    plan_rows = [row for row in book["Plans"].iter_rows(min_row=2, values_only=True) if row[0]]
+    assert any(row[2] == "On duty" and row[4] == "Cover SZ1 desk" for row in plan_rows)
 
 
 def test_replace_cases_from_gca_workbook():
@@ -984,6 +1030,77 @@ def test_icb_and_unloco_create_record():
     assert deleted.status_code == 200
     assert client.get("/api/unlocode?q=CLVAP").get_json()["pagination"]["total"] == 0
     empty = client.post("/api/unlocode", json={"countryCode": "CL"})
+    assert empty.status_code == 400
+
+
+def test_delcl_xlsx_import_and_search():
+    from io import BytesIO
+
+    from openpyxl import Workbook
+
+    migrate()
+    from app import app
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Senator FMO, STR, DUS"
+    sheet.append(["consignee", "Consignee Name", "Orga code", "Remark", "Senator", "Delivery Agent"])
+    sheet.append(["ACME01", "Acme Logistics", "ORG-AA", "door delivery", "FMO", "Agent North"])
+    sheet.append(["BETA02", "Beta Freight", "ORG-BB", "hold at depot", "STR", "Agent South"])
+    incomplete = workbook.create_sheet("STR")
+    incomplete.append(["consignee", "Consignee Name"])
+    incomplete.append(["SKIP01", "Should not import"])
+    payload = BytesIO()
+    workbook.save(payload)
+    payload.seek(0)
+
+    client = app.test_client()
+    imported = client.post(
+        "/api/de-lcl/import",
+        data={"file": (payload, "DE-LCL.xlsx")},
+        content_type="multipart/form-data",
+    )
+    assert imported.status_code == 200
+    body = imported.get_json()
+    assert body["success"] is True
+    assert body["data"]["rowCount"] == 2
+
+    by_orga = client.get("/api/de-lcl?q=ORG-AA").get_json()
+    assert by_orga["pagination"]["total"] == 1
+    assert by_orga["data"][0]["consigneeName"] == "Acme Logistics"
+    assert by_orga["data"][0]["senator"] == "FMO"
+
+    by_senator = client.get("/api/de-lcl?q=STR").get_json()
+    assert by_senator["pagination"]["total"] == 1
+    assert by_senator["data"][0]["orgaCode"] == "ORG-BB"
+
+    by_name = client.get("/api/de-lcl?q=Beta Freight").get_json()
+    assert by_name["pagination"]["total"] == 1
+    assert by_name["data"][0]["deliveryAgent"] == "Agent South"
+
+    skipped = client.get("/api/de-lcl?q=SKIP01").get_json()
+    assert skipped["pagination"]["total"] == 0
+
+    listed = client.get("/api/de-lcl").get_json()
+    assert listed["pagination"]["total"] == 2
+
+    created = client.post(
+        "/api/de-lcl",
+        json={"consignee": "GAMMA03", "consigneeName": "Gamma Cargo", "orgaCode": "ORG-CC", "senator": "DUS"},
+    )
+    assert created.status_code == 201
+    assert created.get_json()["data"]["orgaCode"] == "ORG-CC"
+    record_id = created.get_json()["data"]["id"]
+    updated = client.put(
+        f"/api/de-lcl/{record_id}",
+        json={"consignee": "GAMMA03", "consigneeName": "Gamma Cargo GmbH", "orgaCode": "ORG-CC", "senator": "DUS"},
+    )
+    assert updated.status_code == 200
+    assert updated.get_json()["data"]["consigneeName"] == "Gamma Cargo GmbH"
+    deleted = client.delete(f"/api/de-lcl/{record_id}")
+    assert deleted.status_code == 200
+    assert client.get("/api/de-lcl?q=ORG-CC").get_json()["pagination"]["total"] == 0
+    empty = client.post("/api/de-lcl", json={"remark": "only remark"})
     assert empty.status_code == 400
 
 

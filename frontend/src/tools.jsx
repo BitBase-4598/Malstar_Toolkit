@@ -16,12 +16,12 @@ const SopWorkspace = lazyTool(() => import("./SopWorkspace"));
 const AskWorkspace = lazyTool(() => import("./AskWorkspace"));
 const ActivityLog = lazyTool(() => import("./ActivityLog"));
 
-function SearchActions({ recordsRef, recordsImporting }) {
+function SearchActions({ recordsRef, recordsImporting, searchTab }) {
   return (
     <>
       <button className="ghost" type="button" onClick={() => recordsRef.current?.openUpload()} disabled={recordsImporting}>
         <Upload size={16} />
-        {recordsImporting ? "Importing..." : "Import CSV"}
+        {recordsImporting ? "Importing..." : searchTab === "delcl" ? "Import Excel" : "Import CSV"}
       </button>
       <button className="primary" type="button" onClick={() => recordsRef.current?.openNew()}>
         <Plus size={16} />
