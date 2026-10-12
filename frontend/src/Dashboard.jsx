@@ -2,7 +2,6 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRe
 import { api } from "./api";
 import FieldSelect from "./FieldSelect";
 
-const DONUT_COLORS = ["#42b0d5", "#00243d", "#0077b2", "#4c4c4c", "#77c6e0"];
 const WEEKDAY_FILTERS = [
   { id: "all", label: "All" },
   { id: "0", label: "Sun" },
@@ -146,54 +145,235 @@ function BarList({ items, valueKey = "count", highlightKey }) {
   );
 }
 
-function DonutChart({ items }) {
-  const total = items.reduce((sum, item) => sum + (Number(item.count) || 0), 0);
-  const radius = 52;
-  const circumference = 2 * Math.PI * radius;
-  let offset = 0;
+function spreadCoordinates(values, size, minGap) {
+  const count = values.length;
+  const pos = new Array(count).fill(size / 2);
+  if (count <= 1) {
+    return pos;
+  }
+  const order = values
+    .map((value, index) => ({ value, index }))
+    .sort((left, right) => left.value - right.value || left.index - right.index);
+  const gaps = [];
+  for (let index = 1; index < count; index += 1) {
+    gaps.push(Math.max(0, order[index].value - order[index - 1].value));
+  }
+  const nonzero = gaps.filter((gap) => gap > 0).sort((left, right) => left - right);
+  const median = nonzero[Math.floor((nonzero.length - 1) / 2)] || 1;
+  let lengths = gaps.map((gap) => Math.min(Math.max(gap, median * 0.2), median * 3));
+  const total = lengths.reduce((sum, gap) => sum + gap, 0) || 1;
+  lengths = lengths.map((gap) => (gap / total) * size);
+  for (let pass = 0; pass < 8; pass += 1) {
+    let need = 0;
+    const short = [];
+    lengths.forEach((length, index) => {
+      if (length + 0.1 < minGap) {
+        short.push(index);
+        need += minGap - length;
+      }
+    });
+    if (need <= 0.5) {
+      break;
+    }
+    let pool = 0;
+    const donors = [];
+    lengths.forEach((length, index) => {
+      const extra = length - minGap;
+      if (extra > 0.5) {
+        donors.push({ index, extra });
+        pool += extra;
+      }
+    });
+    if (pool <= 0.5) {
+      break;
+    }
+    const take = Math.min(pool, need);
+    donors.forEach((donor) => {
+      lengths[donor.index] -= (donor.extra / pool) * take;
+    });
+    short.forEach((index) => {
+      const missing = minGap - lengths[index];
+      lengths[index] += (missing / need) * take;
+    });
+  }
+  let cursor = 0;
+  order.forEach((item, index) => {
+    pos[item.index] = cursor;
+    if (index < lengths.length) {
+      cursor += lengths[index];
+    }
+  });
+  return pos;
+}
+
+function coordinateFor(sortedValues, positions, value) {
+  if (value <= sortedValues[0]) {
+    return positions[0];
+  }
+  const last = sortedValues.length - 1;
+  if (value >= sortedValues[last]) {
+    return positions[last];
+  }
+  for (let index = 1; index < sortedValues.length; index += 1) {
+    if (value <= sortedValues[index]) {
+      const span = sortedValues[index] - sortedValues[index - 1] || 1;
+      const t = (value - sortedValues[index - 1]) / span;
+      return positions[index - 1] + t * (positions[index] - positions[index - 1]);
+    }
+  }
+  return positions[last];
+}
+
+function HandlerQuadrant({ points }) {
+  const width = 360;
+  const height = 280;
+  const pad = { l: 48, r: 28, t: 22, b: 42 };
+  const plotW = width - pad.l - pad.r;
+  const plotH = height - pad.t - pad.b;
+  if (!points.length) {
+    return <p className="preview-empty">No handler averages in this range.</p>;
+  }
+  const minutes = points.map((point) => point.minutes);
+  const counts = points.map((point) => point.count);
+  const minX = Math.min(...minutes);
+  const maxX = Math.max(...minutes);
+  const minY = Math.min(...counts);
+  const maxY = Math.max(...counts);
+  const meanX = minutes.reduce((sum, value) => sum + value, 0) / minutes.length;
+  const meanY = counts.reduce((sum, value) => sum + value, 0) / counts.length;
+  const xGap = Math.min(26, plotW / Math.max(points.length - 1, 1));
+  const yGap = Math.min(22, plotH / Math.max(points.length - 1, 1));
+  const xSpread = spreadCoordinates(minutes, plotW, xGap);
+  const ySpread = spreadCoordinates(counts, plotH, yGap);
+  const xOrder = minutes
+    .map((value, index) => ({ value, pos: xSpread[index] }))
+    .sort((left, right) => left.value - right.value);
+  const yOrder = counts
+    .map((value, index) => ({ value, pos: ySpread[index] }))
+    .sort((left, right) => left.value - right.value);
+  const sx = (value) => pad.l + (plotW - coordinateFor(xOrder.map((item) => item.value), xOrder.map((item) => item.pos), value));
+  const sy = (value) => pad.t + (plotH - coordinateFor(yOrder.map((item) => item.value), yOrder.map((item) => item.pos), value));
+  const crossX = sx(meanX);
+  const crossY = sy(meanY);
+  const plotRight = pad.l + plotW;
+  const plotBottom = pad.t + plotH;
+  const placedLabels = [];
+  const bubbles = points
+    .map((point, index) => ({
+      ...point,
+      x: pad.l + (plotW - xSpread[index]),
+      y: pad.t + (plotH - ySpread[index]),
+      name: shortHandler(point.label),
+    }))
+    .sort((left, right) => left.y - right.y || left.x - right.x);
+  const bubbleBoxes = bubbles.map((point) => ({
+    left: point.x - 11,
+    right: point.x + 11,
+    top: point.y - 11,
+    bottom: point.y + 11,
+    owner: point.label,
+  }));
+  const overlaps = (box, extra = []) =>
+    [...placedLabels, ...extra].some(
+      (item) => !(box.right < item.left || box.left > item.right || box.bottom < item.top || box.top > item.bottom)
+    );
+  for (const point of bubbles) {
+    const textW = Math.max(36, point.name.length * 7.2);
+    const attempts = [];
+    const towardRight = { x: point.x + 14, anchor: "start" };
+    const towardLeft = { x: point.x - 14, anchor: "end" };
+    const first = point.x > width * 0.62 ? towardLeft : towardRight;
+    const second = first === towardLeft ? towardRight : towardLeft;
+    for (const step of [0, 18, -18, 36, -36]) {
+      attempts.push({ ...first, dy: 4 + step });
+      attempts.push({ ...second, dy: 4 + step });
+    }
+    const others = bubbleBoxes.filter((item) => item.owner !== point.label);
+    let chosen = null;
+    let chosenBox = null;
+    for (const attempt of attempts) {
+      const left = attempt.anchor === "end" ? attempt.x - textW : attempt.x;
+      const box = {
+        left,
+        right: left + textW,
+        top: point.y + attempt.dy - 11,
+        bottom: point.y + attempt.dy + 3,
+      };
+      if (box.left < 4 || box.right > width - 4 || box.top < 4 || box.bottom > height - 28) {
+        continue;
+      }
+      if (!overlaps(box, others)) {
+        chosen = attempt;
+        chosenBox = box;
+        break;
+      }
+    }
+    if (!chosen) {
+      chosen = attempts[0];
+      const left = chosen.anchor === "end" ? chosen.x - textW : chosen.x;
+      chosenBox = {
+        left,
+        right: left + textW,
+        top: point.y + chosen.dy - 11,
+        bottom: point.y + chosen.dy + 3,
+      };
+    }
+    placedLabels.push(chosenBox);
+    point.lx = chosen.x;
+    point.ly = point.y + chosen.dy;
+    point.anchor = chosen.anchor;
+    point.leader = Math.abs(point.ly - point.y) > 12;
+  }
   return (
-    <div className="dash-donut">
-      <svg viewBox="0 0 140 140" aria-label="Status mix">
-        <g transform="rotate(-90 70 70)">
-          {items.map((item, index) => {
-            const value = Number(item.count) || 0;
-            const dash = total ? (value / total) * circumference : 0;
-            const circle = (
-              <circle
-                key={item.label}
-                cx="70"
-                cy="70"
-                r={radius}
-                fill="none"
-                stroke={DONUT_COLORS[index % DONUT_COLORS.length]}
-                strokeWidth="22"
-                strokeDasharray={`${dash} ${circumference - dash}`}
-                strokeDashoffset={-offset}
+    <div className="dash-quadrant">
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Handler quadrant of bookings and average process time">
+        <rect x={pad.l} y={pad.t} width={crossX - pad.l} height={crossY - pad.t} className="dash-quadrant-zone" />
+        <rect x={crossX} y={pad.t} width={plotRight - crossX} height={crossY - pad.t} className="dash-quadrant-best" />
+        <rect x={pad.l} y={crossY} width={crossX - pad.l} height={plotBottom - crossY} className="dash-quadrant-zone" />
+        <rect x={crossX} y={crossY} width={plotRight - crossX} height={plotBottom - crossY} className="dash-quadrant-zone" />
+        <line x1={crossX} y1={pad.t} x2={crossX} y2={plotBottom} className="dash-quadrant-cross" />
+        <line x1={pad.l} y1={crossY} x2={plotRight} y2={crossY} className="dash-quadrant-cross" />
+        <text x={sx(minX)} y={height - 22} textAnchor="middle" className="dash-quadrant-axis">
+          {roundOne(minX)}
+        </text>
+        <text x={sx(maxX)} y={height - 22} textAnchor="middle" className="dash-quadrant-axis">
+          {roundOne(maxX)}
+        </text>
+        <text x={pad.l} y={height - 6} className="dash-quadrant-axis">
+          higher
+        </text>
+        <text x={plotRight} y={height - 6} textAnchor="end" className="dash-quadrant-axis">
+          lower process time
+        </text>
+        <text x={pad.l - 8} y={sy(maxY) + 4} textAnchor="end" className="dash-quadrant-axis">
+          {maxY}
+        </text>
+        <text x={pad.l - 8} y={sy(minY) + 4} textAnchor="end" className="dash-quadrant-axis">
+          {minY}
+        </text>
+        <text x={pad.l} y={12} className="dash-quadrant-axis">
+          more bookings
+        </text>
+        {bubbles.map((point) => (
+          <g key={point.label}>
+            {point.leader ? (
+              <line
+                x1={point.x}
+                y1={point.y}
+                x2={point.anchor === "end" ? point.lx + 2 : point.lx - 2}
+                y2={point.ly - 3}
+                className="dash-quadrant-leader"
               />
-            );
-            offset += dash;
-            return circle;
-          })}
-        </g>
-        <circle cx="70" cy="70" r="36" fill="#ffffff" />
-        <text x="70" y="66" textAnchor="middle" className="dash-donut-total">
-          {total}
-        </text>
-        <text x="70" y="84" textAnchor="middle" className="dash-donut-caption">
-          bookings
-        </text>
-      </svg>
-      <ul className="dash-donut-legend">
-        {items.map((item, index) => (
-          <li key={item.label}>
-            <span className="dash-swatch" style={{ background: DONUT_COLORS[index % DONUT_COLORS.length] }} />
-            <span className="dash-legend-label" title={item.label}>
-              {item.label.replace("AI-Booking: ", "")}
-            </span>
-            <span className="dash-bar-value">{item.count}</span>
-          </li>
+            ) : null}
+            <circle cx={point.x} cy={point.y} r="8" className="dash-quadrant-ball">
+              <title>{`${point.label} · ${point.count} bookings · ${point.minutes} min`}</title>
+            </circle>
+            <text x={point.lx} y={point.ly} textAnchor={point.anchor} className="dash-quadrant-name">
+              {point.name}
+            </text>
+          </g>
         ))}
-      </ul>
+      </svg>
     </div>
   );
 }
@@ -449,6 +629,16 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
   const hourItems = useMemo(() => volumeByHour(rows, hourWeekday), [rows, hourWeekday]);
   const hourWeekdayLabel = WEEKDAY_FILTERS.find((item) => item.id === hourWeekday)?.label || "All";
   const processStats = useMemo(() => processAverages(rows, includeOver8h), [rows, includeOver8h]);
+  const quadrantPoints = useMemo(() => {
+    const minutes = new Map(processStats.processByHandler.map((item) => [item.label, item.minutes]));
+    return (data?.series?.byHandler || [])
+      .map((item) => ({
+        label: item.label,
+        minutes: minutes.get(item.label),
+        count: Number(item.count) || 0,
+      }))
+      .filter((item) => item.count > 0 && Number.isFinite(item.minutes));
+  }, [data?.series?.byHandler, processStats.processByHandler]);
   const avgProcessLabel = processStats.avg == null ? "—" : `${processStats.avg} min`;
   const avgProcessNote = includeOver8h ? "including over 8 hours" : "excluding over 8 hours";
   const conclusions = useMemo(() => {
@@ -587,7 +777,7 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
           <div className="dash-section">
             <div className="dash-section-head">
               <h3>Performance</h3>
-              <p>Handler volume, status mix, process-time, and inbound hours</p>
+              <p>Handler volume, workload quadrants, process-time, and inbound hours</p>
             </div>
             <div className="dash-charts">
               <section className="card">
@@ -604,12 +794,14 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
               <section className="card">
                 <div className="summary">
                   <div>
-                    <strong>Status</strong>
-                    <p className="dash-section-note">Mix of email statuses</p>
+                    <strong>Handler quadrants</strong>
+                    <p className="dash-section-note">
+                      More bookings toward the top. Lower average process time toward the right. Cross is the group average.
+                    </p>
                   </div>
                 </div>
                 <div className="dash-chart-body">
-                  <DonutChart items={data.series?.byStatus || []} />
+                  <HandlerQuadrant points={quadrantPoints} />
                 </div>
               </section>
               <section className="card">
