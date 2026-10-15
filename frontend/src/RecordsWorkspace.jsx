@@ -4,12 +4,14 @@ import { api, RECORDS_PAGE_SIZE } from "./api";
 import { ICB_PAGE_SIZE } from "./api/icb";
 import { UNLOCO_PAGE_SIZE } from "./api/unloco";
 import { DELCL_PAGE_SIZE } from "./api/delcl";
+import { DEBOSCH_PAGE_SIZE } from "./api/debosch";
 import RecordTable from "./RecordTable";
 import RecordModal from "./RecordModal";
 import CatalogInsertModal from "./CatalogInsertModal";
 import IcbTable from "./IcbTable";
 import UnlocoTable from "./UnlocoTable";
 import DeLclTable from "./DeLclTable";
+import DeBoschTable from "./DeBoschTable";
 import useConfirm from "./useConfirm";
 
 const emptyForm = {
@@ -49,11 +51,24 @@ const emptyDelcl = {
   deliveryAgent: "",
 };
 
+const emptyDebosch = {
+  fullName: "",
+  address1: "",
+  unloco: "",
+  organizationCode: "",
+  beCode: "",
+  cmdCode: "",
+  bpCode: "",
+  city: "",
+  postcode: "",
+};
+
 const SEARCH_TABS = [
   { id: "remarks", label: "Controlling Customer" },
   { id: "icb", label: "Controlling Agent" },
   { id: "unlocode", label: "UNLOCODE" },
   { id: "delcl", label: "DE-LCL" },
+  { id: "debosch", label: "DE-BOSCH" },
 ];
 
 const RecordsWorkspace = forwardRef(function RecordsWorkspace(
@@ -64,6 +79,7 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
   const icbFileRef = useRef();
   const unlocoFileRef = useRef();
   const delclFileRef = useRef();
+  const deboschFileRef = useRef();
   const [confirm, confirmDialog] = useConfirm();
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -81,6 +97,7 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
   const [icbForm, setIcbForm] = useState(emptyIcb);
   const [unlocoForm, setUnlocoForm] = useState(emptyUnloco);
   const [delclForm, setDelclForm] = useState(emptyDelcl);
+  const [deboschForm, setDeboschForm] = useState(emptyDebosch);
   const pageCache = useRef(new Map());
   const pageInflight = useRef(new Map());
   const loadSeq = useRef(0);
@@ -90,6 +107,8 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
   const unlocoInflight = useRef(new Map());
   const delclCache = useRef(new Map());
   const delclInflight = useRef(new Map());
+  const deboschCache = useRef(new Map());
+  const deboschInflight = useRef(new Map());
   const [icbRows, setIcbRows] = useState([]);
   const [icbPage, setIcbPage] = useState(1);
   const [icbPagination, setIcbPagination] = useState({
@@ -125,6 +144,18 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
   const [delclMeta, setDelclMeta] = useState({ filename: "", importedAt: "", rowCount: 0 });
   const [delclLoading, setDelclLoading] = useState(false);
   const delclLoadSeq = useRef(0);
+  const [deboschImporting, setDeboschImporting] = useState(false);
+  const [deboschRows, setDeboschRows] = useState([]);
+  const [deboschPage, setDeboschPage] = useState(1);
+  const [deboschPagination, setDeboschPagination] = useState({
+    page: 1,
+    total: 0,
+    totalPages: 1,
+    pageSize: DEBOSCH_PAGE_SIZE,
+  });
+  const [deboschMeta, setDeboschMeta] = useState({ filename: "", importedAt: "", rowCount: 0 });
+  const [deboschLoading, setDeboschLoading] = useState(false);
+  const deboschLoadSeq = useRef(0);
 
   const remarksQuery = debounced.trim();
   const cacheKey = (q, targetPage) => `${q}|${targetPage}`;
@@ -138,6 +169,8 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
     unlocoInflight.current.clear();
     delclCache.current.clear();
     delclInflight.current.clear();
+    deboschCache.current.clear();
+    deboschInflight.current.clear();
   };
 
   const fetchRecords = useCallback(async (q, targetPage, signal) => {
@@ -187,6 +220,7 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
       setIcbPage(1);
       setUnlocoPage(1);
       setDelclPage(1);
+      setDeboschPage(1);
     };
     if (!query) {
       applyQuery("");
@@ -197,8 +231,8 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
   }, [query]);
 
   useEffect(() => {
-    onImportingChange?.(importing || icbImporting || unlocoImporting || delclImporting);
-  }, [importing, icbImporting, unlocoImporting, delclImporting, onImportingChange]);
+    onImportingChange?.(importing || icbImporting || unlocoImporting || delclImporting || deboschImporting);
+  }, [importing, icbImporting, unlocoImporting, delclImporting, deboschImporting, onImportingChange]);
 
   const load = useCallback(async (signal) => {
     const seq = ++loadSeq.current;
@@ -301,6 +335,29 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
         throw error;
       });
     delclInflight.current.set(key, pending);
+    return pending;
+  }, []);
+
+  const fetchDebosch = useCallback(async (q, targetPage, signal) => {
+    const key = cacheKey(q, targetPage);
+    if (deboschCache.current.has(key)) {
+      return deboschCache.current.get(key);
+    }
+    if (deboschInflight.current.has(key)) {
+      return deboschInflight.current.get(key);
+    }
+    const pending = api
+      .listDebosch(q, targetPage, DEBOSCH_PAGE_SIZE, signal ? { signal } : undefined)
+      .then((result) => {
+        deboschCache.current.set(key, result);
+        deboschInflight.current.delete(key);
+        return result;
+      })
+      .catch((error) => {
+        deboschInflight.current.delete(key);
+        throw error;
+      });
+    deboschInflight.current.set(key, pending);
     return pending;
   }, []);
 
@@ -451,6 +508,55 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
     }
   }, [debounced, delclPage, fetchDelcl, onNotice]);
 
+  const loadDebosch = useCallback(async (signal) => {
+    const seq = ++deboschLoadSeq.current;
+    const key = cacheKey(debounced, deboschPage);
+    const cached = deboschCache.current.get(key);
+    if (cached) {
+      if (seq !== deboschLoadSeq.current) {
+        return;
+      }
+      setDeboschRows(cached.data || []);
+      setDeboschPagination(cached.pagination || { page: 1, total: 0, totalPages: 1, pageSize: DEBOSCH_PAGE_SIZE });
+      setDeboschMeta(cached.meta || { filename: "", importedAt: "", rowCount: 0 });
+      setDeboschLoading(false);
+      const totalPages = cached.pagination?.totalPages || 1;
+      if (deboschPage + 1 <= totalPages) {
+        fetchDebosch(debounced, deboschPage + 1);
+      }
+      if (deboschPage - 1 >= 1) {
+        fetchDebosch(debounced, deboschPage - 1);
+      }
+      return;
+    }
+    setDeboschLoading(true);
+    try {
+      const result = await fetchDebosch(debounced, deboschPage, signal);
+      if (seq !== deboschLoadSeq.current) {
+        return;
+      }
+      setDeboschRows(result.data || []);
+      setDeboschPagination(result.pagination || { page: 1, total: 0, totalPages: 1, pageSize: DEBOSCH_PAGE_SIZE });
+      setDeboschMeta(result.meta || { filename: "", importedAt: "", rowCount: 0 });
+      const totalPages = result.pagination?.totalPages || 1;
+      if (deboschPage + 1 <= totalPages) {
+        fetchDebosch(debounced, deboschPage + 1);
+      }
+      if (deboschPage - 1 >= 1) {
+        fetchDebosch(debounced, deboschPage - 1);
+      }
+    } catch (error) {
+      if (error.name === "AbortError" || seq !== deboschLoadSeq.current) {
+        return;
+      }
+      onNotice?.({ type: "error", text: error.message });
+    } finally {
+      if (seq === deboschLoadSeq.current) {
+        setDeboschLoading(false);
+      }
+    }
+  }, [debounced, deboschPage, fetchDebosch, onNotice]);
+
   useEffect(() => {
     if (searchTab !== "remarks") {
       return undefined;
@@ -487,6 +593,15 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
     return () => controller.abort();
   }, [loadDelcl, searchTab]);
 
+  useEffect(() => {
+    if (searchTab !== "debosch") {
+      return undefined;
+    }
+    const controller = new AbortController();
+    loadDebosch(controller.signal);
+    return () => controller.abort();
+  }, [loadDebosch, searchTab]);
+
   const openNew = () => {
     setEditing(null);
     if (searchTab === "icb") {
@@ -502,6 +617,11 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
     if (searchTab === "delcl") {
       setDelclForm(emptyDelcl);
       setCatalogKind("delcl");
+      return;
+    }
+    if (searchTab === "debosch") {
+      setDeboschForm(emptyDebosch);
+      setCatalogKind("debosch");
       return;
     }
     setCatalogKind("");
@@ -522,13 +642,17 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
       delclFileRef.current?.click();
       return;
     }
+    if (searchTab === "debosch") {
+      deboschFileRef.current?.click();
+      return;
+    }
     remarksFileRef.current?.click();
   };
 
   useImperativeHandle(ref, () => ({
     openNew,
     openUpload,
-    importing: importing || icbImporting || unlocoImporting || delclImporting,
+    importing: importing || icbImporting || unlocoImporting || delclImporting || deboschImporting,
   }));
 
   const openEdit = (row) => {
@@ -586,6 +710,23 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
       deliveryAgent: row.deliveryAgent || "",
     });
     setCatalogKind("delcl");
+  };
+
+  const openEditDebosch = (row) => {
+    setModal(false);
+    setEditing(row);
+    setDeboschForm({
+      fullName: row.fullName || "",
+      address1: row.address1 || "",
+      unloco: row.unloco || "",
+      organizationCode: row.organizationCode || "",
+      beCode: row.beCode || "",
+      cmdCode: row.cmdCode || "",
+      bpCode: row.bpCode || "",
+      city: row.city || "",
+      postcode: row.postcode || "",
+    });
+    setCatalogKind("debosch");
   };
 
   const closeModal = useCallback(() => {
@@ -679,6 +820,17 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
     }
   };
 
+  const reloadDebosch = async (targetPage = 1) => {
+    deboschCache.current.clear();
+    deboschInflight.current.clear();
+    const listed = await api.listDebosch(debounced, targetPage, DEBOSCH_PAGE_SIZE);
+    deboschCache.current.set(cacheKey(debounced, targetPage), listed);
+    setDeboschRows(listed.data || []);
+    setDeboschPagination(listed.pagination || { page: 1, total: 0, totalPages: 1, pageSize: DEBOSCH_PAGE_SIZE });
+    setDeboschMeta(listed.meta || { filename: "", importedAt: "", rowCount: 0 });
+    setDeboschPage(targetPage);
+  };
+
   const saveDelcl = async (event) => {
     event.preventDefault();
     setSaving(true);
@@ -689,6 +841,24 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
       onNotice?.({ type: "success", text: result.message });
       setCatalogKind("");
       await reloadDelcl(editing ? delclPage : 1);
+      await onRefreshLogs?.();
+    } catch (error) {
+      onNotice?.({ type: "error", text: error.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveDebosch = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const result = editing
+        ? await api.updateDebosch(editing.id, deboschForm)
+        : await api.createDebosch(deboschForm);
+      onNotice?.({ type: "success", text: result.message });
+      setCatalogKind("");
+      await reloadDebosch(editing ? deboschPage : 1);
       await onRefreshLogs?.();
     } catch (error) {
       onNotice?.({ type: "error", text: error.message });
@@ -714,6 +884,26 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
       } else {
         await load();
       }
+      await onRefreshLogs?.();
+    } catch (error) {
+      onNotice?.({ type: "error", text: error.message });
+    }
+  };
+
+  const removeDebosch = async (row) => {
+    const label = [row.organizationCode, row.fullName].filter(Boolean).join(" / ") || "this DE-BOSCH";
+    const ok = await confirm({
+      title: "Delete DE-BOSCH",
+      message: `Delete ${label}?`,
+    });
+    if (!ok) {
+      return;
+    }
+    try {
+      const result = await api.removeDebosch(row.id);
+      onNotice?.({ type: "success", text: result.message });
+      const target = deboschRows.length === 1 && deboschPage > 1 ? deboschPage - 1 : deboschPage;
+      await reloadDebosch(target);
       await onRefreshLogs?.();
     } catch (error) {
       onNotice?.({ type: "error", text: error.message });
@@ -885,6 +1075,32 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
     }
   };
 
+  const uploadDebosch = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    setDeboschImporting(true);
+    try {
+      const result = await api.importDebosch(file);
+      onNotice?.({ type: "success", text: result.message });
+      setDeboschPage(1);
+      deboschCache.current.clear();
+      deboschInflight.current.clear();
+      const listed = await api.listDebosch(debounced, 1, DEBOSCH_PAGE_SIZE);
+      deboschCache.current.set(cacheKey(debounced, 1), listed);
+      setDeboschRows(listed.data || []);
+      setDeboschPagination(listed.pagination || { page: 1, total: 0, totalPages: 1, pageSize: DEBOSCH_PAGE_SIZE });
+      setDeboschMeta(listed.meta || { filename: "", importedAt: "", rowCount: 0 });
+      await onRefreshLogs?.();
+    } catch (error) {
+      onNotice?.({ type: "error", text: error.message });
+    } finally {
+      setDeboschImporting(false);
+      event.target.value = "";
+    }
+  };
+
   const changePage = (next) => {
     const target = typeof next === "function" ? next(page) : Number(next);
     if (!Number.isFinite(target) || target < 1 || target === page) {
@@ -915,8 +1131,15 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
         accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
         onChange={uploadDelcl}
       />
+      <input
+        ref={deboschFileRef}
+        hidden
+        type="file"
+        accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        onChange={uploadDebosch}
+      />
       <div className="page-intro">
-        <p>Search controlling customer, controlling agent, UNLOCODE, or DE-LCL.</p>
+        <p>Search controlling customer, controlling agent, UNLOCODE, DE-LCL, or DE-BOSCH.</p>
       </div>
       <div className="search">
         <Search size={19} />
@@ -924,9 +1147,11 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder={
-            searchTab === "delcl"
-              ? "Consignee, orga code, senator, or delivery agent"
-              : searchTab === "unlocode"
+            searchTab === "debosch"
+              ? "Organization name, codes, UNLOCO, city, or postcode"
+              : searchTab === "delcl"
+                ? "Consignee, orga code, senator, or delivery agent"
+                : searchTab === "unlocode"
                 ? "Country name, country, UNLOCODE, or port"
                 : searchTab === "icb"
                   ? "Company, port, UNLOCODE, or ICB code"
@@ -955,7 +1180,11 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
         ))}
       </div>
       <p id="search-hint" className="search-hint">
-        {searchTab === "delcl"
+        {searchTab === "debosch"
+          ? deboschMeta.rowCount
+            ? `${deboschMeta.filename || "Bosch-DE.xlsx"} · ${deboschMeta.rowCount.toLocaleString()} organizations${deboschMeta.importedAt ? ` · ${deboschMeta.importedAt}` : ""}. Search organization name, codes, UNLOCO, city, or postcode.`
+            : "Import Bosch-DE.xlsx to load organizations. Search organization name, codes, UNLOCO, city, or postcode."
+          : searchTab === "delcl"
           ? delclMeta.rowCount
             ? `${delclMeta.filename || "DE-LCL.xlsx"} · ${delclMeta.rowCount.toLocaleString()} consignees${delclMeta.importedAt ? ` · ${delclMeta.importedAt}` : ""}. Search consignee, orga code, senator, or delivery agent.`
             : "Import DE-LCL.xlsx to load consignees. Search consignee, orga code, senator, or delivery agent."
@@ -969,7 +1198,20 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
                 : "Import ICB.csv to load stations. Search country, branch, UNLOCO, agent, or ICB."
               : "Company names match letters only. CTRLOrgcode matches the code as typed."}
       </p>
-      {searchTab === "delcl" ? (
+      {searchTab === "debosch" ? (
+        <DeBoschTable
+          rows={deboschRows}
+          loading={deboschLoading}
+          pagination={deboschPagination}
+          page={deboschPage}
+          meta={deboschMeta}
+          onPageChange={setDeboschPage}
+          onEdit={openEditDebosch}
+          onDelete={removeDebosch}
+          onCopied={copied}
+          onCopyError={(message) => onNotice?.({ type: "error", text: message })}
+        />
+      ) : searchTab === "delcl" ? (
         <DeLclTable
           rows={delclRows}
           loading={delclLoading}
@@ -1034,12 +1276,36 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
       {catalogKind ? (
         <CatalogInsertModal
           kind={catalogKind}
-          form={catalogKind === "icb" ? icbForm : catalogKind === "delcl" ? delclForm : unlocoForm}
+          form={
+            catalogKind === "icb"
+              ? icbForm
+              : catalogKind === "delcl"
+                ? delclForm
+                : catalogKind === "debosch"
+                  ? deboschForm
+                  : unlocoForm
+          }
           saving={saving}
           editing={editing}
-          onChange={catalogKind === "icb" ? setIcbForm : catalogKind === "delcl" ? setDelclForm : setUnlocoForm}
+          onChange={
+            catalogKind === "icb"
+              ? setIcbForm
+              : catalogKind === "delcl"
+                ? setDelclForm
+                : catalogKind === "debosch"
+                  ? setDeboschForm
+                  : setUnlocoForm
+          }
           onClose={closeModal}
-          onSubmit={catalogKind === "icb" ? saveIcb : catalogKind === "delcl" ? saveDelcl : saveUnloco}
+          onSubmit={
+            catalogKind === "icb"
+              ? saveIcb
+              : catalogKind === "delcl"
+                ? saveDelcl
+                : catalogKind === "debosch"
+                  ? saveDebosch
+                  : saveUnloco
+          }
         />
       ) : null}
       {confirmDialog}

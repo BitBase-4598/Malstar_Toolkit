@@ -355,6 +355,35 @@ def _create_tables(conn):
         )
     """)
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS DeBoschRecords (
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            FullName TEXT NOT NULL DEFAULT '',
+            Address1 TEXT NOT NULL DEFAULT '',
+            Unloco TEXT NOT NULL DEFAULT '',
+            OrganizationCode TEXT NOT NULL DEFAULT '',
+            BeCode TEXT NOT NULL DEFAULT '',
+            CmdCode TEXT NOT NULL DEFAULT '',
+            BpCode TEXT NOT NULL DEFAULT '',
+            City TEXT NOT NULL DEFAULT '',
+            Postcode TEXT NOT NULL DEFAULT '',
+            SearchText TEXT NOT NULL DEFAULT ''
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_debosch_org ON DeBoschRecords (OrganizationCode)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_debosch_search ON DeBoschRecords (SearchText)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_debosch_list "
+        "ON DeBoschRecords (FullName, OrganizationCode, ID)"
+    )
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS DeBoschImportMeta (
+            ID INTEGER PRIMARY KEY CHECK (ID = 1),
+            Filename TEXT NOT NULL DEFAULT '',
+            ImportedAt TEXT NOT NULL DEFAULT '',
+            RowCount INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS GcaBookings (
             ID INTEGER PRIMARY KEY AUTOINCREMENT,
             BookingDate TEXT NOT NULL DEFAULT '',

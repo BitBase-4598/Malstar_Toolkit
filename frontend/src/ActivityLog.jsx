@@ -22,6 +22,7 @@ const MODULES = [
   { value: "icb", label: "ICB" },
   { value: "unloco", label: "UNLOCODE" },
   { value: "delcl", label: "DE-LCL" },
+  { value: "debosch", label: "DE-BOSCH" },
   { value: "gca", label: "GCA" },
   { value: "cases", label: "Feedback" },
   { value: "leave", label: "Leave" },

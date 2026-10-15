@@ -9,6 +9,7 @@ import { lclApi } from "./lcl";
 import { icbApi } from "./icb";
 import { unlocoApi } from "./unloco";
 import { delclApi } from "./delcl";
+import { deboschApi } from "./debosch";
 import { gcaApi } from "./gca";
 import { casesApi } from "./cases";
 
@@ -26,6 +27,7 @@ export const api = {
   ...icbApi,
   ...unlocoApi,
   ...delclApi,
+  ...deboschApi,
   ...gcaApi,
   ...casesApi,
 };

@@ -21,7 +21,7 @@ function SearchActions({ recordsRef, recordsImporting, searchTab }) {
     <>
       <button className="ghost" type="button" onClick={() => recordsRef.current?.openUpload()} disabled={recordsImporting}>
         <Upload size={16} />
-        {recordsImporting ? "Importing..." : searchTab === "delcl" ? "Import Excel" : "Import CSV"}
+        {recordsImporting ? "Importing..." : searchTab === "delcl" || searchTab === "debosch" ? "Import Excel" : "Import CSV"}
       </button>
       <button className="primary" type="button" onClick={() => recordsRef.current?.openNew()}>
         <Plus size={16} />

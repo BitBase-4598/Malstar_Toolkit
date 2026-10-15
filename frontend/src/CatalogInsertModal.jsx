@@ -20,6 +20,18 @@ const UNLOCO_FIELDS = [
   { key: "category", label: "LCL Category" },
 ];
 
+const DEBOSCH_FIELDS = [
+  { key: "fullName", label: "Full Name" },
+  { key: "unloco", label: "UNLOCO" },
+  { key: "city", label: "City" },
+  { key: "address1", label: "Address" },
+  { key: "organizationCode", label: "Organization Code" },
+  { key: "beCode", label: "Maersk - BE Code" },
+  { key: "cmdCode", label: "Maersk - CMD Code" },
+  { key: "bpCode", label: "Maersk - BP Code" },
+  { key: "postcode", label: "Postcode" },
+];
+
 const DELCL_FIELDS = [
   { key: "consigneeName", label: "Consignee Name" },
   { key: "orgaCode", label: "Orga code" },
@@ -47,6 +59,12 @@ const KIND = {
     editTitle: "Edit DE-LCL",
     hint: "Consignee name or orga code identifies the row.",
   },
+  debosch: {
+    fields: DEBOSCH_FIELDS,
+    addTitle: "Add DE-BOSCH",
+    editTitle: "Edit DE-BOSCH",
+    hint: "Full name or organization code identifies the organization.",
+  },
 };
 
 export default function CatalogInsertModal({ kind, form, saving, editing, onChange, onClose, onSubmit }) {
@@ -71,7 +89,7 @@ export default function CatalogInsertModal({ kind, form, saving, editing, onChan
       </div>
       <div className="grid">
         {fields.map((field) => (
-          <label key={field.key} className={field.key === "notes" || field.key === "category" || field.key === "remark" || field.key === "deliveryAgent" ? "wide" : undefined}>
+          <label key={field.key} className={field.key === "notes" || field.key === "category" || field.key === "remark" || field.key === "deliveryAgent" || field.key === "address1" || field.key === "fullName" ? "wide" : undefined}>
             {field.label}
             {field.required ? " *" : ""}
             <input

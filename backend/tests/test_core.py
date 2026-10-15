@@ -15,6 +15,7 @@ os.environ["GCA_XLSX_PATH"] = str(TMP / "missing-gca.xlsx")
 os.environ["LCL_XLSX_PATH"] = str(TMP / "missing-lcl.xlsx")
 os.environ["UNLOCODE_CSV_PATH"] = str(TMP / "missing-unlocode.csv")
 os.environ["DE_LCL_XLSX_PATH"] = str(TMP / "missing-delcl.xlsx")
+os.environ["BOSCH_DE_XLSX_PATH"] = str(TMP / "missing-bosch-de.xlsx")
 sys.path.insert(0, str(ROOT))
 
 from flask import Flask
@@ -197,6 +198,8 @@ def test_api_health_leave_dashboard():
     assert unloco.status_code == 200
     delcl = client.get("/api/de-lcl")
     assert delcl.status_code == 200
+    debosch = client.get("/api/de-bosch")
+    assert debosch.status_code == 200
     gca = client.get("/api/gca/summary")
     assert gca.status_code == 200
     assert "kpis" in gca.get_json()["data"]
@@ -1076,6 +1079,97 @@ def test_icb_and_unloco_create_record():
     assert deleted.status_code == 200
     assert client.get("/api/unlocode?q=CLVAP").get_json()["pagination"]["total"] == 0
     empty = client.post("/api/unlocode", json={"countryCode": "CL"})
+    assert empty.status_code == 400
+
+
+def test_debosch_xlsx_import_and_search():
+    from io import BytesIO
+
+    from openpyxl import Workbook
+
+    migrate()
+    from app import app
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append([
+        "Full Name",
+        "Address 1",
+        "UNLOCO",
+        "Organization Code",
+        "Maersk - BE Code",
+        "Maersk - CMD Code",
+        "Maersk - BP Code",
+        "City",
+        "Postcode",
+    ])
+    sheet.append([
+        "BOSCH & SCHORLE GMBH",
+        "ROTENWALDSTR., 100",
+        "DESTR",
+        "BOSSCHSTR",
+        "DEBOSCHSC0",
+        "DE01167643",
+        "20060211",
+        "STUTTGART",
+        "70197",
+    ])
+    sheet.append([
+        "ROBERT BOSCH GMBH",
+        "ROBERT-BOSCH-PLATZ 1",
+        "DEGRZ",
+        "ROBBOSGRZ",
+        "DEROBBOS01",
+        "DE00000001",
+        "10000001",
+        "GERLINGEN",
+        "70839",
+    ])
+    payload = BytesIO()
+    workbook.save(payload)
+    payload.seek(0)
+
+    client = app.test_client()
+    imported = client.post(
+        "/api/de-bosch/import",
+        data={"file": (payload, "Bosch-DE.xlsx")},
+        content_type="multipart/form-data",
+    )
+    assert imported.status_code == 200
+    body = imported.get_json()
+    assert body["success"] is True
+    assert body["data"]["rowCount"] == 2
+
+    by_org = client.get("/api/de-bosch?q=BOSSCHSTR").get_json()
+    assert by_org["pagination"]["total"] == 1
+    assert by_org["data"][0]["fullName"] == "BOSCH & SCHORLE GMBH"
+    assert by_org["data"][0]["unloco"] == "DESTR"
+    assert by_org["data"][0]["city"] == "STUTTGART"
+
+    by_city = client.get("/api/de-bosch?q=Gerlingen").get_json()
+    assert by_city["pagination"]["total"] == 1
+    assert by_city["data"][0]["organizationCode"] == "ROBBOSGRZ"
+    assert by_city["data"][0]["postcode"] == "70839"
+
+    by_be = client.get("/api/de-bosch?q=DEBOSCHSC0").get_json()
+    assert by_be["pagination"]["total"] == 1
+
+    created = client.post(
+        "/api/de-bosch",
+        json={"fullName": "BOSCH TEST GMBH", "organizationCode": "BOSTEST", "city": "MUNICH", "unloco": "DEMUC"},
+    )
+    assert created.status_code == 201
+    record_id = created.get_json()["data"]["id"]
+    updated = client.put(
+        f"/api/de-bosch/{record_id}",
+        json={"fullName": "BOSCH TEST GMBH", "organizationCode": "BOSTEST", "city": "BERLIN", "unloco": "DEBER"},
+    )
+    assert updated.status_code == 200
+    assert updated.get_json()["data"]["city"] == "BERLIN"
+    deleted = client.delete(f"/api/de-bosch/{record_id}")
+    assert deleted.status_code == 200
+    assert client.get("/api/de-bosch?q=BOSTEST").get_json()["pagination"]["total"] == 0
+    empty = client.post("/api/de-bosch", json={"city": "HAMBURG"})
     assert empty.status_code == 400
 
 

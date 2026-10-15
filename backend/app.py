@@ -39,6 +39,7 @@ def create_app():
     from blueprints.icb import bp as icb_bp
     from blueprints.unloco import bp as unloco_bp
     from blueprints.delcl import bp as delcl_bp
+    from blueprints.debosch import bp as debosch_bp
     from blueprints.leave import bp as leave_bp
     from blueprints.lcl import bp as lcl_bp
     from blueprints.logs import bp as logs_bp
@@ -58,6 +59,7 @@ def create_app():
     app.register_blueprint(icb_bp)
     app.register_blueprint(unloco_bp)
     app.register_blueprint(delcl_bp)
+    app.register_blueprint(debosch_bp)
     app.register_blueprint(gca_bp)
     app.register_blueprint(remarks_bp)
 
@@ -166,11 +168,21 @@ def _warm_delcl():
         pass
 
 
+def _warm_debosch():
+    try:
+        ensure_migrated()
+        from services.debosch import ensure_debosch_loaded
+        ensure_debosch_loaded()
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
     import threading
     threading.Thread(target=_warm_lcl_cache, daemon=True).start()
     threading.Thread(target=_warm_unloco, daemon=True).start()
     threading.Thread(target=_warm_delcl, daemon=True).start()
+    threading.Thread(target=_warm_debosch, daemon=True).start()
     host = os.environ.get("FLASK_HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", os.environ.get("FLASK_PORT", "5000")))
     debug = os.environ.get("FLASK_DEBUG", "false").lower() in ("1", "true", "yes")

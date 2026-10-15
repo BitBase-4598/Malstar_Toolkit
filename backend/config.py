@@ -57,6 +57,10 @@ DE_LCL_XLSX_PATH = _path(
     "DE_LCL_XLSX_PATH",
     Path(r"C:\Users\Administrator\Desktop\DE-LCL (1).xlsx"),
 )
+BOSCH_DE_XLSX_PATH = _path(
+    "BOSCH_DE_XLSX_PATH",
+    Path(r"C:\Users\NLI089\Downloads\Bosch-DE.xlsx"),
+)
 CASES_MAX_IMPORT_ROWS = int(os.environ.get("CASES_MAX_IMPORT_ROWS", "5000"))
 DASHBOARD_MISSING = {"", "—", "-", "–", "n/a", "na", "none", "null"}
 AZURE_OPENAI_ENDPOINT = os.environ.get("AZURE_OPENAI_ENDPOINT", "").strip().rstrip("/")
@@ -71,7 +75,7 @@ CORS_ORIGINS = [
     ).split(",")
     if origin.strip()
 ]
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 
 def resolve_static_dir():
