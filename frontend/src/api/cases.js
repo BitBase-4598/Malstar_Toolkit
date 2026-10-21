@@ -59,5 +59,6 @@ export const casesApi = {
     return request(`${BASE}/${id}/files`, { method: "POST", body: form });
   },
   deleteCaseFile: (caseId, fileId) => request(`${BASE}/${caseId}/files/${fileId}`, { method: "DELETE" }),
+  previewCaseFile: (caseId, fileId) => request(`${BASE}/${caseId}/files/${fileId}/preview`),
   caseFileDownloadUrl: (caseId, fileId) => `${BASE}/${caseId}/files/${fileId}`,
 };

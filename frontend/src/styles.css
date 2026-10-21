@@ -1802,6 +1802,44 @@ tbody tr.selected td {
   text-transform: uppercase;
 }
 
+.attach-name {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--maersk-blue-dark);
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.attach-name:hover:not(:disabled) {
+  color: var(--maersk-navy);
+}
+
+.attach-download {
+  display: inline-flex;
+  color: var(--maersk-muted);
+  font-size: var(--type-label);
+  text-decoration: none;
+}
+
+.attach-download:hover {
+  color: var(--maersk-navy);
+}
+
+.case-file-preview {
+  margin-top: 8px;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--maersk-border);
+  border-radius: var(--radius);
+  background: var(--maersk-white);
+  padding: 12px;
+}
+
 .upload-label {
   display: inline-flex;
   align-items: center;

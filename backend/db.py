@@ -219,6 +219,8 @@ def _create_tables(conn):
             Email TEXT NOT NULL DEFAULT '',
             Name TEXT NOT NULL DEFAULT '',
             HBL TEXT NOT NULL DEFAULT '',
+            BookingOrderId TEXT NOT NULL DEFAULT '',
+            ShipmentNumber TEXT NOT NULL DEFAULT '',
             WronglyIdentified TEXT NOT NULL DEFAULT '',
             Incorrect TEXT NOT NULL DEFAULT '',
             Corrected TEXT NOT NULL DEFAULT '',
@@ -240,6 +242,12 @@ def _create_tables(conn):
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_cases_hbl ON Cases (HBL)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_cases_booking ON Cases (BookingOrderId)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_cases_shipment ON Cases (ShipmentNumber)"
     )
     conn.execute("""
         CREATE TABLE IF NOT EXISTS CaseFiles (
@@ -667,6 +675,16 @@ def rebuild_icb_fts(conn):
         pass
 
 
+def _ensure_case_identifier_columns(conn):
+    columns = table_columns(conn, "Cases")
+    if "BookingOrderId" not in columns and "bookingorderid" not in columns:
+        conn.execute("ALTER TABLE Cases ADD COLUMN BookingOrderId TEXT NOT NULL DEFAULT ''")
+    if "ShipmentNumber" not in columns and "shipmentnumber" not in columns:
+        conn.execute("ALTER TABLE Cases ADD COLUMN ShipmentNumber TEXT NOT NULL DEFAULT ''")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_cases_booking ON Cases (BookingOrderId)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_cases_shipment ON Cases (ShipmentNumber)")
+
+
 def _ensure_leave_plan_columns(conn):
     columns = table_columns(conn, "LeavePlans")
     if "Remark" not in columns and "remark" not in columns:
@@ -839,5 +857,8 @@ def migrate():
         if current < 11:
             _ensure_leave_plan_columns(conn)
             _set_schema_version(conn, 11)
+        if current < 13:
+            _ensure_case_identifier_columns(conn)
+            _set_schema_version(conn, 13)
         if current < SCHEMA_VERSION:
             _set_schema_version(conn, SCHEMA_VERSION)

@@ -136,6 +136,12 @@ def test_migrate_schema_version_once():
         version = conn.execute("SELECT Version FROM SchemaVersion WHERE ID=1").fetchone()[0]
         count = conn.execute("SELECT COUNT(*) FROM CustomerRemarks").fetchone()[0]
         assert version == SCHEMA_VERSION
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(Cases)").fetchall()
+        }
+        assert "BookingOrderId" in columns
+        assert "ShipmentNumber" in columns
     assert count == 3
     migrate()
     with get_connection() as conn:
@@ -311,7 +317,37 @@ def test_cases_crud_and_status():
     client = app.test_client()
     missing = client.post("/api/cases", json={"name": "Only name"})
     assert missing.status_code == 400
+    assert "Booking order ID or shipment number" in missing.get_json()["message"]
+    neither = client.post("/api/cases", json={
+        "category": "Human Error",
+        "description": "No identifier",
+    })
+    assert neither.status_code == 400
+    blank = client.post("/api/cases", json={"bookingOrderId": "   ", "shipmentNumber": " "})
+    assert blank.status_code == 400
+    booking_only = client.post("/api/cases", json={
+        "bookingOrderId": "BK-1001",
+        "description": "Booking only",
+    })
+    assert booking_only.status_code == 201
+    booking_body = booking_only.get_json()["data"]
+    assert booking_body["bookingOrderId"] == "BK-1001"
+    assert booking_body["shipmentNumber"] == ""
+    assert booking_body["category"] == ""
+    shipment_only = client.post("/api/cases", json={"shipmentNumber": "SHP-2002"})
+    assert shipment_only.status_code == 201
+    shipment_body = shipment_only.get_json()["data"]
+    assert shipment_body["shipmentNumber"] == "SHP-2002"
+    assert shipment_body["bookingOrderId"] == ""
+    assert shipment_body["description"] == ""
+    by_booking = client.get("/api/cases?q=BK-1001").get_json()["data"]
+    assert any(item["id"] == booking_body["id"] for item in by_booking)
+    by_shipment = client.get("/api/cases?q=SHP-2002").get_json()["data"]
+    assert any(item["id"] == shipment_body["id"] for item in by_shipment)
+    by_note = client.get("/api/cases?q=Booking only").get_json()["data"]
+    assert any(item["id"] == booking_body["id"] for item in by_note)
     created = client.post("/api/cases", json={
+        "bookingOrderId": "BK-GZ",
         "category": "Human Error",
         "description": "POR was read as Guangzhou",
     })
@@ -320,10 +356,17 @@ def test_cases_crud_and_status():
     assert body["status"] == "pending_review"
     assert body["category"] == "Human Error"
     assert body["description"] == "POR was read as Guangzhou"
+    assert body["bookingOrderId"] == "BK-GZ"
     assert body["hbl"] == ""
     case_id = body["id"]
     listed = client.get("/api/cases?q=Guangzhou").get_json()["data"]
     assert any(item["id"] == case_id for item in listed)
+    cleared = client.put(f"/api/cases/{case_id}", json={
+        "bookingOrderId": "",
+        "shipmentNumber": "  ",
+        "description": "POR was read as Guangzhou",
+    })
+    assert cleared.status_code == 400
     patched = client.patch(f"/api/cases/{case_id}/status", json={"status": "closed"})
     assert patched.status_code == 200
     assert patched.get_json()["data"]["status"] == "closed"
@@ -343,6 +386,7 @@ def test_case_file_upload_png_xlsx():
 
     client = app.test_client()
     created = client.post("/api/cases", json={
+        "shipmentNumber": "SHP-FILE",
         "category": "Defects",
         "description": "Attach demo",
     }).get_json()["data"]
@@ -357,7 +401,16 @@ def test_case_file_upload_png_xlsx():
         content_type="multipart/form-data",
     )
     assert image.status_code == 201
-    assert image.get_json()["data"]["kind"] == "image"
+    image_body = image.get_json()["data"]
+    assert image_body["kind"] == "image"
+    preview = client.get(f"/api/cases/{case_id}/files/{image_body['id']}/preview")
+    assert preview.status_code == 200
+    preview_body = preview.get_json()["data"]
+    assert preview_body["kind"] == "image"
+    assert preview_body["url"].endswith("/content")
+    content = client.get(preview_body["url"])
+    assert content.status_code == 200
+    assert content.mimetype == "image/png"
     workbook = Workbook()
     sheet = workbook.active
     sheet["A1"] = "HBL"
@@ -409,10 +462,20 @@ def test_case_import_and_locked_update():
     )
     assert second.get_json()["imported"] == 0
     assert second.get_json()["skipped"] >= 1
+    needs_identifier = client.put(f"/api/cases/{case_id}", json={
+        "status": "reviewed",
+        "category": "Defects",
+        "description": "Checked",
+        "name": "HACKED",
+        "email": "evil@x.com",
+        "hbl": "NOPE",
+    })
+    assert needs_identifier.status_code == 400
     updated = client.put(f"/api/cases/{case_id}", json={
         "status": "reviewed",
         "category": "Defects",
         "description": "Checked",
+        "bookingOrderId": "BK-IMPORT",
         "name": "HACKED",
         "email": "evil@x.com",
         "hbl": "NOPE",
@@ -422,6 +485,7 @@ def test_case_import_and_locked_update():
     assert data["name"] == "COSCO"
     assert data["email"] == "a@b.com"
     assert data["hbl"] == "HBL1"
+    assert data["bookingOrderId"] == "BK-IMPORT"
     assert data["status"] == "reviewed"
     assert data["category"] == "Defects"
     assert data["description"] == "Checked"
@@ -440,8 +504,8 @@ def test_case_import_xlsx():
     client = app.test_client()
     workbook = Workbook()
     sheet = workbook.active
-    sheet.append(["Name", "HBL#", "Start time", "Category", "Description"])
-    sheet.append(["ONE", "HBLX", "2026-08-02 10:00", "System Enhancements", "Hub mismatch"])
+    sheet.append(["Name", "HBL#", "Start time", "Category", "Description", "Booking order ID", "Shipment number"])
+    sheet.append(["ONE", "HBLX", "2026-08-02 10:00", "System Enhancements", "Hub mismatch", "BK-XLSX", "SHP-XLSX"])
     buffer = BytesIO()
     workbook.save(buffer)
     result = client.post(
@@ -455,6 +519,8 @@ def test_case_import_xlsx():
     assert row["name"] == "ONE"
     assert row["category"] == "System Enhancements"
     assert row["description"] == "Hub mismatch"
+    assert row["bookingOrderId"] == "BK-XLSX"
+    assert row["shipmentNumber"] == "SHP-XLSX"
 
 
 def test_case_template_download():
@@ -466,6 +532,8 @@ def test_case_template_download():
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert "Category,Description" in body
+    assert "Booking order ID" in body
+    assert "Shipment number" in body
     assert "Human Error" in body
 
 
@@ -562,7 +630,11 @@ def test_replace_cases_from_gca_workbook():
     from app import app
 
     client = app.test_client()
-    client.post("/api/cases", json={"category": "Defects", "description": "seed to replace"})
+    client.post("/api/cases", json={
+        "bookingOrderId": "BK-SEED",
+        "category": "Defects",
+        "description": "seed to replace",
+    })
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "AreaFeedbackList"
@@ -600,6 +672,22 @@ def test_replace_cases_from_gca_workbook():
     assert by_hbl["SZX1234567"]["week"] == ""
     assert by_hbl["HBLFALLBACK"]["description"] == "Commodity. Toys → Electronics"
     assert by_hbl["EURHBL001"]["category"] == "System Enhancements"
+    assert by_hbl["SZX1234567"]["bookingOrderId"] == ""
+    assert by_hbl["SZX1234567"]["shipmentNumber"] == ""
+    blocked = client.put(
+        f"/api/cases/{by_hbl['SZX1234567']['id']}",
+        json={"description": "edited without an identifier"},
+    )
+    assert blocked.status_code == 400
+    saved = client.put(
+        f"/api/cases/{by_hbl['SZX1234567']['id']}",
+        json={"description": "edited", "shipmentNumber": "SHP-GCA"},
+    )
+    assert saved.status_code == 200
+    saved_body = saved.get_json()["data"]
+    assert saved_body["shipmentNumber"] == "SHP-GCA"
+    assert saved_body["hbl"] == "SZX1234567"
+    assert saved_body["description"] == "edited"
 
 
 def test_lcl_import_requires_xlsx():

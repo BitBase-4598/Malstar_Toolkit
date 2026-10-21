@@ -4,7 +4,7 @@ function previewSrc(url) {
   if (!url) {
     return "";
   }
-  if (/^https?:\/\//i.test(url)) {
+  if (/^(https?:|blob:|data:)/i.test(url)) {
     return url;
   }
   const base = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");

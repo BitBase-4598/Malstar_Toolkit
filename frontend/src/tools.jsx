@@ -69,7 +69,7 @@ function FeedbackActions({ feedbackRef, feedbackImporting }) {
       </button>
       <button className="primary" type="button" onClick={() => feedbackRef.current?.openNew()}>
         <Plus size={16} />
-        New feedback
+        New case
       </button>
     </>
   );
@@ -131,8 +131,8 @@ export const TOOLS = [
   },
   {
     id: "feedback",
-    label: "Feedback",
-    title: "Feedback",
+    label: "BadCases",
+    title: "BadCases",
     layer: "Case tool",
     icon: Inbox,
     Workspace: FeedbackWorkspace,

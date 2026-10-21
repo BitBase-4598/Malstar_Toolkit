@@ -24,7 +24,7 @@ const MODULES = [
   { value: "delcl", label: "DE-LCL" },
   { value: "debosch", label: "DE-BOSCH" },
   { value: "gca", label: "GCA" },
-  { value: "cases", label: "Feedback" },
+  { value: "cases", label: "BadCases" },
   { value: "leave", label: "Leave" },
   { value: "ask", label: "Ask" },
   { value: "server", label: "Server" },

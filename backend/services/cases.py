@@ -35,8 +35,8 @@ CATEGORY_ALIASES = {
 }
 
 TEMPLATE_CSV = (
-    "Category,Description\n"
-    "Human Error,Example: POR was read as Guangzhou\n"
+    "Booking order ID,Shipment number,Category,Description\n"
+    "BK12345,,Human Error,Example: POR was read as Guangzhou\n"
 )
 
 IMPORT_HEADERS = {
@@ -47,6 +47,16 @@ IMPORT_HEADERS = {
     "hbl": "hbl",
     "hbl no": "hbl",
     "hbl number": "hbl",
+    "booking order id": "bookingOrderId",
+    "booking order": "bookingOrderId",
+    "bookingorderid": "bookingOrderId",
+    "order id": "bookingOrderId",
+    "order number": "bookingOrderId",
+    "shipment number": "shipmentNumber",
+    "shipment no": "shipmentNumber",
+    "shipment no.": "shipmentNumber",
+    "shipmentnumber": "shipmentNumber",
+    "shipment": "shipmentNumber",
     "wrongly identified": "wronglyIdentified",
     "incorrect": "incorrect",
     "corrected": "corrected",
@@ -67,6 +77,8 @@ TEXT_FIELDS = (
     ("email", "Email"),
     ("name", "Name"),
     ("hbl", "HBL"),
+    ("bookingOrderId", "BookingOrderId"),
+    ("shipmentNumber", "ShipmentNumber"),
     ("wronglyIdentified", "WronglyIdentified"),
     ("incorrect", "Incorrect"),
     ("corrected", "Corrected"),
@@ -116,23 +128,40 @@ def empty_text_fields():
     return {key: "" for key, _column in TEXT_FIELDS}
 
 
+def _clean(value):
+    return str(value or "").strip()
+
+
+def require_case_identifier(booking_order_id, shipment_number):
+    booking = _clean(booking_order_id)
+    shipment = _clean(shipment_number)
+    if not booking and not shipment:
+        return None, None, "Booking order ID or shipment number is required."
+    return booking, shipment, None
+
+
 def parse_case_create(data):
     data = data or {}
-    category, error = parse_category(data.get("category"), required=True)
+    booking, shipment, error = require_case_identifier(
+        data.get("bookingOrderId"),
+        data.get("shipmentNumber"),
+    )
     if error:
         return None, error
-    description = str(data.get("description") or "").strip()
-    if not description:
-        return None, "Description is required."
+    category, error = parse_category(data.get("category"), required=False)
+    if error:
+        return None, error
     status, error = parse_status(data.get("status"))
     if error:
         return None, error
     payload = empty_text_fields()
-    payload["name"] = str(data.get("name") or "").strip()
-    payload["hbl"] = str(data.get("hbl") or "").strip()
-    payload["email"] = str(data.get("email") or "").strip()
+    payload["name"] = _clean(data.get("name"))
+    payload["hbl"] = _clean(data.get("hbl"))
+    payload["email"] = _clean(data.get("email"))
+    payload["bookingOrderId"] = booking
+    payload["shipmentNumber"] = shipment
     payload["category"] = category
-    payload["description"] = description
+    payload["description"] = _clean(data.get("description"))
     payload["status"] = status
     return payload, None
 
@@ -142,13 +171,24 @@ def parse_case_review(data, current):
     status, error = parse_status(data.get("status"), default=current.get("status") or "pending_review")
     if error:
         return None, error
-    category, error = parse_category(data.get("category"), current=current.get("category") or "")
+    if "category" in data:
+        category, error = parse_category(data.get("category"), current=current.get("category") or "")
+        if error:
+            return None, error
+    else:
+        category = current.get("category") or ""
+    description = _clean(data.get("description")) if "description" in data else (current.get("description") or "")
+    booking = _clean(data.get("bookingOrderId")) if "bookingOrderId" in data else (current.get("bookingOrderId") or "")
+    shipment = _clean(data.get("shipmentNumber")) if "shipmentNumber" in data else (current.get("shipmentNumber") or "")
+    _booking, _shipment, error = require_case_identifier(booking, shipment)
     if error:
         return None, error
     return {
         "status": status,
         "category": category,
-        "description": str(data.get("description") or "").strip(),
+        "description": description,
+        "bookingOrderId": _booking,
+        "shipmentNumber": _shipment,
     }, None
 
 
@@ -165,6 +205,8 @@ def case_to_dict(row, file_count=0, files=None):
         "email": row["Email"],
         "name": row["Name"],
         "hbl": row["HBL"],
+        "bookingOrderId": row["BookingOrderId"],
+        "shipmentNumber": row["ShipmentNumber"],
         "wronglyIdentified": row["WronglyIdentified"],
         "incorrect": row["Incorrect"],
         "corrected": row["Corrected"],
@@ -208,9 +250,11 @@ def list_cases(conn, query=""):
                OR Cases.Email LIKE ?
                OR Cases.Category LIKE ?
                OR Cases.Description LIKE ?
+               OR Cases.BookingOrderId LIKE ?
+               OR Cases.ShipmentNumber LIKE ?
             ORDER BY Cases.UpdatedAt DESC, Cases.ID DESC
             """,
-            (like, like, like, like, like, like),
+            (like, like, like, like, like, like, like, like),
         ).fetchall()
     else:
         rows = conn.execute(
@@ -250,13 +294,15 @@ def update_case_review(conn, case_id, payload):
     conn.execute(
         """
         UPDATE Cases
-        SET Status=?, Category=?, Description=?, UpdatedAt=?
+        SET Status=?, Category=?, Description=?, BookingOrderId=?, ShipmentNumber=?, UpdatedAt=?
         WHERE ID=?
         """,
         (
             payload["status"],
             payload["category"],
             payload["description"],
+            payload["bookingOrderId"],
+            payload["shipmentNumber"],
             now_stamp(),
             case_id,
         ),
@@ -362,8 +408,13 @@ def decode_json_upload(raw):
 def case_heading(record):
     if not record:
         return ""
-    category = record.get("category") or "Feedback"
-    return f"#{record['id']} · {category}"
+    label = (
+        record.get("bookingOrderId")
+        or record.get("shipmentNumber")
+        or record.get("category")
+        or "Case"
+    )
+    return f"#{record['id']} · {label}"
 
 
 def normalize_import_header(value):
