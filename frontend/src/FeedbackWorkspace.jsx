@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { Download, Search, Trash2, Upload, X } from "lucide-react";
+import { Download, Pencil, Search, Trash2, Upload, X } from "lucide-react";
 import { api } from "./api";
 import FieldSelect from "./FieldSelect";
 import { FEEDBACK_CATEGORIES, CASE_PAGE_SIZE } from "./api/cases";
@@ -40,6 +40,10 @@ const emptyForm = {
 };
 
 const IDENTIFIER_REQUIRED = "Booking order ID or shipment number is required.";
+
+function statusLabel(value) {
+  return STATUSES.find((item) => item.id === value)?.label || value || "—";
+}
 
 function displayDate(row) {
   const raw = row.date || row.startTime || row.createdAt || "";
@@ -115,6 +119,7 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [modal, setModal] = useState(false);
+  const [mode, setMode] = useState("view");
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [confirm, confirmDialog] = useConfirm();
@@ -219,7 +224,7 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
   }, [load, onNotice, onRefreshLogs]);
 
   useEffect(() => {
-    if (!modal) {
+    if (!modal || mode === "view") {
       return undefined;
     }
     const onPaste = (event) => {
@@ -240,7 +245,7 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
     };
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
-  }, [editing, modal, saving, showLocalPreview, uploadFiles, uploading]);
+  }, [editing, modal, mode, saving, showLocalPreview, uploadFiles, uploading]);
 
   const changeStatus = async (row, status) => {
     if (!row?.id || !status || status === row.status) {
@@ -271,28 +276,33 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
     setFiles([]);
     setFormError("");
     clearPreview();
+    setMode("new");
     setModal(true);
   };
 
   useImperativeHandle(ref, () => ({ openNew }));
 
-  const openEdit = async (row) => {
+  const applyCase = (data) => {
+    setEditing(data);
+    setForm({
+      bookingOrderId: data.bookingOrderId || "",
+      shipmentNumber: data.shipmentNumber || "",
+      email: data.email || "",
+      category: data.category || "",
+      description: data.description || "",
+      status: data.status || "pending_review",
+    });
+    setPendingFiles([]);
+    setFiles(data.files || []);
+    setFormError("");
+    clearPreview();
+  };
+
+  const openCase = async (row, nextMode) => {
     try {
       const result = await api.getCase(row.id);
-      const data = result.data;
-      setEditing(data);
-      setForm({
-        bookingOrderId: data.bookingOrderId || "",
-        shipmentNumber: data.shipmentNumber || "",
-        email: data.email || "",
-        category: data.category || "",
-        description: data.description || "",
-        status: data.status || "pending_review",
-      });
-      setPendingFiles([]);
-      setFiles(data.files || []);
-      setFormError("");
-      clearPreview();
+      applyCase(result.data);
+      setMode(nextMode);
       setModal(true);
     } catch (error) {
       onNotice?.({ type: "error", text: error.message });
@@ -302,6 +312,7 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
   const closeModal = () => {
     if (!saving && !uploading) {
       clearPreview();
+      setMode("view");
       setModal(false);
     }
   };
@@ -465,7 +476,7 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
                 </tr>
               ) : (
                 rows.map((row) => (
-                  <tr key={row.id} className="clickable" onClick={() => openEdit(row)}>
+                  <tr key={row.id} className="clickable" onClick={() => openCase(row, "view")}>
                     <td>{displayDate(row)}</td>
                     <td title={row.bookingOrderId || undefined}>{row.bookingOrderId || "—"}</td>
                     <td title={row.shipmentNumber || undefined}>{row.shipmentNumber || "—"}</td>
@@ -483,8 +494,8 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
                       />
                     </td>
                     <td className="actions" onClick={(event) => event.stopPropagation()}>
-                      <button type="button" className="danger" onClick={() => remove(row)} aria-label="Delete case">
-                        <Trash2 size={16} />
+                      <button type="button" className="case-edit" onClick={() => openCase(row, "edit")} aria-label={`Edit case ${row.id}`}>
+                        <Pencil size={16} />
                       </button>
                     </td>
                   </tr>
@@ -515,16 +526,23 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
       </section>
       {modal ? (
         <ModalShell
-          as="form"
+          as={mode === "view" ? "div" : "form"}
+          className="case-modal"
           busy={saving || uploading}
           onClose={closeModal}
-          onSubmit={save}
+          onSubmit={mode === "view" ? undefined : save}
           labelledBy="badcases-modal-title"
         >
             <div className="modal-head">
               <div>
-                <h2 id="badcases-modal-title">{editing ? `Case #${editing.id}` : "New case"}</h2>
-                <p>A booking order ID or shipment number is required. Paste a screenshot to attach it.</p>
+                <h2 id="badcases-modal-title">
+                  {mode === "new" ? "New case" : mode === "edit" ? `Edit case #${editing?.id}` : `Case #${editing?.id}`}
+                </h2>
+                <p>
+                  {mode === "view"
+                    ? "Preview only. Download attachments here, or use the pencil to edit."
+                    : "A booking order ID or shipment number is required. Paste a screenshot in Files below."}
+                </p>
               </div>
               <button type="button" onClick={closeModal} disabled={saving || uploading} aria-label="Close">
                 <X size={18} />
@@ -536,6 +554,41 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
               </div>
             ) : null}
             <div className="grid">
+              {mode === "view" ? (
+                <>
+                  <div className="case-view-field">
+                    <span>Booking order ID</span>
+                    <strong>{editing?.bookingOrderId || "—"}</strong>
+                  </div>
+                  <div className="case-view-field">
+                    <span>Shipment number</span>
+                    <strong>{editing?.shipmentNumber || "—"}</strong>
+                  </div>
+                  <div className="case-view-field">
+                    <span>Email</span>
+                    <strong>{editing?.email || "—"}</strong>
+                  </div>
+                  <div className="case-view-field">
+                    <span>Status</span>
+                    <strong>{statusLabel(editing?.status)}</strong>
+                  </div>
+                  <div className="case-view-field wide">
+                    <span>Category</span>
+                    <strong>{editing?.category || "—"}</strong>
+                  </div>
+                  <div className="case-view-field wide">
+                    <span>Description</span>
+                    <p>{editing?.description || "—"}</p>
+                  </div>
+                  {DETAIL_FIELDS.filter(([key]) => editing?.[key]).map(([key, label]) => (
+                    <div className="case-view-field" key={key}>
+                      <span>{label}</span>
+                      <strong>{editing[key]}</strong>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <>
               <label>
                 Booking order ID
                 <input
@@ -622,9 +675,13 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
                     </label>
                   ))
                 : null}
-              <div className="wide">
-                <div className="attach-head">
-                  <strong>Files</strong>
+                </>
+              )}
+            </div>
+            <div className="case-files">
+              <div className="attach-head">
+                <strong>Files</strong>
+                {mode !== "view" ? (
                   <button
                     type="button"
                     className="ghost"
@@ -634,93 +691,112 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
                     <Upload size={16} />
                     {uploading ? "Uploading..." : "Upload"}
                   </button>
-                  <input
-                    ref={attachRef}
-                    hidden
-                    type="file"
-                    accept={FILE_ACCEPT}
-                    disabled={saving || uploading}
-                    onChange={editing ? attachExisting : addPendingFiles}
-                    multiple
-                  />
-                </div>
-                <div className="attach-list">
-                  {pendingFiles.some((file) => String(file.type || "").startsWith("image/")) || files.some((file) => file.kind === "image") ? (
-                    <div className="case-thumbs">
-                      {pendingFiles.map((file, index) => (
-                        <PendingImageThumb key={`${file.name}-${index}`} file={file} onOpen={() => showLocalPreview(file)} />
-                      ))}
-                      {files.filter((file) => file.kind === "image").map((file) => (
-                        <button
-                          key={file.id}
-                          type="button"
-                          className="case-thumb"
-                          title={file.originalName}
-                          onClick={() => openSavedPreview(editing.id, file)}
-                        >
-                          <img src={api.caseFileContentUrl(editing.id, file.id)} alt={file.originalName} />
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                  {!editing && pendingFiles.length === 0 && files.length === 0 ? (
-                    <p className="preview-empty">Paste a screenshot, or attach docx, xlsx, or pictures.</p>
-                  ) : null}
-                  {pendingFiles.map((file, index) => (
-                    <div key={`${file.name}-${index}`} className="attach-item">
-                      <button type="button" className="attach-name" onClick={() => showLocalPreview(file)}>
-                        {file.name}
-                      </button>
-                      <button type="button" className="danger" onClick={() => removeFile(file)} aria-label="Remove file">
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  ))}
-                  {files.map((file) => (
-                    <div key={file.id} className="attach-item">
-                      <button type="button" className="attach-name" onClick={() => openSavedPreview(editing.id, file)}>
-                        {file.originalName}
-                      </button>
-                      <em>{file.kind}</em>
-                      <a
-                        className="attach-download"
-                        href={api.caseFileDownloadUrl(editing.id, file.id)}
-                        target="_blank"
-                        rel="noreferrer"
-                        aria-label={`Download ${file.originalName}`}
-                      >
-                        <Download size={14} />
-                      </a>
-                      <button type="button" className="danger" onClick={() => removeFile(file)} aria-label="Remove file">
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  ))}
-                  {preview || previewLoading ? (
-                    <div className="case-file-preview">
-                      <p className="case-preview-caption">{preview?.file?.originalName || "Preview"}</p>
-                      <FilePreview
-                        key={preview?.file?.id || preview?.url || "case-preview"}
-                        preview={preview}
-                        loading={previewLoading}
-                      />
-                    </div>
-                  ) : null}
-                </div>
+                ) : null}
+                <input
+                  ref={attachRef}
+                  hidden
+                  type="file"
+                  accept={FILE_ACCEPT}
+                  disabled={saving || uploading || mode === "view"}
+                  onChange={editing ? attachExisting : addPendingFiles}
+                  multiple
+                />
               </div>
+              {pendingFiles.some((file) => String(file.type || "").startsWith("image/")) || files.some((file) => file.kind === "image") ? (
+                <div className="case-thumbs">
+                  {pendingFiles.map((file, index) => (
+                    <PendingImageThumb key={`${file.name}-${index}`} file={file} onOpen={() => showLocalPreview(file)} />
+                  ))}
+                  {files.filter((file) => file.kind === "image").map((file) => (
+                    <button
+                      key={file.id}
+                      type="button"
+                      className="case-thumb"
+                      title={file.originalName}
+                      onClick={() => openSavedPreview(editing.id, file)}
+                    >
+                      <img src={api.caseFileContentUrl(editing.id, file.id)} alt={file.originalName} />
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <div className="attach-list">
+                {files.length === 0 && pendingFiles.length === 0 ? (
+                  <p className="preview-empty">{mode === "view" ? "No files." : "No files yet."}</p>
+                ) : null}
+                {pendingFiles.map((file, index) => (
+                  <div key={`${file.name}-${index}`} className="attach-item">
+                    <button type="button" className="attach-name" onClick={() => showLocalPreview(file)}>
+                      {file.name}
+                    </button>
+                    <button type="button" className="danger" onClick={() => removeFile(file)} aria-label="Remove file">
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ))}
+                {files.map((file) => (
+                  <div key={file.id} className="attach-item">
+                    <button type="button" className="attach-name" onClick={() => openSavedPreview(editing.id, file)}>
+                      {file.originalName}
+                    </button>
+                    <em>{file.kind}</em>
+                    <a
+                      className="attach-download"
+                      href={api.caseFileDownloadUrl(editing.id, file.id)}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={`Download ${file.originalName}`}
+                    >
+                      <Download size={14} />
+                    </a>
+                    {mode !== "view" ? (
+                      <button type="button" className="danger" onClick={() => removeFile(file)} aria-label="Remove file">
+                        <Trash2 size={16} />
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+                {preview || previewLoading ? (
+                  <div className="case-file-preview">
+                    <p className="case-preview-caption">{preview?.file?.originalName || "Preview"}</p>
+                    <FilePreview
+                      key={preview?.file?.id || preview?.url || "case-preview"}
+                      preview={preview}
+                      loading={previewLoading}
+                    />
+                  </div>
+                ) : null}
+              </div>
+              {mode !== "view" ? (
+                <p className="case-paste-hint">Paste a screenshot here</p>
+              ) : null}
             </div>
             <div className="modal-actions">
-              <button type="button" className="secondary" onClick={closeModal} disabled={saving || uploading}>
-                Cancel
-              </button>
-              {editing ? (
-                <button type="button" className="danger" onClick={() => remove(editing)} disabled={saving}>
-                  Delete case
-                </button>
-              ) : null}
-              <button className="primary" disabled={saving || uploading}>
-                {saving ? "Saving..." : editing ? "Save" : "Submit"}
-              </button>
+              {mode === "view" ? (
+                <>
+                  <button type="button" className="secondary" onClick={closeModal}>
+                    Close
+                  </button>
+                  <button type="button" className="primary" onClick={() => setMode("edit")}>
+                    <Pencil size={16} />
+                    Edit
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button type="button" className="secondary" onClick={closeModal} disabled={saving || uploading}>
+                    Cancel
+                  </button>
+                  {editing ? (
+                    <button type="button" className="danger" onClick={() => remove(editing)} disabled={saving}>
+                      Delete case
+                    </button>
+                  ) : null}
+                  <button className="primary" disabled={saving || uploading}>
+                    {saving ? "Saving..." : editing ? "Save" : "Submit"}
+                  </button>
+                </>
+              )}
             </div>
         </ModalShell>
       ) : null}

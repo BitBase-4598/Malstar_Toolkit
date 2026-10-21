@@ -1901,10 +1901,74 @@ tbody tr.selected td {
   padding: 6px 10px;
 }
 
+.modal.case-modal {
+  width: min(980px, calc(100vw - 32px));
+  max-height: min(94dvh, 980px);
+}
+
+.case-view-field span {
+  display: block;
+  color: var(--maersk-navy);
+  font-size: var(--type-ui);
+  font-weight: 600;
+}
+
+.case-view-field strong,
+.case-view-field p {
+  display: block;
+  margin: 6px 0 0;
+  color: var(--maersk-text);
+  font-size: var(--type-body);
+  font-weight: 500;
+  white-space: pre-wrap;
+}
+
+.case-files {
+  flex-shrink: 0;
+  border-top: 1px solid var(--maersk-border);
+  padding: 12px 24px 16px;
+  background: var(--maersk-page);
+}
+
+.case-files .attach-list {
+  padding: 8px 0 0;
+}
+
+.case-paste-hint {
+  margin: 10px 0 0;
+  padding: 12px;
+  border: 1px dashed var(--maersk-border);
+  border-radius: var(--radius);
+  background: var(--maersk-white);
+  color: var(--maersk-muted);
+  text-align: center;
+}
+
+.badcases-table .case-edit {
+  border: 0;
+  background: transparent;
+  color: var(--maersk-blue-dark);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+}
+
+.badcases-table .case-edit:hover {
+  background: var(--maersk-bright-blue);
+}
+
 .case-thumbs {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.case-modal .modal-actions .primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .case-thumb {
