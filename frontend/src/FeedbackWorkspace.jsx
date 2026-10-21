@@ -111,6 +111,7 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
   const [files, setFiles] = useState([]);
   const [preview, setPreview] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [formError, setFormError] = useState("");
 
   const releasePreviewUrl = useCallback(() => {
     if (previewUrlRef.current) {
@@ -232,6 +233,7 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
     setForm(emptyForm);
     setPendingFiles([]);
     setFiles([]);
+    setFormError("");
     clearPreview();
     setModal(true);
   };
@@ -262,6 +264,7 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
       });
       setPendingFiles([]);
       setFiles(data.files || []);
+      setFormError("");
       clearPreview();
       setModal(true);
     } catch (error) {
@@ -281,9 +284,10 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
     const bookingOrderId = form.bookingOrderId.trim();
     const shipmentNumber = form.shipmentNumber.trim();
     if (!bookingOrderId && !shipmentNumber) {
-      onNotice?.({ type: "error", text: IDENTIFIER_REQUIRED });
+      setFormError(IDENTIFIER_REQUIRED);
       return;
     }
+    setFormError("");
     const payload = {
       bookingOrderId,
       shipmentNumber,
@@ -312,6 +316,7 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
       await load();
       await onRefreshLogs?.();
     } catch (error) {
+      setFormError(error.message);
       onNotice?.({ type: "error", text: error.message });
     } finally {
       setSaving(false);
@@ -491,12 +496,20 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
                 <X size={18} />
               </button>
             </div>
+            {formError ? (
+              <div className="alert error case-form-error" role="alert">
+                {formError}
+              </div>
+            ) : null}
             <div className="grid">
               <label>
                 Booking order ID
                 <input
                   value={form.bookingOrderId}
-                  onChange={(event) => setForm({ ...form, bookingOrderId: event.target.value })}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setForm((current) => ({ ...current, bookingOrderId: value }));
+                  }}
                   disabled={saving}
                   autoComplete="off"
                   placeholder="One of the two is required"
@@ -506,7 +519,10 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
                 Shipment number
                 <input
                   value={form.shipmentNumber}
-                  onChange={(event) => setForm({ ...form, shipmentNumber: event.target.value })}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setForm((current) => ({ ...current, shipmentNumber: value }));
+                  }}
                   disabled={saving}
                   autoComplete="off"
                   placeholder="One of the two is required"
@@ -517,7 +533,7 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
                 <FieldSelect
                   value={form.category}
                   options={categoryOptions(form.category)}
-                  onChange={(category) => setForm({ ...form, category })}
+                  onChange={(category) => setForm((current) => ({ ...current, category }))}
                   disabled={saving}
                   placeholder="None"
                 />
@@ -528,7 +544,7 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
                   <FieldSelect
                     value={form.status}
                     options={STATUSES.map((item) => ({ value: item.id, label: item.label }))}
-                    onChange={(status) => setForm({ ...form, status })}
+                    onChange={(status) => setForm((current) => ({ ...current, status }))}
                     disabled={saving}
                   />
                 </label>
@@ -538,7 +554,10 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
                 <textarea
                   rows="4"
                   value={form.description}
-                  onChange={(event) => setForm({ ...form, description: event.target.value })}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setForm((current) => ({ ...current, description: value }));
+                  }}
                   disabled={saving}
                   placeholder="Case note"
                 />
@@ -609,6 +628,7 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
                   ))}
                   {preview || previewLoading ? (
                     <div className="case-file-preview">
+                      <p className="case-preview-caption">{preview?.file?.originalName || "Preview"}</p>
                       <FilePreview
                         key={preview?.file?.id || preview?.url || "case-preview"}
                         preview={preview}
