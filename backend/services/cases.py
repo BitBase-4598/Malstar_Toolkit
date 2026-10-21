@@ -180,6 +180,7 @@ def parse_case_review(data, current):
     description = _clean(data.get("description")) if "description" in data else (current.get("description") or "")
     booking = _clean(data.get("bookingOrderId")) if "bookingOrderId" in data else (current.get("bookingOrderId") or "")
     shipment = _clean(data.get("shipmentNumber")) if "shipmentNumber" in data else (current.get("shipmentNumber") or "")
+    email = _clean(data.get("email")) if "email" in data else (current.get("email") or "")
     _booking, _shipment, error = require_case_identifier(booking, shipment)
     if error:
         return None, error
@@ -189,6 +190,7 @@ def parse_case_review(data, current):
         "description": description,
         "bookingOrderId": _booking,
         "shipmentNumber": _shipment,
+        "email": email,
     }, None
 
 
@@ -294,7 +296,7 @@ def update_case_review(conn, case_id, payload):
     conn.execute(
         """
         UPDATE Cases
-        SET Status=?, Category=?, Description=?, BookingOrderId=?, ShipmentNumber=?, UpdatedAt=?
+        SET Status=?, Category=?, Description=?, BookingOrderId=?, ShipmentNumber=?, Email=?, UpdatedAt=?
         WHERE ID=?
         """,
         (
@@ -303,6 +305,7 @@ def update_case_review(conn, case_id, payload):
             payload["description"],
             payload["bookingOrderId"],
             payload["shipmentNumber"],
+            payload.get("email") or "",
             now_stamp(),
             case_id,
         ),

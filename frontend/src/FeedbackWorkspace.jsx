@@ -18,7 +18,6 @@ const FILE_ACCEPT = ".docx,.xlsx,.png,.jpg,.jpeg,.webp,.gif,image/png,image/jpeg
 const DETAIL_FIELDS = [
   ["hbl", "HBL"],
   ["name", "Name"],
-  ["email", "Email"],
   ["wronglyIdentified", "Wrongly identified"],
   ["incorrect", "Incorrect"],
   ["corrected", "Corrected"],
@@ -33,6 +32,7 @@ const DETAIL_FIELDS = [
 const emptyForm = {
   bookingOrderId: "",
   shipmentNumber: "",
+  email: "",
   category: "",
   description: "",
   status: "pending_review",
@@ -98,17 +98,15 @@ function categoryOptions(current) {
 }
 
 const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
-  { onNotice, onRefreshLogs, onImportingChange },
+  { onNotice, onRefreshLogs },
   ref
 ) {
-  const importRef = useRef();
   const attachRef = useRef();
   const previewUrlRef = useRef("");
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [importing, setImporting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [modal, setModal] = useState(false);
@@ -141,10 +139,6 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
     const timer = setTimeout(() => setDebounced(query), 250);
     return () => clearTimeout(timer);
   }, [query]);
-
-  useEffect(() => {
-    onImportingChange?.(importing);
-  }, [importing, onImportingChange]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -269,17 +263,7 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
     setModal(true);
   };
 
-  const openUpload = () => importRef.current?.click();
-
-  const downloadTemplate = async () => {
-    try {
-      await api.downloadCaseTemplate();
-    } catch (error) {
-      onNotice?.({ type: "error", text: error.message });
-    }
-  };
-
-  useImperativeHandle(ref, () => ({ openNew, openUpload, downloadTemplate, importing }));
+  useImperativeHandle(ref, () => ({ openNew }));
 
   const openEdit = async (row) => {
     try {
@@ -289,6 +273,7 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
       setForm({
         bookingOrderId: data.bookingOrderId || "",
         shipmentNumber: data.shipmentNumber || "",
+        email: data.email || "",
         category: data.category || "",
         description: data.description || "",
         status: data.status || "pending_review",
@@ -322,6 +307,7 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
     const payload = {
       bookingOrderId,
       shipmentNumber,
+      email: form.email.trim(),
       category: form.category,
       description: form.description.trim(),
       status: form.status,
@@ -377,26 +363,6 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
     }
   };
 
-  const importCsv = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) {
-      return;
-    }
-    setImporting(true);
-    try {
-      const result = await api.importCases(file);
-      const extra = result.skipped ? ` Skipped ${result.skipped}.` : "";
-      onNotice?.({ type: "success", text: `${result.message}.${extra}` });
-      await load();
-      await onRefreshLogs?.();
-    } catch (error) {
-      onNotice?.({ type: "error", text: error.message });
-    } finally {
-      setImporting(false);
-      event.target.value = "";
-    }
-  };
-
   const addPendingFiles = (event) => {
     const chosen = Array.from(event.target.files || []);
     if (chosen.length) {
@@ -437,7 +403,6 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
 
   return (
     <>
-      <input ref={importRef} hidden type="file" accept=".csv,.xlsx,text/csv" onChange={importCsv} />
       <div className="page-intro">
         <p>Collect a bad case with a booking order ID or a shipment number. Paste a screenshot or attach a file, then preview it in the case.</p>
       </div>
@@ -446,7 +411,7 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search booking order ID, shipment number, or description"
+          placeholder="Search booking order ID, shipment number, email, or description"
           aria-describedby="badcases-search-hint"
         />
         {query ? (
@@ -460,12 +425,13 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
       </p>
       <section className="card">
         <div className="table-wrap">
-          <table className="wide-table">
+          <table className="wide-table badcases-table">
             <thead>
               <tr>
                 <th>Date</th>
                 <th>Booking order ID</th>
                 <th>Shipment number</th>
+                <th>Email</th>
                 <th>Description</th>
                 <th>Files</th>
                 <th>Status</th>
@@ -475,14 +441,14 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
             <tbody>
               {loading && rows.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="empty">
+                  <td colSpan="8" className="empty">
                     Loading…
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="empty">
-                    No cases yet. Create one or import the CSV template.
+                  <td colSpan="8" className="empty">
+                    No cases yet. Create one with New case.
                   </td>
                 </tr>
               ) : (
@@ -491,6 +457,7 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
                     <td>{displayDate(row)}</td>
                     <td>{row.bookingOrderId || "—"}</td>
                     <td>{row.shipmentNumber || "—"}</td>
+                    <td className="case-email" title={row.email || undefined}>{row.email || "—"}</td>
                     <td>{row.description || "—"}</td>
                     <td>{row.fileCount || "—"}</td>
                     <td className="case-status" onClick={(event) => event.stopPropagation()}>
@@ -564,14 +531,18 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
                   placeholder="One of the two is required"
                 />
               </label>
-              <label className="wide">
-                Category
-                <FieldSelect
-                  value={form.category}
-                  options={categoryOptions(form.category)}
-                  onChange={(category) => setForm((current) => ({ ...current, category }))}
+              <label>
+                Email
+                <input
+                  value={form.email}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setForm((current) => ({ ...current, email: value }));
+                  }}
                   disabled={saving}
-                  placeholder="None"
+                  autoComplete="email"
+                  inputMode="email"
+                  placeholder="name@example.com"
                 />
               </label>
               <label>
@@ -587,6 +558,16 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
                     setForm((current) => ({ ...current, status }));
                   }}
                   disabled={saving || statusBusy === editing?.id}
+                />
+              </label>
+              <label className="wide">
+                Category
+                <FieldSelect
+                  value={form.category}
+                  options={categoryOptions(form.category)}
+                  onChange={(category) => setForm((current) => ({ ...current, category }))}
+                  disabled={saving}
+                  placeholder="None"
                 />
               </label>
               <label className="wide">

@@ -483,7 +483,7 @@ def test_case_import_and_locked_update():
     assert updated.status_code == 200
     data = updated.get_json()["data"]
     assert data["name"] == "COSCO"
-    assert data["email"] == "a@b.com"
+    assert data["email"] == "evil@x.com"
     assert data["hbl"] == "HBL1"
     assert data["bookingOrderId"] == "BK-IMPORT"
     assert data["status"] == "reviewed"

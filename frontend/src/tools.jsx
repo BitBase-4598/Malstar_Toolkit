@@ -1,5 +1,5 @@
 import { lazy } from "react";
-import { CalendarDays, ClipboardList, Download, FileText, FolderOpen, Inbox, LayoutDashboard, MessageCircle, Plus, RefreshCw, ScrollText, Upload } from "lucide-react";
+import { CalendarDays, ClipboardList, FileText, FolderOpen, Inbox, LayoutDashboard, MessageCircle, Plus, RefreshCw, ScrollText, Upload } from "lucide-react";
 import LeaveForecast from "./LeaveForecast";
 import Dashboard from "./Dashboard";
 
@@ -56,22 +56,12 @@ function DashboardActions({ dashRef, dashImporting, dashPage, lclRef, lclImporti
   );
 }
 
-function FeedbackActions({ feedbackRef, feedbackImporting }) {
+function FeedbackActions({ feedbackRef }) {
   return (
-    <>
-      <button className="ghost" type="button" onClick={() => feedbackRef.current?.downloadTemplate()}>
-        <Download size={16} />
-        Download template
-      </button>
-      <button className="ghost" type="button" onClick={() => feedbackRef.current?.openUpload()} disabled={feedbackImporting}>
-        <Upload size={16} />
-        {feedbackImporting ? "Importing..." : "Import CSV"}
-      </button>
-      <button className="primary" type="button" onClick={() => feedbackRef.current?.openNew()}>
-        <Plus size={16} />
-        New case
-      </button>
-    </>
+    <button className="primary" type="button" onClick={() => feedbackRef.current?.openNew()}>
+      <Plus size={16} />
+      New case
+    </button>
   );
 }
 

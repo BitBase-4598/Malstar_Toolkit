@@ -1855,6 +1855,30 @@ tbody tr.selected td {
   font-weight: 600;
 }
 
+.badcases-table {
+  min-width: 1080px;
+}
+
+.badcases-table th:nth-child(1),
+.badcases-table td:nth-child(1) {
+  width: 112px;
+}
+
+.badcases-table .case-email {
+  width: 220px;
+  white-space: nowrap;
+}
+
+.badcases-table th:nth-child(6),
+.badcases-table td:nth-child(6) {
+  width: 72px;
+}
+
+.badcases-table th:last-child,
+.badcases-table td:last-child {
+  width: 56px;
+}
+
 .case-status {
   width: 168px;
 }

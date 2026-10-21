@@ -46,7 +46,6 @@ export default function App() {
   const [dashPage, setDashPage] = useState("ops");
   const [dashPagesVisited, setDashPagesVisited] = useState({ ops: true });
   const [recordsImporting, setRecordsImporting] = useState(false);
-  const [feedbackImporting, setFeedbackImporting] = useState(false);
   const [searchTab, setSearchTab] = useState("remarks");
 
   const refreshLogs = useCallback(async () => {
@@ -145,7 +144,6 @@ export default function App() {
     recordsImporting,
     searchTab,
     feedbackRef,
-    feedbackImporting,
     dashRef,
     dashImporting,
     dashPage,
@@ -181,9 +179,6 @@ export default function App() {
       props.onImportingChange = setRecordsImporting;
       props.searchTab = searchTab;
       props.onSearchTabChange = setSearchTab;
-    }
-    if (tool.id === "feedback") {
-      props.onImportingChange = setFeedbackImporting;
     }
     if (tool.id === "ask") {
       props.onOpenCitation = openCitation;
