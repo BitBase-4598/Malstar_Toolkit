@@ -40,20 +40,6 @@ const emptyForm = {
 
 const IDENTIFIER_REQUIRED = "Booking order ID or shipment number is required.";
 
-function statusLabel(value) {
-  return STATUSES.find((item) => item.id === value)?.label || value || "—";
-}
-
-function statusTone(value) {
-  if (value === "closed") {
-    return "converted";
-  }
-  if (value === "reviewed") {
-    return "processing";
-  }
-  return "";
-}
-
 function displayDate(row) {
   const raw = row.date || row.startTime || row.createdAt || "";
   return raw.slice(0, 10) || "—";
@@ -80,6 +66,28 @@ function imagesFromClipboard(event) {
     }
   }
   return files;
+}
+
+function PendingImageThumb({ file, onOpen }) {
+  const [src, setSrc] = useState("");
+
+  useEffect(() => {
+    if (!String(file.type || "").startsWith("image/")) {
+      return undefined;
+    }
+    const url = URL.createObjectURL(file);
+    setSrc(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  if (!src) {
+    return null;
+  }
+  return (
+    <button type="button" className="case-thumb" onClick={onOpen} title={file.name}>
+      <img src={src} alt={file.name} />
+    </button>
+  );
 }
 
 function categoryOptions(current) {
@@ -112,6 +120,7 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
   const [preview, setPreview] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [formError, setFormError] = useState("");
+  const [statusBusy, setStatusBusy] = useState(null);
 
   const releasePreviewUrl = useCallback(() => {
     if (previewUrlRef.current) {
@@ -227,6 +236,28 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
   }, [editing, modal, saving, showLocalPreview, uploadFiles, uploading]);
+
+  const changeStatus = async (row, status) => {
+    if (!row?.id || !status || status === row.status) {
+      return;
+    }
+    setStatusBusy(row.id);
+    try {
+      const result = await api.setCaseStatus(row.id, status);
+      const next = result.data?.status || status;
+      setRows((current) => current.map((item) => (item.id === row.id ? { ...item, status: next } : item)));
+      if (editing?.id === row.id) {
+        setEditing((current) => (current ? { ...current, status: next } : current));
+        setForm((current) => ({ ...current, status: next }));
+      }
+      onNotice?.({ type: "success", text: result.message || "Status updated" });
+      await onRefreshLogs?.();
+    } catch (error) {
+      onNotice?.({ type: "error", text: error.message });
+    } finally {
+      setStatusBusy(null);
+    }
+  };
 
   const openNew = () => {
     setEditing(null);
@@ -462,10 +493,15 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
                     <td>{row.shipmentNumber || "—"}</td>
                     <td>{row.description || "—"}</td>
                     <td>{row.fileCount || "—"}</td>
-                    <td>
-                      <span className={`status-pill dash-status${statusTone(row.status) ? ` ${statusTone(row.status)}` : ""}`}>
-                        {statusLabel(row.status)}
-                      </span>
+                    <td className="case-status" onClick={(event) => event.stopPropagation()}>
+                      <FieldSelect
+                        compact
+                        ariaLabel={`Status for case ${row.id}`}
+                        value={row.status}
+                        options={STATUSES.map((item) => ({ value: item.id, label: item.label }))}
+                        onChange={(status) => changeStatus(row, status)}
+                        disabled={statusBusy === row.id || saving}
+                      />
                     </td>
                     <td className="actions" onClick={(event) => event.stopPropagation()}>
                       <button type="button" className="danger" onClick={() => remove(row)} aria-label="Delete case">
@@ -538,17 +574,21 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
                   placeholder="None"
                 />
               </label>
-              {editing ? (
-                <label>
-                  Status
-                  <FieldSelect
-                    value={form.status}
-                    options={STATUSES.map((item) => ({ value: item.id, label: item.label }))}
-                    onChange={(status) => setForm((current) => ({ ...current, status }))}
-                    disabled={saving}
-                  />
-                </label>
-              ) : null}
+              <label>
+                Status
+                <FieldSelect
+                  value={form.status}
+                  options={STATUSES.map((item) => ({ value: item.id, label: item.label }))}
+                  onChange={(status) => {
+                    if (editing?.id) {
+                      changeStatus(editing, status);
+                      return;
+                    }
+                    setForm((current) => ({ ...current, status }));
+                  }}
+                  disabled={saving || statusBusy === editing?.id}
+                />
+              </label>
               <label className="wide">
                 Description
                 <textarea
@@ -593,6 +633,24 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
                   />
                 </div>
                 <div className="attach-list">
+                  {pendingFiles.some((file) => String(file.type || "").startsWith("image/")) || files.some((file) => file.kind === "image") ? (
+                    <div className="case-thumbs">
+                      {pendingFiles.map((file, index) => (
+                        <PendingImageThumb key={`${file.name}-${index}`} file={file} onOpen={() => showLocalPreview(file)} />
+                      ))}
+                      {files.filter((file) => file.kind === "image").map((file) => (
+                        <button
+                          key={file.id}
+                          type="button"
+                          className="case-thumb"
+                          title={file.originalName}
+                          onClick={() => openSavedPreview(editing.id, file)}
+                        >
+                          <img src={api.caseFileContentUrl(editing.id, file.id)} alt={file.originalName} />
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
                   {!editing && pendingFiles.length === 0 && files.length === 0 ? (
                     <p className="preview-empty">Paste a screenshot, or attach docx, xlsx, or pictures.</p>
                   ) : null}

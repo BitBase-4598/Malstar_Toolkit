@@ -1855,6 +1855,39 @@ tbody tr.selected td {
   font-weight: 600;
 }
 
+.case-status {
+  width: 168px;
+}
+
+.case-status .field-select-trigger {
+  min-height: 34px;
+  padding: 6px 10px;
+}
+
+.case-thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.case-thumb {
+  width: 96px;
+  height: 96px;
+  padding: 0;
+  border: 1px solid var(--maersk-border);
+  border-radius: var(--radius);
+  background: var(--maersk-white);
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.case-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .upload-label {
   display: inline-flex;
   align-items: center;
