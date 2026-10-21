@@ -2,9 +2,10 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { Download, Search, Trash2, Upload, X } from "lucide-react";
 import { api } from "./api";
 import FieldSelect from "./FieldSelect";
-import { FEEDBACK_CATEGORIES } from "./api/cases";
+import { FEEDBACK_CATEGORIES, CASE_PAGE_SIZE } from "./api/cases";
 import FilePreview from "./FilePreview";
 import ModalShell from "./ModalShell";
+import PageJump from "./PageJump";
 import useConfirm from "./useConfirm";
 
 const STATUSES = [
@@ -106,6 +107,10 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [rows, setRows] = useState([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const pageRef = useRef(1);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -140,11 +145,17 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
     return () => clearTimeout(timer);
   }, [query]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (pageToLoad) => {
+    const target = pageToLoad ?? pageRef.current;
     setLoading(true);
     try {
-      const result = await api.listCases(debounced);
+      const result = await api.listCases(debounced, target, CASE_PAGE_SIZE);
+      const meta = result.pagination || { page: target, total: 0, totalPages: 1, pageSize: CASE_PAGE_SIZE };
       setRows(result.data || []);
+      pageRef.current = meta.page || target;
+      setPage(meta.page || target);
+      setTotal(meta.total || 0);
+      setTotalPages(meta.totalPages || 1);
     } catch (error) {
       onNotice?.({ type: "error", text: error.message });
     } finally {
@@ -153,7 +164,7 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
   }, [debounced, onNotice]);
 
   useEffect(() => {
-    load();
+    load(1);
   }, [load]);
 
   const showLocalPreview = useCallback((file) => {
@@ -330,7 +341,7 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
         clearPreview();
         setModal(false);
       }
-      await load();
+      await load(editing ? pageRef.current : 1);
       await onRefreshLogs?.();
     } catch (error) {
       setFormError(error.message);
@@ -356,7 +367,8 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
         clearPreview();
         setModal(false);
       }
-      await load();
+      const nextPage = rows.length === 1 && page > 1 ? page - 1 : page;
+      await load(nextPage);
       await onRefreshLogs?.();
     } catch (error) {
       onNotice?.({ type: "error", text: error.message });
@@ -421,7 +433,7 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
         ) : null}
       </div>
       <p id="badcases-search-hint" className="search-hint">
-        {rows.length} {rows.length === 1 ? "case" : "cases"}
+        {total} {total === 1 ? "case" : "cases"}
       </p>
       <section className="card">
         <div className="table-wrap">
@@ -455,10 +467,10 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
                 rows.map((row) => (
                   <tr key={row.id} className="clickable" onClick={() => openEdit(row)}>
                     <td>{displayDate(row)}</td>
-                    <td>{row.bookingOrderId || "—"}</td>
-                    <td>{row.shipmentNumber || "—"}</td>
+                    <td title={row.bookingOrderId || undefined}>{row.bookingOrderId || "—"}</td>
+                    <td title={row.shipmentNumber || undefined}>{row.shipmentNumber || "—"}</td>
                     <td className="case-email" title={row.email || undefined}>{row.email || "—"}</td>
-                    <td>{row.description || "—"}</td>
+                    <td className="case-note" title={row.description || undefined}>{row.description || "—"}</td>
                     <td>{row.fileCount || "—"}</td>
                     <td className="case-status" onClick={(event) => event.stopPropagation()}>
                       <FieldSelect
@@ -480,6 +492,25 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
               )}
             </tbody>
           </table>
+        </div>
+        <div className="pagination">
+          <span>
+            {total === 0 ? "No cases" : `Showing ${(page - 1) * CASE_PAGE_SIZE + 1}–${Math.min(page * CASE_PAGE_SIZE, total)} of ${total}`}
+          </span>
+          <div className="pagination-nav">
+            <button type="button" disabled={page <= 1 || loading} onClick={() => load(page - 1)}>
+              Previous
+            </button>
+            <PageJump
+              page={page}
+              totalPages={totalPages}
+              onChange={(next) => load(Number(next))}
+              ariaLabel="Select BadCases page"
+            />
+            <button type="button" disabled={page >= totalPages || loading} onClick={() => load(page + 1)}>
+              Next
+            </button>
+          </div>
         </div>
       </section>
       {modal ? (

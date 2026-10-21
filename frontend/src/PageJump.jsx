@@ -9,8 +9,8 @@ export default function PageJump({ page, totalPages, onChange, ariaLabel = "Page
     setDraft(String(safePage));
   }, [safePage]);
 
-  const commit = () => {
-    const parsed = Number.parseInt(String(draft).trim(), 10);
+  const commit = (raw = draft) => {
+    const parsed = Number.parseInt(String(raw).trim(), 10);
     const next = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), safeTotal) : safePage;
     setDraft(String(next));
     if (next !== safePage) {
@@ -30,11 +30,11 @@ export default function PageJump({ page, totalPages, onChange, ariaLabel = "Page
         disabled={safeTotal <= 1}
         aria-label={ariaLabel}
         onChange={(event) => setDraft(event.target.value)}
-        onBlur={commit}
+        onBlur={(event) => commit(event.currentTarget.value)}
         onKeyDown={(event) => {
           if (event.key === "Enter") {
             event.preventDefault();
-            commit();
+            commit(event.currentTarget.value);
           }
         }}
       />

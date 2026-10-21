@@ -230,8 +230,10 @@ def case_to_dict(row, file_count=0, files=None):
     return data
 
 
-def list_cases(conn, query=""):
+def list_cases(conn, query="", page=1, page_size=10):
     q = str(query or "").strip()
+    page = max(int(page or 1), 1)
+    page_size = min(max(int(page_size or 10), 1), 100)
     join = """
         SELECT
             Cases.*,
@@ -241,11 +243,11 @@ def list_cases(conn, query=""):
             SELECT CaseID, COUNT(*) AS cnt FROM CaseFiles GROUP BY CaseID
         ) files ON files.CaseID = Cases.ID
     """
+    where = ""
+    params = []
     if q:
         like = f"%{q}%"
-        rows = conn.execute(
-            f"""
-            {join}
+        where = """
             WHERE CAST(Cases.ID AS TEXT) LIKE ?
                OR Cases.Name LIKE ?
                OR Cases.HBL LIKE ?
@@ -254,15 +256,26 @@ def list_cases(conn, query=""):
                OR Cases.Description LIKE ?
                OR Cases.BookingOrderId LIKE ?
                OR Cases.ShipmentNumber LIKE ?
-            ORDER BY Cases.UpdatedAt DESC, Cases.ID DESC
-            """,
-            (like, like, like, like, like, like, like, like),
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            f"{join} ORDER BY Cases.UpdatedAt DESC, Cases.ID DESC"
-        ).fetchall()
-    return [case_to_dict(row, file_count=row["FileCount"]) for row in rows]
+        """
+        params = [like, like, like, like, like, like, like, like]
+    total = conn.execute(f"SELECT COUNT(*) FROM Cases {where}", params).fetchone()[0]
+    offset = (page - 1) * page_size
+    rows = conn.execute(
+        f"""
+        {join}
+        {where}
+        ORDER BY Cases.UpdatedAt DESC, Cases.ID DESC
+        LIMIT ? OFFSET ?
+        """,
+        params + [page_size, offset],
+    ).fetchall()
+    pagination = {
+        "page": page,
+        "pageSize": page_size,
+        "total": total,
+        "totalPages": max((total + page_size - 1) // page_size, 1),
+    }
+    return [case_to_dict(row, file_count=row["FileCount"]) for row in rows], pagination
 
 
 def load_case(conn, case_id):

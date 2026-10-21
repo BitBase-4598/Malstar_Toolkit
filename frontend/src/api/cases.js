@@ -11,8 +11,11 @@ export const FEEDBACK_CATEGORIES = [
 
 const BASE = `${API_ROOT}/cases`;
 
+export const CASE_PAGE_SIZE = 10;
+
 export const casesApi = {
-  listCases: (q = "") => request(`${BASE}?q=${encodeURIComponent(q)}`),
+  listCases: (q = "", page = 1, pageSize = CASE_PAGE_SIZE) =>
+    request(`${BASE}?q=${encodeURIComponent(q)}&page=${page}&pageSize=${pageSize}`),
   getCase: (id) => request(`${BASE}/${id}`),
   createCase: (data) =>
     request(BASE, {

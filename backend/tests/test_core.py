@@ -376,6 +376,37 @@ def test_cases_crud_and_status():
     assert missing_get.status_code == 404
 
 
+def test_case_list_pagination():
+    migrate()
+    from app import app
+
+    client = app.test_client()
+    for index in range(1, 26):
+        created = client.post("/api/cases", json={
+            "bookingOrderId": f"PAGECASE-{index:02d}",
+            "email": f"page{index}@example.com",
+            "description": f"Paging sample {index}",
+        })
+        assert created.status_code == 201
+    first = client.get("/api/cases?q=PAGECASE-&page=1&pageSize=10")
+    assert first.status_code == 200
+    body = first.get_json()
+    assert body["pagination"]["total"] == 25
+    assert body["pagination"]["page"] == 1
+    assert body["pagination"]["pageSize"] == 10
+    assert body["pagination"]["totalPages"] == 3
+    assert len(body["data"]) == 10
+    second = client.get("/api/cases?q=PAGECASE-&page=2&pageSize=10").get_json()
+    assert len(second["data"]) == 10
+    assert {item["id"] for item in body["data"]}.isdisjoint({item["id"] for item in second["data"]})
+    last = client.get("/api/cases?q=PAGECASE-&page=3&pageSize=10").get_json()
+    assert len(last["data"]) == 5
+    assert last["pagination"]["total"] == 25
+    found = client.get("/api/cases?q=page12@example.com&pageSize=10").get_json()
+    assert found["pagination"]["total"] == 1
+    assert found["data"][0]["email"] == "page12@example.com"
+
+
 def test_case_file_upload_png_xlsx():
     from io import BytesIO
 

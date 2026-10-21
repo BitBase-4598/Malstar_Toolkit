@@ -32,9 +32,11 @@ bp = Blueprint("cases", __name__)
 @bp.get("/api/cases")
 def list_cases_route():
     q = str(request.args.get("q") or "").strip()
+    page = request.args.get("page", 1, type=int)
+    page_size = request.args.get("pageSize", 10, type=int)
     with get_connection() as conn:
-        data = list_cases(conn, q)
-    return jsonify({"success": True, "data": data})
+        data, pagination = list_cases(conn, q, page, page_size)
+    return jsonify({"success": True, "data": data, "pagination": pagination})
 
 
 @bp.post("/api/cases")

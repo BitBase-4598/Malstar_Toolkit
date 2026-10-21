@@ -1856,27 +1856,40 @@ tbody tr.selected td {
 }
 
 .badcases-table {
-  min-width: 1080px;
+  table-layout: auto;
+  width: max-content;
+  min-width: 100%;
+  font-size: 12px;
 }
 
-.badcases-table th:nth-child(1),
-.badcases-table td:nth-child(1) {
-  width: 112px;
-}
-
-.badcases-table .case-email {
-  width: 220px;
+.badcases-table th,
+.badcases-table td {
   white-space: nowrap;
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 1.3;
 }
 
-.badcases-table th:nth-child(6),
-.badcases-table td:nth-child(6) {
-  width: 72px;
+.badcases-table .case-note {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.badcases-table th:last-child,
-.badcases-table td:last-child {
-  width: 56px;
+.badcases-table .case-status,
+.badcases-table .actions {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.badcases-table .field-select-trigger {
+  min-height: 28px;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.badcases-table .field-select-trigger span {
+  white-space: nowrap;
 }
 
 .case-status {
