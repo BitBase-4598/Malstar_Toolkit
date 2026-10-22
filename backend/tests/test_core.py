@@ -408,6 +408,7 @@ def test_case_list_pagination():
 
 
 def test_case_file_upload_png_xlsx():
+    import base64
     from io import BytesIO
 
     from openpyxl import Workbook
@@ -455,8 +456,14 @@ def test_case_file_upload_png_xlsx():
     )
     assert excel.status_code == 201
     assert excel.get_json()["data"]["kind"] == "xlsx"
+    pasted = client.post(
+        f"/api/cases/{case_id}/files",
+        json={"filename": "pasted.png", "content": base64.b64encode(png).decode("ascii")},
+    )
+    assert pasted.status_code == 201
+    assert pasted.get_json()["data"]["kind"] == "image"
     detail = client.get(f"/api/cases/{case_id}").get_json()["data"]
-    assert detail["fileCount"] == 2
+    assert detail["fileCount"] == 3
     with get_connection() as conn:
         library = conn.execute("SELECT COUNT(*) FROM ToolkitFiles").fetchone()[0]
     assert library == 0

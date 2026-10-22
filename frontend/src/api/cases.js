@@ -1,4 +1,4 @@
-import { API_ROOT, request } from "./client";
+import { API_ROOT, JSON_UPLOAD_LIMIT, fileToBase64, request } from "./client";
 
 export const FEEDBACK_CATEGORIES = [
   "Human Error",
@@ -56,10 +56,22 @@ export const casesApi = {
     link.remove();
     URL.revokeObjectURL(url);
   },
-  uploadCaseFile: (id, file) => {
+  uploadCaseFile: async (id, file) => {
     const form = new FormData();
     form.append("file", file);
-    return request(`${BASE}/${id}/files`, { method: "POST", body: form });
+    try {
+      return await request(`${BASE}/${id}/files`, { method: "POST", body: form });
+    } catch (error) {
+      if (file.size > JSON_UPLOAD_LIMIT) {
+        throw error;
+      }
+      const content = await fileToBase64(file);
+      return request(`${BASE}/${id}/files`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, content }),
+      });
+    }
   },
   deleteCaseFile: (caseId, fileId) => request(`${BASE}/${caseId}/files/${fileId}`, { method: "DELETE" }),
   previewCaseFile: (caseId, fileId) => request(`${BASE}/${caseId}/files/${fileId}/preview`),
