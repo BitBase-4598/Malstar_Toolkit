@@ -2,7 +2,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { Download, Pencil, Search, Trash2, Upload, X } from "lucide-react";
 import { api } from "./api";
 import FieldSelect from "./FieldSelect";
-import { FEEDBACK_CATEGORIES, CASE_PAGE_SIZE } from "./api/cases";
+import { CASE_PAGE_SIZE } from "./api/cases";
 import FilePreview from "./FilePreview";
 import ModalShell from "./ModalShell";
 import PageJump from "./PageJump";
@@ -30,11 +30,17 @@ const DETAIL_FIELDS = [
   ["action", "Action"],
 ];
 
+const CASE_MAILBOXES = [
+  "CUSLCL.SZH@LnS.maersk.com",
+  "CUSLCLLEUR.SZH@LnS.maersk.com",
+  "HKGLCL@LnS.maersk.com",
+  "TWNLCL-CUS@LnS.maersk.com",
+];
+
 const emptyForm = {
   bookingOrderId: "",
   shipmentNumber: "",
   email: "",
-  category: "",
   description: "",
   status: "pending_review",
 };
@@ -43,6 +49,27 @@ const IDENTIFIER_REQUIRED = "Booking order ID or shipment number is required.";
 
 function statusLabel(value) {
   return STATUSES.find((item) => item.id === value)?.label || value || "—";
+}
+
+function splitEmails(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function joinEmails(values) {
+  return (values || []).map((item) => String(item || "").trim()).filter(Boolean).join(", ");
+}
+
+function emailLabel(value) {
+  const items = splitEmails(value);
+  return items.length ? items.join(", ") : "All";
+}
+
+function mailboxOptions(value) {
+  const extras = splitEmails(value).filter((item) => !CASE_MAILBOXES.includes(item));
+  return [...CASE_MAILBOXES, ...extras].map((item) => ({ value: item, label: item }));
 }
 
 function displayDate(row) {
@@ -93,13 +120,6 @@ function PendingImageThumb({ file, onOpen }) {
       <img src={src} alt={file.name} />
     </button>
   );
-}
-
-function categoryOptions(current) {
-  const values = FEEDBACK_CATEGORIES.includes(current) || !current
-    ? FEEDBACK_CATEGORIES
-    : [current, ...FEEDBACK_CATEGORIES];
-  return [{ value: "", label: "None" }, ...values.map((item) => ({ value: item, label: item }))];
 }
 
 const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
@@ -288,7 +308,6 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
       bookingOrderId: data.bookingOrderId || "",
       shipmentNumber: data.shipmentNumber || "",
       email: data.email || "",
-      category: data.category || "",
       description: data.description || "",
       status: data.status || "pending_review",
     });
@@ -329,8 +348,7 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
     const payload = {
       bookingOrderId,
       shipmentNumber,
-      email: form.email.trim(),
-      category: form.category,
+      email: joinEmails(splitEmails(form.email)),
       description: form.description.trim(),
       status: form.status,
     };
@@ -480,7 +498,7 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
                     <td>{displayDate(row)}</td>
                     <td title={row.bookingOrderId || undefined}>{row.bookingOrderId || "—"}</td>
                     <td title={row.shipmentNumber || undefined}>{row.shipmentNumber || "—"}</td>
-                    <td className="case-email" title={row.email || undefined}>{row.email || "—"}</td>
+                    <td className="case-email" title={emailLabel(row.email)}>{emailLabel(row.email)}</td>
                     <td className="case-note" title={row.description || undefined}>{row.description || "—"}</td>
                     <td>{row.fileCount || "—"}</td>
                     <td className="case-status" onClick={(event) => event.stopPropagation()}>
@@ -564,17 +582,13 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
                     <span>Shipment number</span>
                     <strong>{editing?.shipmentNumber || "—"}</strong>
                   </div>
-                  <div className="case-view-field">
+                  <div className="case-view-field wide">
                     <span>Email</span>
-                    <strong>{editing?.email || "—"}</strong>
+                    <strong>{emailLabel(editing?.email)}</strong>
                   </div>
                   <div className="case-view-field">
                     <span>Status</span>
                     <strong>{statusLabel(editing?.status)}</strong>
-                  </div>
-                  <div className="case-view-field wide">
-                    <span>Category</span>
-                    <strong>{editing?.category || "—"}</strong>
                   </div>
                   <div className="case-view-field wide">
                     <span>Description</span>
@@ -615,18 +629,17 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
                   placeholder="One of the two is required"
                 />
               </label>
-              <label>
+              <label className="wide">
                 Email
-                <input
-                  value={form.email}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setForm((current) => ({ ...current, email: value }));
-                  }}
+                <FieldSelect
+                  multiple
+                  fitMenu
+                  value={splitEmails(form.email)}
+                  options={[{ value: "", label: "All" }, ...mailboxOptions(form.email)]}
+                  onChange={(selected) => setForm((current) => ({ ...current, email: joinEmails(selected) }))}
                   disabled={saving}
-                  autoComplete="email"
-                  inputMode="email"
-                  placeholder="name@example.com"
+                  placeholder="All"
+                  ariaLabel="Email"
                 />
               </label>
               <label>
@@ -642,16 +655,6 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
                     setForm((current) => ({ ...current, status }));
                   }}
                   disabled={saving || statusBusy === editing?.id}
-                />
-              </label>
-              <label className="wide">
-                Category
-                <FieldSelect
-                  value={form.category}
-                  options={categoryOptions(form.category)}
-                  onChange={(category) => setForm((current) => ({ ...current, category }))}
-                  disabled={saving}
-                  placeholder="None"
                 />
               </label>
               <label className="wide">
@@ -758,7 +761,12 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
                 ))}
                 {preview || previewLoading ? (
                   <div className="case-file-preview">
-                    <p className="case-preview-caption">{preview?.file?.originalName || "Preview"}</p>
+                    <div className="case-preview-head">
+                      <p className="case-preview-caption">{preview?.file?.originalName || "Preview"}</p>
+                      <button type="button" className="ghost" onClick={clearPreview}>
+                        缩小
+                      </button>
+                    </div>
                     <FilePreview
                       key={preview?.file?.id || preview?.url || "case-preview"}
                       preview={preview}

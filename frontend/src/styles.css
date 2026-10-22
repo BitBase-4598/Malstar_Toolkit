@@ -1083,6 +1083,11 @@ td.copied {
   flex: 1;
 }
 
+.modal.case-modal > .grid {
+  flex: 1 1 auto;
+  min-height: 220px;
+}
+
 .grid label {
   font-size: var(--type-ui);
   font-weight: 600;
@@ -1840,19 +1845,31 @@ tbody tr.selected td {
 
 .case-file-preview {
   margin-top: 8px;
-  max-height: 320px;
+  max-height: 220px;
   overflow: auto;
   border: 1px solid var(--maersk-border);
   border-radius: var(--radius);
-  background: var(--maersk-page);
+  background: var(--maersk-white);
   padding: 12px;
 }
 
+.case-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
 .case-preview-caption {
-  margin: 0 0 8px;
+  margin: 0;
   color: var(--maersk-navy);
   font-size: var(--type-label);
   font-weight: 600;
+}
+
+.case-files {
+  max-height: 42%;
 }
 
 .badcases-table {
