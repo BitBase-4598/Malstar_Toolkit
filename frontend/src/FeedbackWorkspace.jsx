@@ -3,6 +3,7 @@ import { Download, Pencil, Search, Trash2, Upload, X } from "lucide-react";
 import { api } from "./api";
 import FieldSelect from "./FieldSelect";
 import { CASE_PAGE_SIZE } from "./api/cases";
+import { copyText } from "./copyText";
 import FilePreview from "./FilePreview";
 import ModalShell from "./ModalShell";
 import PageJump from "./PageJump";
@@ -148,6 +149,7 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
   const [preview, setPreview] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [formError, setFormError] = useState("");
+  const [copiedField, setCopiedField] = useState("");
   const [statusBusy, setStatusBusy] = useState(null);
 
   const releasePreviewUrl = useCallback(() => {
@@ -314,6 +316,7 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
     setPendingFiles([]);
     setFiles(data.files || []);
     setFormError("");
+    setCopiedField("");
     clearPreview();
   };
 
@@ -328,9 +331,24 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
     }
   };
 
+  const copyPreviewValue = async (field, value) => {
+    const text = String(value || "").trim();
+    if (!text) {
+      return;
+    }
+    try {
+      await copyText(text);
+      setCopiedField(field);
+      onNotice?.({ type: "success", text: "Copied" });
+    } catch {
+      onNotice?.({ type: "error", text: "Could not copy to the clipboard." });
+    }
+  };
+
   const closeModal = () => {
     if (!saving && !uploading) {
       clearPreview();
+      setCopiedField("");
       setMode("view");
       setModal(false);
     }
@@ -576,15 +594,36 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
                 <>
                   <div className="case-view-field">
                     <span>Booking order ID</span>
-                    <strong>{editing?.bookingOrderId || "—"}</strong>
+                    <div className="case-copy-line">
+                      <strong>{editing?.bookingOrderId || "—"}</strong>
+                      {editing?.bookingOrderId ? (
+                        <button type="button" className="ghost case-copy" onClick={() => copyPreviewValue("booking", editing.bookingOrderId)}>
+                          {copiedField === "booking" ? "Copied" : "Copy"}
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="case-view-field">
                     <span>Shipment number</span>
-                    <strong>{editing?.shipmentNumber || "—"}</strong>
+                    <div className="case-copy-line">
+                      <strong>{editing?.shipmentNumber || "—"}</strong>
+                      {editing?.shipmentNumber ? (
+                        <button type="button" className="ghost case-copy" onClick={() => copyPreviewValue("shipment", editing.shipmentNumber)}>
+                          {copiedField === "shipment" ? "Copied" : "Copy"}
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="case-view-field wide">
                     <span>Email</span>
-                    <strong>{emailLabel(editing?.email)}</strong>
+                    <div className="case-copy-line">
+                      <strong>{emailLabel(editing?.email)}</strong>
+                      {splitEmails(editing?.email).length ? (
+                        <button type="button" className="ghost case-copy" onClick={() => copyPreviewValue("email", joinEmails(splitEmails(editing.email)))}>
+                          {copiedField === "email" ? "Copied" : "Copy"}
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="case-view-field">
                     <span>Status</span>
