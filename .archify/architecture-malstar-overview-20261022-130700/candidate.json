@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "MALSTAR Toolkit 高层架构",
+    "locale": "zh-CN",
+    "output": ".archify/architecture-malstar-overview-20261022-130700/malstar-overview.html",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    {
+      "id": "operator",
+      "type": "external",
+      "label": "操作员",
+      "sublabel": "浏览器",
+      "icon": "person",
+      "pos": [40, 220],
+      "size": [130, 64]
+    },
+    {
+      "id": "zscaler",
+      "type": "security",
+      "label": "Zscaler",
+      "sublabel": "公司网络过滤",
+      "pos": [250, 216],
+      "size": [170, 72]
+    },
+    {
+      "id": "react",
+      "type": "frontend",
+      "label": "React 工作区",
+      "sublabel": "侧栏八个工具",
+      "pos": [510, 212],
+      "size": [190, 80]
+    },
+    {
+      "id": "flask",
+      "type": "backend",
+      "label": "Flask API",
+      "sublabel": "蓝图 /api",
+      "pos": [790, 212],
+      "size": [180, 80]
+    },
+    {
+      "id": "sqlite",
+      "type": "database",
+      "label": "SQLite",
+      "sublabel": "malstar.db",
+      "pos": [1060, 220],
+      "size": [150, 64]
+    },
+    {
+      "id": "fts",
+      "type": "database",
+      "label": "FTS5 索引",
+      "sublabel": "同一库文件",
+      "pos": [1060, 400],
+      "size": [150, 64]
+    },
+    {
+      "id": "uploads",
+      "type": "database",
+      "label": "上传目录",
+      "sublabel": "截图与文档",
+      "pos": [795, 420],
+      "size": [170, 64]
+    },
+    {
+      "id": "azure",
+      "type": "external",
+      "label": "Azure OpenAI",
+      "sublabel": "仅 Ask 且已配置",
+      "pos": [790, 36],
+      "size": [180, 72]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "单进程数据",
+      "wraps": ["flask", "sqlite", "uploads", "fts"]
+    }
+  ],
+  "connections": [
+    { "id": "browse", "from": "operator", "to": "zscaler", "label": "访问", "variant": "emphasis" },
+    { "id": "filter", "from": "zscaler", "to": "react", "label": "放行或 403", "variant": "security" },
+    { "id": "api", "from": "react", "to": "flask", "label": "HTTP /api", "variant": "emphasis" },
+    { "id": "sql", "from": "flask", "to": "sqlite", "label": "读写" },
+    { "id": "fts-read", "from": "sqlite", "to": "fts", "label": "全文索引", "fromSide": "bottom", "toSide": "top" },
+    { "id": "files", "from": "flask", "to": "uploads", "label": "写入附件", "fromSide": "bottom", "toSide": "top" },
+    { "id": "llm", "from": "flask", "to": "azure", "label": "可选生成", "variant": "dashed", "fromSide": "top", "toSide": "bottom" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "侧栏",
+      "items": [
+        "Leave、Dashboard、SearchBar、BadCases",
+        "Files、SOPs、Ask、Activity log"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "数据在哪",
+      "items": [
+        "库和 uploads 都在收到请求的那台机器上",
+        "程序里没有两台电脑之间的同步"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "未确认",
+      "items": [
+        "被 403 拦住的那次访问，具体网址没有在这次说明里给出",
+        "本地开发才经过 Vite；线上由同一进程提供页面和 /api"
+      ]
+    }
+  ]
+}
