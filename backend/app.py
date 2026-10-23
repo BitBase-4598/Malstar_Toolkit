@@ -4,6 +4,7 @@ import threading
 from flask import Flask, abort, g, jsonify, request, send_from_directory
 from flask_cors import CORS
 
+from auth_gate import check_basic_auth
 from config import CORS_ORIGINS, LCL_MAX_UPLOAD_MB, MAX_UPLOAD_MB, STATIC_DIR
 from db import migrate
 
@@ -66,6 +67,9 @@ def create_app():
     @app.before_request
     def bind_request_id():
         assign_request_id()
+        denied = check_basic_auth(request)
+        if denied is not None:
+            return denied
         if request.path != "/api/health":
             ensure_migrated()
 

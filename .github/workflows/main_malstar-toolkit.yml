@@ -42,6 +42,12 @@ jobs:
           . antenv/bin/activate
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
+          pip install pytest
+
+      - name: Run tests
+        run: |
+          . antenv/bin/activate
+          python -m pytest backend/tests -q
 
       - name: Put requirements.txt at repo root for Oryx
         run: cp backend/requirements.txt requirements.txt

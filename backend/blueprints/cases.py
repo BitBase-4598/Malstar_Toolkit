@@ -1,16 +1,12 @@
-from io import BytesIO
-
 from flask import Blueprint, jsonify, request, send_file
 
 from db import get_connection
-from logging_util import audit
+from logging_util import APP_LOGGER, audit
 from services.cases import (
-    TEMPLATE_CSV,
     case_file_disk_names,
     case_heading,
     create_case,
     decode_json_upload,
-    import_cases_file,
     list_cases,
     load_case,
     load_case_file,
@@ -49,46 +45,6 @@ def create_case_route():
         data = create_case(conn, payload)
     audit("case.create", resource_id=data["id"], summary=case_heading(data))
     return jsonify({"success": True, "message": "Case created", "data": data}), 201
-
-
-@bp.post("/api/cases/import")
-def import_cases_route():
-    if "file" not in request.files:
-        audit("case.import", "failure", summary="no file uploaded")
-        return jsonify({"success": False, "message": "No file was uploaded."}), 400
-    file = request.files["file"]
-    filename = file.filename or ""
-    result, error = import_cases_file(filename, file.read())
-    if error:
-        audit("case.import", "failure", summary=error)
-        return jsonify({"success": False, "message": error}), 400
-    audit(
-        "case.import",
-        summary=f"file={filename} imported={result['imported']} skipped={result['skipped']}",
-    )
-    imported = result["imported"]
-    skipped = result["skipped"]
-    message = f"Imported {imported} case" + ("s" if imported != 1 else "")
-    if skipped:
-        message += f", skipped {skipped}"
-    return jsonify({
-        "success": True,
-        "message": message,
-        "imported": imported,
-        "skipped": skipped,
-        "errors": result["errors"],
-    })
-
-
-@bp.get("/api/cases/template")
-def cases_template():
-    buffer = BytesIO(TEMPLATE_CSV.encode("utf-8-sig"))
-    return send_file(
-        buffer,
-        as_attachment=True,
-        download_name="feedback-template.csv",
-        mimetype="text/csv",
-    )
 
 
 @bp.get("/api/cases/<int:case_id>")
@@ -207,8 +163,9 @@ def preview_case_file_route(case_id, file_id):
     row, path = loaded
     try:
         preview, preview_error = preview_case_file(row, path, case_id)
-    except Exception as exc:
-        return jsonify({"success": False, "message": f"Could not preview this file. {exc}"}), 400
+    except Exception:
+        APP_LOGGER.exception("case file preview failed case_id=%s file_id=%s", case_id, file_id)
+        return jsonify({"success": False, "message": "Could not preview this file."}), 400
     if preview_error:
         return jsonify({"success": False, "message": preview_error}), 400
     return jsonify({"success": True, "data": preview})

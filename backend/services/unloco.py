@@ -204,8 +204,8 @@ def ensure_unloco_loaded():
         count = conn.execute("SELECT COUNT(*) FROM Unlocodes").fetchone()[0]
     if count:
         return None, None
-    path = Path(UNLOCODE_CSV_PATH)
-    if not path.is_file():
+    path = Path(UNLOCODE_CSV_PATH) if UNLOCODE_CSV_PATH else None
+    if path is None or not path.is_file():
         return None, None
     return import_unloco_csv(path.name, path.read_bytes())
 

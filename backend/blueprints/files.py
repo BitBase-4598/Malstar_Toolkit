@@ -5,7 +5,7 @@ from flask import Blueprint, jsonify, request, send_file
 
 from config import MAX_JSON_UPLOAD_MB
 from db import get_connection
-from logging_util import audit
+from logging_util import APP_LOGGER, audit
 from services.files_store import (
     file_kind_from_name,
     file_to_dict,
@@ -114,8 +114,9 @@ def preview_file(file_id):
                 "success": False,
                 "message": "Preview is not available for this file type.",
             }), 400
-    except Exception as error:
-        return jsonify({"success": False, "message": f"Could not preview this file. {error}"}), 400
+    except Exception:
+        APP_LOGGER.exception("file preview failed file_id=%s", file_id)
+        return jsonify({"success": False, "message": "Could not preview this file."}), 400
     preview["file"] = file_to_dict(row)
     return jsonify({"success": True, "data": preview})
 

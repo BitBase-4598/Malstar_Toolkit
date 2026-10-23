@@ -205,8 +205,8 @@ def ensure_delcl_loaded():
         count = conn.execute("SELECT COUNT(*) FROM DeLclRecords").fetchone()[0]
     if count:
         return None, None
-    path = Path(DE_LCL_XLSX_PATH)
-    if not path.is_file():
+    path = Path(DE_LCL_XLSX_PATH) if DE_LCL_XLSX_PATH else None
+    if path is None or not path.is_file():
         return None, None
     return import_delcl_file("DE-LCL.xlsx", path.read_bytes())
 

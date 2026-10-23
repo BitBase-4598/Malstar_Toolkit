@@ -10,11 +10,16 @@ def _path(env_name, default):
     return Path(os.environ.get(env_name, default)).expanduser()
 
 
+def _optional_path(env_name):
+    raw = (os.environ.get(env_name) or "").strip()
+    return Path(raw).expanduser() if raw else None
+
+
 DATABASE_URL = (os.environ.get("DATABASE_URL") or "").strip()
 DB_PATH = _path("DATABASE_PATH", BASE_DIR / "malstar.db")
 LOG_PATH = _path("LOG_PATH", BASE_DIR / "malstar_toolkit.log")
 UPLOAD_DIR = _path("UPLOAD_DIR", BASE_DIR / "uploads")
-MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "32"))
+MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "5"))
 MAX_JSON_UPLOAD_MB = int(os.environ.get("MAX_JSON_UPLOAD_MB", "4"))
 PREVIEW_ROWS = 200
 PREVIEW_COLS = 30
@@ -40,27 +45,13 @@ RAG_TOP_K = 8
 RAG_EXCERPT = 420
 ASK_MAX_QUESTION = 800
 DASHBOARD_MAX_ROWS = 5000
-LCL_XLSX_PATH = _path(
-    "LCL_XLSX_PATH",
-    Path(r"C:\Users\Administrator\Desktop\LCL_Volume_Analysis - 202405 - 20260818.xlsx"),
-)
+# Optional spreadsheet/CSV seeds for CVM tools. Set via env when files exist.
+LCL_XLSX_PATH = _optional_path("LCL_XLSX_PATH")
 LCL_MAX_UPLOAD_MB = int(os.environ.get("LCL_MAX_UPLOAD_MB", "512"))
-GCA_XLSX_PATH = _path(
-    "GCA_XLSX_PATH",
-    Path(r"C:\Users\Administrator\Desktop\GCA LCL Project Analysis (1).xlsx"),
-)
-UNLOCODE_CSV_PATH = _path(
-    "UNLOCODE_CSV_PATH",
-    Path(r"C:\Users\Administrator\Desktop\UNLOCODE.csv"),
-)
-DE_LCL_XLSX_PATH = _path(
-    "DE_LCL_XLSX_PATH",
-    Path(r"C:\Users\Administrator\Desktop\DE-LCL (1).xlsx"),
-)
-BOSCH_DE_XLSX_PATH = _path(
-    "BOSCH_DE_XLSX_PATH",
-    Path(r"C:\Users\NLI089\Downloads\Bosch-DE.xlsx"),
-)
+GCA_XLSX_PATH = _optional_path("GCA_XLSX_PATH")
+UNLOCODE_CSV_PATH = _optional_path("UNLOCODE_CSV_PATH")
+DE_LCL_XLSX_PATH = _optional_path("DE_LCL_XLSX_PATH")
+BOSCH_DE_XLSX_PATH = _optional_path("BOSCH_DE_XLSX_PATH")
 CASES_MAX_IMPORT_ROWS = int(os.environ.get("CASES_MAX_IMPORT_ROWS", "5000"))
 DASHBOARD_MISSING = {"", "—", "-", "–", "n/a", "na", "none", "null"}
 AZURE_OPENAI_ENDPOINT = os.environ.get("AZURE_OPENAI_ENDPOINT", "").strip().rstrip("/")
@@ -75,6 +66,9 @@ CORS_ORIGINS = [
     ).split(",")
     if origin.strip()
 ]
+# Shared CVM Basic Auth (empty password disables the gate). Read live in auth_gate.
+TOOLKIT_BASIC_USER = (os.environ.get("TOOLKIT_BASIC_USER") or "malstar").strip() or "malstar"
+TOOLKIT_BASIC_PASSWORD = (os.environ.get("TOOLKIT_BASIC_PASSWORD") or "").strip()
 SCHEMA_VERSION = 13
 
 

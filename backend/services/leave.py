@@ -273,7 +273,7 @@ def ensure_leave_people():
     if needed <= stored_keys and not has_excluded:
         return list_leave_people()
     path = GCA_XLSX_PATH
-    if path.is_file():
+    if path is not None and path.is_file():
         _result, error = replace_leave_people_from_workbook(path.read_bytes())
         if not error:
             return list_leave_people()

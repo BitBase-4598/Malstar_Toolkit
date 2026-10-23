@@ -15,3 +15,6 @@ backend/malstar_toolkit.log
 backend/malstar_toolkit.log.*
 backend/uploads/
 *.xlsx
+
+# Archify generated HTML dumps (keep candidate.json / metadata if needed)
+.archify/**/*.html

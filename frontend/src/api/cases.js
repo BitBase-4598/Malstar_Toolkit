@@ -36,26 +36,6 @@ export const casesApi = {
       body: JSON.stringify({ status }),
     }),
   deleteCase: (id) => request(`${BASE}/${id}`, { method: "DELETE" }),
-  importCases: (file) => {
-    const form = new FormData();
-    form.append("file", file);
-    return request(`${BASE}/import`, { method: "POST", body: form });
-  },
-  downloadCaseTemplate: async () => {
-    const response = await fetch(`${BASE}/template`);
-    if (!response.ok) {
-      throw new Error("Could not download the template.");
-    }
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "feedback-template.csv";
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-  },
   uploadCaseFile: async (id, file) => {
     const form = new FormData();
     form.append("file", file);

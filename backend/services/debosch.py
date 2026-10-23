@@ -186,8 +186,8 @@ def ensure_debosch_loaded():
         count = conn.execute("SELECT COUNT(*) FROM DeBoschRecords").fetchone()[0]
     if count:
         return None, None
-    path = Path(BOSCH_DE_XLSX_PATH)
-    if not path.is_file():
+    path = Path(BOSCH_DE_XLSX_PATH) if BOSCH_DE_XLSX_PATH else None
+    if path is None or not path.is_file():
         return None, None
     return import_debosch_file("Bosch-DE.xlsx", path.read_bytes())
 

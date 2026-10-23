@@ -74,12 +74,58 @@ def cell_to_text(value):
     return str(value)
 
 
-def sanitize_preview_html(value):
-    import re
+_PREVIEW_ALLOWED_TAGS = [
+    "a",
+    "abbr",
+    "b",
+    "blockquote",
+    "br",
+    "code",
+    "div",
+    "em",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "hr",
+    "i",
+    "li",
+    "ol",
+    "p",
+    "pre",
+    "span",
+    "strong",
+    "sub",
+    "sup",
+    "table",
+    "tbody",
+    "td",
+    "th",
+    "thead",
+    "tr",
+    "u",
+    "ul",
+]
+_PREVIEW_ALLOWED_ATTRIBUTES = {
+    "a": ["href", "title"],
+    "abbr": ["title"],
+    "*": ["class"],
+}
+_PREVIEW_ALLOWED_PROTOCOLS = ["http", "https", "mailto"]
 
-    cleaned = re.sub(r"(?is)<script.*?>.*?</script>", "", value or "")
-    cleaned = re.sub(r"(?is)<iframe.*?>.*?</iframe>", "", cleaned)
-    return cleaned
+
+def sanitize_preview_html(value):
+    import bleach
+
+    return bleach.clean(
+        value or "",
+        tags=_PREVIEW_ALLOWED_TAGS,
+        attributes=_PREVIEW_ALLOWED_ATTRIBUTES,
+        protocols=_PREVIEW_ALLOWED_PROTOCOLS,
+        strip=True,
+    )
 
 
 def preview_docx(path):

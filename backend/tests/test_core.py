@@ -16,6 +16,8 @@ os.environ["LCL_XLSX_PATH"] = str(TMP / "missing-lcl.xlsx")
 os.environ["UNLOCODE_CSV_PATH"] = str(TMP / "missing-unlocode.csv")
 os.environ["DE_LCL_XLSX_PATH"] = str(TMP / "missing-delcl.xlsx")
 os.environ["BOSCH_DE_XLSX_PATH"] = str(TMP / "missing-bosch-de.xlsx")
+os.environ.pop("TOOLKIT_BASIC_PASSWORD", None)
+os.environ.pop("TOOLKIT_BASIC_USER", None)
 sys.path.insert(0, str(ROOT))
 
 from flask import Flask
@@ -34,7 +36,7 @@ from services.dashboard_analytics import (
     minutes_between,
     parse_dashboard_record,
 )
-from services.files_store import stored_path
+from services.files_store import sanitize_preview_html, stored_path
 from util import letters_only
 
 
@@ -174,6 +176,60 @@ def test_stored_path_rejects_traversal():
         except NotFound:
             raised = True
     assert raised
+
+
+def test_sanitize_preview_html_strips_xss():
+    cleaned = sanitize_preview_html(
+        '<p>Safe</p><img src=x onerror="alert(1)">'
+        '<a href="javascript:alert(1)">x</a>'
+        '<script>alert(1)</script><p onclick="evil()">Ok</p>'
+    )
+    lowered = cleaned.casefold()
+    assert "safe" in lowered
+    assert "ok" in lowered
+    assert "onerror" not in lowered
+    assert "onclick" not in lowered
+    assert "javascript:" not in lowered
+    assert "<script" not in lowered
+    assert "<img" not in lowered
+
+
+def test_basic_auth_gate():
+    import base64
+
+    from app import app
+
+    client = app.test_client()
+    assert client.get("/api/health").status_code == 200
+    open_cases = client.get("/api/cases")
+    assert open_cases.status_code == 200
+
+    os.environ["TOOLKIT_BASIC_USER"] = "malstar"
+    os.environ["TOOLKIT_BASIC_PASSWORD"] = "s3cret-test"
+    try:
+        assert client.get("/api/health").status_code == 200
+        denied = client.get("/api/cases")
+        assert denied.status_code == 401
+        assert denied.headers.get("WWW-Authenticate", "").startswith("Basic ")
+        wrong = client.get(
+            "/api/cases",
+            headers={
+                "Authorization": "Basic "
+                + base64.b64encode(b"malstar:wrong").decode("ascii"),
+            },
+        )
+        assert wrong.status_code == 401
+        ok = client.get(
+            "/api/cases",
+            headers={
+                "Authorization": "Basic "
+                + base64.b64encode(b"malstar:s3cret-test").decode("ascii"),
+            },
+        )
+        assert ok.status_code == 200
+    finally:
+        os.environ.pop("TOOLKIT_BASIC_PASSWORD", None)
+        os.environ.pop("TOOLKIT_BASIC_USER", None)
 
 
 def test_api_health_leave_dashboard():
@@ -469,41 +525,48 @@ def test_case_file_upload_png_xlsx():
     assert library == 0
 
 
-def test_case_import_and_locked_update():
-    from io import BytesIO
-
+def test_case_review_keeps_locked_fields():
     migrate()
     from app import app
+    from db import get_connection
+    from services.cases import create_case
+    from util import now_stamp
 
+    stamp = now_stamp()
+    with get_connection() as conn:
+        created = create_case(
+            conn,
+            {
+                "status": "pending_review",
+                "startTime": stamp,
+                "completionTime": "",
+                "email": "a@b.com",
+                "name": "COSCO",
+                "hbl": "HBL1",
+                "bookingOrderId": "BK-SEED",
+                "shipmentNumber": "",
+                "wronglyIdentified": "",
+                "incorrect": "",
+                "corrected": "",
+                "causeOfError": "",
+                "receivedDate": "",
+                "adjustedHbl": "",
+                "gscPic": "",
+                "week": "",
+                "date": "",
+                "category": "Human Error",
+                "description": "Needs check",
+                "action": "",
+            },
+        )
+    case_id = created["id"]
     client = app.test_client()
-    csv_bytes = (
-        "Name,HBL#,Email,Start time,Category,Description\n"
-        "COSCO,HBL1,a@b.com,2026-08-01 09:00,Human Error,Needs check\n"
-        ",MISSINGHBL,skip@x.com,2026-08-01 09:00,Human Error,\n"
-    ).encode("utf-8")
-    first = client.post(
-        "/api/cases/import",
-        data={"file": (BytesIO(csv_bytes), "cases.csv")},
-        content_type="multipart/form-data",
-    )
-    assert first.status_code == 200
-    body = first.get_json()
-    assert body["imported"] == 1
-    assert body["skipped"] == 1
-    listed = client.get("/api/cases?q=HBL1").get_json()["data"]
-    assert listed[0]["email"] == "a@b.com"
-    case_id = listed[0]["id"]
-    second = client.post(
-        "/api/cases/import",
-        data={"file": (BytesIO(csv_bytes), "cases.csv")},
-        content_type="multipart/form-data",
-    )
-    assert second.get_json()["imported"] == 0
-    assert second.get_json()["skipped"] >= 1
     needs_identifier = client.put(f"/api/cases/{case_id}", json={
         "status": "reviewed",
         "category": "Defects",
         "description": "Checked",
+        "bookingOrderId": "",
+        "shipmentNumber": "",
         "name": "HACKED",
         "email": "evil@x.com",
         "hbl": "NOPE",
@@ -529,50 +592,6 @@ def test_case_import_and_locked_update():
     assert data["description"] == "Checked"
     rejected = client.put(f"/api/cases/{case_id}", json={"category": "Not a real category"})
     assert rejected.status_code == 400
-
-
-def test_case_import_xlsx():
-    from io import BytesIO
-
-    from openpyxl import Workbook
-
-    migrate()
-    from app import app
-
-    client = app.test_client()
-    workbook = Workbook()
-    sheet = workbook.active
-    sheet.append(["Name", "HBL#", "Start time", "Category", "Description", "Booking order ID", "Shipment number"])
-    sheet.append(["ONE", "HBLX", "2026-08-02 10:00", "System Enhancements", "Hub mismatch", "BK-XLSX", "SHP-XLSX"])
-    buffer = BytesIO()
-    workbook.save(buffer)
-    result = client.post(
-        "/api/cases/import",
-        data={"file": (BytesIO(buffer.getvalue()), "cases.xlsx")},
-        content_type="multipart/form-data",
-    )
-    assert result.status_code == 200
-    assert result.get_json()["imported"] == 1
-    row = client.get("/api/cases?q=HBLX").get_json()["data"][0]
-    assert row["name"] == "ONE"
-    assert row["category"] == "System Enhancements"
-    assert row["description"] == "Hub mismatch"
-    assert row["bookingOrderId"] == "BK-XLSX"
-    assert row["shipmentNumber"] == "SHP-XLSX"
-
-
-def test_case_template_download():
-    migrate()
-    from app import app
-
-    client = app.test_client()
-    response = client.get("/api/cases/template")
-    assert response.status_code == 200
-    body = response.get_data(as_text=True)
-    assert "Category,Description" in body
-    assert "Booking order ID" in body
-    assert "Shipment number" in body
-    assert "Human Error" in body
 
 
 def test_leave_name_mapping_and_half_day():
