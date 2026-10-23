@@ -40,16 +40,10 @@ python -m venv .venv
 $env:FLASK_HOST="0.0.0.0"
 $env:PORT="8080"
 $env:FLASK_DEBUG="false"
-$env:TOOLKIT_BASIC_USER="malstar"
-$env:TOOLKIT_BASIC_PASSWORD="replace-with-a-strong-shared-secret"
 .\.venv\Scripts\python app.py
 ```
 
-Or put the same keys in a gitignored root `.env` (loaded by `start-service.ps1`).
-
-**Basic Auth:** When `TOOLKIT_BASIC_PASSWORD` is set, the browser prompts once for the shared username/password on `/remarks/` (and all `/api/*` except `/api/health`). This is a team shared secret, not personal accounts — rotate it if leaked. Leave the password empty for local development (auth off).
-
-`backend/gateway.py` listens on port 80 and forwards `/remarks/` to `http://127.0.0.1:8080` (the Basic Auth header is forwarded to the app).
+`backend/gateway.py` listens on port 80 and forwards `/remarks/` to `http://127.0.0.1:8080`.
 
 ## Azure App Service
 

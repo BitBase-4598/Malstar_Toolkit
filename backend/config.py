@@ -66,9 +66,6 @@ CORS_ORIGINS = [
     ).split(",")
     if origin.strip()
 ]
-# Shared CVM Basic Auth (empty password disables the gate). Read live in auth_gate.
-TOOLKIT_BASIC_USER = (os.environ.get("TOOLKIT_BASIC_USER") or "malstar").strip() or "malstar"
-TOOLKIT_BASIC_PASSWORD = (os.environ.get("TOOLKIT_BASIC_PASSWORD") or "").strip()
 SCHEMA_VERSION = 13
 
 

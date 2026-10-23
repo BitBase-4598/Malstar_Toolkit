@@ -16,8 +16,6 @@ os.environ["LCL_XLSX_PATH"] = str(TMP / "missing-lcl.xlsx")
 os.environ["UNLOCODE_CSV_PATH"] = str(TMP / "missing-unlocode.csv")
 os.environ["DE_LCL_XLSX_PATH"] = str(TMP / "missing-delcl.xlsx")
 os.environ["BOSCH_DE_XLSX_PATH"] = str(TMP / "missing-bosch-de.xlsx")
-os.environ.pop("TOOLKIT_BASIC_PASSWORD", None)
-os.environ.pop("TOOLKIT_BASIC_USER", None)
 sys.path.insert(0, str(ROOT))
 
 from flask import Flask
@@ -192,44 +190,6 @@ def test_sanitize_preview_html_strips_xss():
     assert "javascript:" not in lowered
     assert "<script" not in lowered
     assert "<img" not in lowered
-
-
-def test_basic_auth_gate():
-    import base64
-
-    from app import app
-
-    client = app.test_client()
-    assert client.get("/api/health").status_code == 200
-    open_cases = client.get("/api/cases")
-    assert open_cases.status_code == 200
-
-    os.environ["TOOLKIT_BASIC_USER"] = "malstar"
-    os.environ["TOOLKIT_BASIC_PASSWORD"] = "s3cret-test"
-    try:
-        assert client.get("/api/health").status_code == 200
-        denied = client.get("/api/cases")
-        assert denied.status_code == 401
-        assert denied.headers.get("WWW-Authenticate", "").startswith("Basic ")
-        wrong = client.get(
-            "/api/cases",
-            headers={
-                "Authorization": "Basic "
-                + base64.b64encode(b"malstar:wrong").decode("ascii"),
-            },
-        )
-        assert wrong.status_code == 401
-        ok = client.get(
-            "/api/cases",
-            headers={
-                "Authorization": "Basic "
-                + base64.b64encode(b"malstar:s3cret-test").decode("ascii"),
-            },
-        )
-        assert ok.status_code == 200
-    finally:
-        os.environ.pop("TOOLKIT_BASIC_PASSWORD", None)
-        os.environ.pop("TOOLKIT_BASIC_USER", None)
 
 
 def test_api_health_leave_dashboard():
