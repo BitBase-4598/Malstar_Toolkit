@@ -12,5 +12,5 @@ set FLASK_HOST=0.0.0.0
 set PORT=8080
 set FLASK_DEBUG=false
 echo.
-echo MALSTAR_Toolkit is starting on http://0.0.0.0:8080 (waitress)
+echo MALSTAR_Toolkit is starting on http://0.0.0.0:8080 (uvicorn)
 python app.py

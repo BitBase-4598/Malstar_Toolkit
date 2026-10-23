@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, request
+from fastapi import APIRouter, Depends, Request
 
 from db import IntegrityError, get_connection
 from logging_util import audit
@@ -10,17 +10,18 @@ from services.remarks import (
     upsert_imported_records,
 )
 from util import letters_only
+from webutil import json_dict, query_int, respond
 
-bp = Blueprint("remarks", __name__)
+router = APIRouter()
 
 
-@bp.get("/api/customer-remarks")
-def list_records():
-    q_raw = str(request.args.get("q") or "").strip()
+@router.get("/api/customer-remarks")
+def list_customer_remarks(request: Request):
+    q_raw = str(request.query_params.get("q") or "").strip()
     q_letters = letters_only(q_raw)
     q_code = q_raw.upper()
-    page = max(request.args.get("page", 1, type=int), 1)
-    page_size = min(max(request.args.get("pageSize", 20, type=int), 1), 10000)
+    page = max(query_int(request, "page", 1), 1)
+    page_size = min(max(query_int(request, "pageSize", 20), 1), 10000)
     clauses = []
     params = []
     if q_letters:
@@ -51,7 +52,7 @@ def list_records():
             """,
             params + [page_size, (page - 1) * page_size],
         ).fetchall()
-    return jsonify({
+    return respond({
         "success": True,
         "data": [row_to_dict(row) for row in rows],
         "pagination": {
@@ -63,12 +64,12 @@ def list_records():
     })
 
 
-@bp.post("/api/customer-remarks")
-def create_record():
-    payload, error = parse_payload(request.get_json(silent=True) or {})
+@router.post("/api/customer-remarks")
+def create_customer_remark(payload: dict = Depends(json_dict)):
+    payload, error = parse_payload(payload)
     if error:
         audit("record.create", "failure", summary=error)
-        return jsonify({"success": False, "message": error}), 400
+        return respond({"success": False, "message": error}, 400)
     try:
         with get_connection() as conn:
             cur = conn.execute(
@@ -88,24 +89,24 @@ def create_record():
             "failure",
             summary=f"duplicate {payload['ctrlOrgcode']} / {payload['customer']}",
         )
-        return jsonify({
+        return respond({
             "success": False,
             "message": "The CTRLOrgcode and Customer combination already exists.",
-        }), 409
+        }, 409)
     audit(
         "record.create",
         resource_id=row["ID"],
         summary=f"{payload['ctrlOrgcode']} / {payload['customer']}",
     )
-    return jsonify({"success": True, "message": "Record created", "data": row_to_dict(row)}), 201
+    return respond({"success": True, "message": "Record created", "data": row_to_dict(row)}, 201)
 
 
-@bp.put("/api/customer-remarks/<int:record_id>")
-def update_record(record_id):
-    payload, error = parse_payload(request.get_json(silent=True) or {})
+@router.put("/api/customer-remarks/{record_id}")
+def update_customer_remark(record_id: int, payload: dict = Depends(json_dict)):
+    payload, error = parse_payload(payload)
     if error:
         audit("record.update", "failure", resource_id=record_id, summary=error)
-        return jsonify({"success": False, "message": error}), 400
+        return respond({"success": False, "message": error}, 400)
     try:
         with get_connection() as conn:
             cur = conn.execute(
@@ -120,7 +121,7 @@ def update_record(record_id):
             )
             if cur.rowcount == 0:
                 audit("record.update", "failure", resource_id=record_id, summary="not found")
-                return jsonify({"success": False, "message": "Record not found"}), 404
+                return respond({"success": False, "message": "Record not found"}, 404)
             row = conn.execute(
                 "SELECT * FROM CustomerRemarks WHERE ID=?", (record_id,)
             ).fetchone()
@@ -131,42 +132,41 @@ def update_record(record_id):
             resource_id=record_id,
             summary=f"duplicate {payload['ctrlOrgcode']} / {payload['customer']}",
         )
-        return jsonify({
+        return respond({
             "success": False,
             "message": "The CTRLOrgcode and Customer combination already exists.",
-        }), 409
+        }, 409)
     audit(
         "record.update",
         resource_id=record_id,
         summary=f"{payload['ctrlOrgcode']} / {payload['customer']}",
     )
-    return jsonify({"success": True, "message": "Record updated", "data": row_to_dict(row)})
+    return respond({"success": True, "message": "Record updated", "data": row_to_dict(row)})
 
 
-@bp.delete("/api/customer-remarks/<int:record_id>")
-def delete_record(record_id):
+@router.delete("/api/customer-remarks/{record_id}")
+def delete_customer_remark(record_id: int):
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM CustomerRemarks WHERE ID=?", (record_id,)).fetchone()
         cur = conn.execute("DELETE FROM CustomerRemarks WHERE ID=?", (record_id,))
     if cur.rowcount == 0:
         audit("record.delete", "failure", resource_id=record_id, summary="not found")
-        return jsonify({"success": False, "message": "Record not found"}), 404
+        return respond({"success": False, "message": "Record not found"}, 404)
     audit(
         "record.delete",
         resource_id=record_id,
         summary=f"{row['CTRLOrgcode']} / {row['Customer']}",
     )
-    return jsonify({"success": True, "message": "Record deleted"})
+    return respond({"success": True, "message": "Record deleted"})
 
 
-@bp.post("/api/customer-remarks/import")
-def import_records():
-    data = request.get_json(silent=True) or {}
+@router.post("/api/customer-remarks/import")
+def import_customer_remarks(data: dict = Depends(json_dict)):
     filename = str(data.get("filename") or "browser.csv")
     raw_rows = data.get("records")
     if not isinstance(raw_rows, list):
         audit("record.import", "failure", summary="JSON records missing")
-        return jsonify({"success": False, "message": "No records were sent."}), 400
+        return respond({"success": False, "message": "No records were sent."}, 400)
     records, errors, duplicates = collect_import_payloads(raw_rows)
     if errors:
         audit(
@@ -174,20 +174,20 @@ def import_records():
             "failure",
             summary=f"file={filename} validation errors={len(errors)}",
         )
-        return jsonify({
+        return respond({
             "success": False,
             "message": "CSV validation failed. Nothing was imported.",
             "errors": errors[:100],
-        }), 400
+        }, 400)
     if not records:
         audit("record.import", "failure", summary=f"file={filename} no data rows")
-        return jsonify({"success": False, "message": "CSV contains no data rows."}), 400
+        return respond({"success": False, "message": "CSV contains no data rows."}, 400)
     created, updated = upsert_imported_records(records)
     audit(
         "record.import",
         summary=f"file={filename} processed={len(records)} created={created} updated={updated} duplicates={duplicates}",
     )
-    return jsonify({
+    return respond({
         "success": True,
         "message": "CSV import completed",
         "processed": len(records),
@@ -195,4 +195,3 @@ def import_records():
         "updated": updated,
         "duplicates": duplicates,
     })
-

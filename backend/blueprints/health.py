@@ -1,17 +1,18 @@
-from flask import Blueprint, jsonify
+from fastapi import APIRouter
 
 from db_engine import ping
+from webutil import respond
 
-bp = Blueprint("health", __name__)
+router = APIRouter()
 
 
-@bp.get("/api/health")
+@router.get("/api/health")
 def health():
     try:
         ping()
     except Exception:
-        return jsonify({
+        return respond({
             "success": False,
             "message": "MALSTAR_Toolkit API cannot reach the database.",
-        }), 503
-    return jsonify({"success": True, "message": "MALSTAR_Toolkit API is running"})
+        }, 503)
+    return respond({"success": True, "message": "MALSTAR_Toolkit API is running"})

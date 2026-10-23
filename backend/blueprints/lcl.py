@@ -1,43 +1,51 @@
-from flask import Blueprint, jsonify, request
+from fastapi import APIRouter, Depends, Request
 
 from logging_util import audit
-from services.lcl import build_dashboard, build_map, build_summary, import_lcl_workbook, list_filter_options, split_csv_param
+from services.lcl import (
+    build_dashboard,
+    build_map,
+    build_summary,
+    import_lcl_workbook,
+    list_filter_options,
+    split_csv_param,
+)
+from webutil import read_upload, respond
 
-bp = Blueprint("lcl", __name__)
+router = APIRouter()
 
 
-@bp.get("/api/lcl/filters")
+@router.get("/api/lcl/filters")
 def lcl_filters():
-    return jsonify({"success": True, "data": list_filter_options()})
+    return respond({"success": True, "data": list_filter_options()})
 
 
-@bp.get("/api/lcl/dashboard")
-def lcl_dashboard():
-    return jsonify({"success": True, "data": build_dashboard(request.args)})
+@router.get("/api/lcl/dashboard")
+def lcl_dashboard(request: Request):
+    return respond({"success": True, "data": build_dashboard(request.query_params)})
 
 
-@bp.get("/api/lcl/summary")
-def lcl_summary():
-    return jsonify({"success": True, "data": build_summary(request.args)})
+@router.get("/api/lcl/summary")
+def lcl_summary(request: Request):
+    return respond({"success": True, "data": build_summary(request.query_params)})
 
 
-@bp.get("/api/lcl/map")
-def lcl_map():
-    include_arrows = bool(split_csv_param(request.args.get("direction")))
-    return jsonify({"success": True, "data": build_map(request.args, include_arrows=include_arrows)})
+@router.get("/api/lcl/map")
+def lcl_map(request: Request):
+    include_arrows = bool(split_csv_param(request.query_params.get("direction")))
+    return respond({"success": True, "data": build_map(request.query_params, include_arrows=include_arrows)})
 
 
-@bp.post("/api/lcl/import")
-def lcl_import():
-    if "file" not in request.files:
+@router.post("/api/lcl/import")
+def lcl_import(upload=Depends(read_upload)):
+    if not upload:
         audit("lcl.import", "failure", summary="no file uploaded")
-        return jsonify({"success": False, "message": "No file was uploaded."}), 400
-    file = request.files["file"]
-    filename = file.filename or "lcl.xlsx"
-    result, error = import_lcl_workbook(filename, file.read())
+        return respond({"success": False, "message": "No file was uploaded."}, 400)
+    filename, data = upload
+    filename = filename or "lcl.xlsx"
+    result, error = import_lcl_workbook(filename, data)
     if error:
         audit("lcl.import", "failure", summary=error)
-        return jsonify({"success": False, "message": error}), 400
+        return respond({"success": False, "message": error}, 400)
     audit(
         "lcl.import",
         summary=(
@@ -55,7 +63,7 @@ def lcl_import():
         )
     else:
         message = f"Saved {result['total']:,} LCL shipments to the database"
-    return jsonify({
+    return respond({
         "success": True,
         "message": message,
         "data": result,

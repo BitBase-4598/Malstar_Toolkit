@@ -3,12 +3,15 @@ import logging
 import sys
 import traceback
 import uuid
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 
-from flask import g, has_request_context, request
-
 from config import LOG_PATH
+
+_request_id = ContextVar("malstar_request_id", default="")
+_client_ip = ContextVar("malstar_client_ip", default="")
+_user_agent = ContextVar("malstar_user_agent", default="")
 from db import get_connection
 from db_engine import DatabaseError
 
@@ -189,32 +192,36 @@ def setup_file_logger():
 APP_LOGGER = setup_file_logger()
 
 
+def bind_http_context(request_id, client_ip, user_agent):
+    return (
+        _request_id.set(request_id),
+        _client_ip.set(client_ip or ""),
+        _user_agent.set(user_agent or ""),
+    )
+
+
+def reset_http_context(tokens):
+    _user_agent.reset(tokens[2])
+    _client_ip.reset(tokens[1])
+    _request_id.reset(tokens[0])
+
+
 def current_request_id():
-    if has_request_context():
-        return str(getattr(g, "request_id", "") or "")
-    return ""
+    return str(_request_id.get() or "")
 
 
-def assign_request_id():
-    incoming = ""
-    if has_request_context():
-        incoming = str(request.headers.get("X-Request-ID") or "").strip()[:80]
-    request_id = incoming or str(uuid.uuid4())
-    if has_request_context():
-        g.request_id = request_id
+def assign_request_id(incoming=""):
+    request_id = str(incoming or "").strip()[:80] or str(uuid.uuid4())
+    _request_id.set(request_id)
     return request_id
 
 
 def current_client_ip():
-    if not has_request_context():
-        return ""
-    return str(request.remote_addr or "")[:80]
+    return str(_client_ip.get() or "")[:80]
 
 
 def current_user_agent():
-    if not has_request_context():
-        return ""
-    return str(request.headers.get("User-Agent") or "")[:240]
+    return str(_user_agent.get() or "")[:240]
 
 
 def is_key_log_action(action):

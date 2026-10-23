@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request, send_file
+from fastapi import APIRouter, Depends, Request
 
 from db import IntegrityError, get_connection
 from logging_util import audit
@@ -13,53 +13,53 @@ from services.leave import (
     parse_leave_payload,
 )
 from util import now_stamp
+from webutil import attachment, json_dict, query_int, respond
 
-bp = Blueprint("leave", __name__)
+router = APIRouter()
 
 
-@bp.get("/api/leave-people")
+@router.get("/api/leave-people")
 def list_leave_people_route():
-    return jsonify({"success": True, "data": ensure_leave_people()})
+    return respond({"success": True, "data": ensure_leave_people()})
 
 
-def _year_month():
+def _year_month(request: Request):
     now = datetime.now()
-    year = request.args.get("year", now.year, type=int) or now.year
-    month = request.args.get("month", now.month, type=int) or now.month
+    year = query_int(request, "year", now.year) or now.year
+    month = query_int(request, "month", now.month) or now.month
     if month < 1 or month > 12 or year < 2000 or year > 2100:
-        return None, None, jsonify({"success": False, "message": "Invalid year or month."}), 400
-    return year, month, None, None
+        return None, None, respond({"success": False, "message": "Invalid year or month."}, 400)
+    return year, month, None
 
 
-@bp.get("/api/leave-plans")
-def list_leave_plans():
-    year, month, error, status = _year_month()
+@router.get("/api/leave-plans")
+def list_leave_plans(request: Request):
+    year, month, error = _year_month(request)
     if error:
-        return error, status
-    return jsonify({"success": True, "data": list_leave_plans_for_month(year, month)})
+        return error
+    return respond({"success": True, "data": list_leave_plans_for_month(year, month)})
 
 
-@bp.get("/api/leave-plans/export")
-def export_leave_plans():
-    year, month, error, status = _year_month()
+@router.get("/api/leave-plans/export")
+def export_leave_plans(request: Request):
+    year, month, error = _year_month(request)
     if error:
-        return error, status
+        return error
     buffer, filename = build_leave_export(year, month)
     audit("leave.export", summary=f"{year}-{month:02d}")
-    return send_file(
+    return attachment(
         buffer,
-        as_attachment=True,
-        download_name=filename,
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
 
-@bp.post("/api/leave-plans")
-def create_leave_plan():
-    payload, error = parse_leave_payload(request.get_json(silent=True) or {})
+@router.post("/api/leave-plans")
+def create_leave_plan(payload: dict = Depends(json_dict)):
+    payload, error = parse_leave_payload(payload)
     if error:
         audit("leave.create", "failure", summary=error)
-        return jsonify({"success": False, "message": error}), 400
+        return respond({"success": False, "message": error}, 400)
     stamp = now_stamp()
     try:
         with get_connection() as conn:
@@ -82,7 +82,7 @@ def create_leave_plan():
     except IntegrityError:
         message = "This person already has a leave plan on that day."
         audit("leave.create", "failure", summary=message)
-        return jsonify({"success": False, "message": message}), 409
+        return respond({"success": False, "message": message}, 409)
     audit(
         "leave.create",
         resource_id=row["ID"],
@@ -94,21 +94,21 @@ def create_leave_plan():
             "leaveDate": payload["leaveDate"],
         },
     )
-    return jsonify({"success": True, "message": "Leave plan saved", "data": leave_to_dict(row)}), 201
+    return respond({"success": True, "message": "Leave plan saved", "data": leave_to_dict(row)}, 201)
 
 
-@bp.put("/api/leave-plans/<int:plan_id>")
-def update_leave_plan(plan_id):
-    payload, error = parse_leave_payload(request.get_json(silent=True) or {})
+@router.put("/api/leave-plans/{plan_id}")
+def update_leave_plan(plan_id: int, payload: dict = Depends(json_dict)):
+    payload, error = parse_leave_payload(payload)
     if error:
         audit("leave.update", "failure", resource_id=plan_id, summary=error)
-        return jsonify({"success": False, "message": error}), 400
+        return respond({"success": False, "message": error}, 400)
     try:
         with get_connection() as conn:
             existing = conn.execute("SELECT ID FROM LeavePlans WHERE ID=?", (plan_id,)).fetchone()
             if not existing:
                 audit("leave.update", "failure", resource_id=plan_id, summary="not found")
-                return jsonify({"success": False, "message": "Leave plan not found"}), 404
+                return respond({"success": False, "message": "Leave plan not found"}, 404)
             conn.execute(
                 """
                 UPDATE LeavePlans
@@ -129,7 +129,7 @@ def update_leave_plan(plan_id):
     except IntegrityError:
         message = "This person already has a leave plan on that day."
         audit("leave.update", "failure", resource_id=plan_id, summary=message)
-        return jsonify({"success": False, "message": message}), 409
+        return respond({"success": False, "message": message}, 409)
     audit(
         "leave.update",
         resource_id=plan_id,
@@ -141,11 +141,11 @@ def update_leave_plan(plan_id):
             "leaveDate": payload["leaveDate"],
         },
     )
-    return jsonify({"success": True, "message": "Leave plan saved", "data": leave_to_dict(row)})
+    return respond({"success": True, "message": "Leave plan saved", "data": leave_to_dict(row)})
 
 
-@bp.delete("/api/leave-plans/<int:plan_id>")
-def delete_leave_plan(plan_id):
+@router.delete("/api/leave-plans/{plan_id}")
+def delete_leave_plan(plan_id: int):
     with get_connection() as conn:
         row = conn.execute(
             "SELECT Person, LeaveDate, LeaveType, Status FROM LeavePlans WHERE ID=?",
@@ -153,7 +153,7 @@ def delete_leave_plan(plan_id):
         ).fetchone()
         if not row:
             audit("leave.delete", "failure", resource_id=plan_id, summary="not found")
-            return jsonify({"success": False, "message": "Leave plan not found"}), 404
+            return respond({"success": False, "message": "Leave plan not found"}, 404)
         conn.execute("DELETE FROM LeavePlans WHERE ID=?", (plan_id,))
     deleted = {
         "person": row["Person"],
@@ -167,4 +167,4 @@ def delete_leave_plan(plan_id):
         summary=leave_change_summary(deleted),
         extra=deleted,
     )
-    return jsonify({"success": True, "message": "Leave plan deleted"})
+    return respond({"success": True, "message": "Leave plan deleted"})

@@ -1,11 +1,18 @@
 import os
 import threading
+import uuid
 
-from flask import Flask, abort, g, jsonify, request, send_from_directory
-from flask_cors import CORS
+from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.exceptions import HTTPException
+from starlette.requests import Request
+from starlette.responses import FileResponse, JSONResponse
 
 from config import CORS_ORIGINS, LCL_MAX_UPLOAD_MB, MAX_UPLOAD_MB, STATIC_DIR
 from db import migrate
+from logging_util import APP_LOGGER, audit, bind_http_context, reset_http_context
+from webutil import attach_test_client, respond
 
 _migrate_lock = threading.Lock()
 _migrated = False
@@ -21,122 +28,144 @@ def ensure_migrated():
             _migrated = True
 
 
+def _static_response(asset_path):
+    root = STATIC_DIR.resolve()
+    if asset_path.startswith("api/") or asset_path == "api":
+        return respond({"success": False, "message": "Not found"}, 404)
+    target = (STATIC_DIR / asset_path).resolve()
+    if root != target and root not in target.parents:
+        return respond({"success": False, "message": "Not found"}, 404)
+    if target.is_file():
+        return FileResponse(target)
+    index = root / "index.html"
+    if index.is_file():
+        return FileResponse(index)
+    return respond({"success": False, "message": "Not found"}, 404)
+
+
 def create_app():
-    app = Flask(__name__, static_folder=None)
-    upload_cap_mb = max(MAX_UPLOAD_MB, LCL_MAX_UPLOAD_MB)
-    app.config["MAX_CONTENT_LENGTH"] = upload_cap_mb * 1024 * 1024
-    app.config["MAX_FORM_MEMORY_SIZE"] = upload_cap_mb * 1024 * 1024
-    app.config["MAX_FORM_PARTS"] = 10000
-    if CORS_ORIGINS:
-        CORS(app, resources={r"/api/*": {"origins": CORS_ORIGINS}})
+    app = FastAPI(title="MALSTAR Toolkit")
+    upload_cap = max(MAX_UPLOAD_MB, LCL_MAX_UPLOAD_MB) * 1024 * 1024
+    limit_mb = max(MAX_UPLOAD_MB, LCL_MAX_UPLOAD_MB)
 
-    from blueprints.ask import bp as ask_bp
-    from blueprints.cases import bp as cases_bp
-    from blueprints.dashboard import bp as dashboard_bp
-    from blueprints.files import bp as files_bp
-    from blueprints.gca import bp as gca_bp
-    from blueprints.health import bp as health_bp
-    from blueprints.icb import bp as icb_bp
-    from blueprints.unloco import bp as unloco_bp
-    from blueprints.delcl import bp as delcl_bp
-    from blueprints.debosch import bp as debosch_bp
-    from blueprints.leave import bp as leave_bp
-    from blueprints.lcl import bp as lcl_bp
-    from blueprints.logs import bp as logs_bp
-    from blueprints.remarks import bp as remarks_bp
-    from blueprints.sops import bp as sops_bp
-    from logging_util import APP_LOGGER, assign_request_id, audit
-
-    app.register_blueprint(health_bp)
-    app.register_blueprint(logs_bp)
-    app.register_blueprint(files_bp)
-    app.register_blueprint(sops_bp)
-    app.register_blueprint(cases_bp)
-    app.register_blueprint(ask_bp)
-    app.register_blueprint(leave_bp)
-    app.register_blueprint(lcl_bp)
-    app.register_blueprint(dashboard_bp)
-    app.register_blueprint(icb_bp)
-    app.register_blueprint(unloco_bp)
-    app.register_blueprint(delcl_bp)
-    app.register_blueprint(debosch_bp)
-    app.register_blueprint(gca_bp)
-    app.register_blueprint(remarks_bp)
-
-    @app.before_request
-    def bind_request_id():
-        assign_request_id()
-        if request.path != "/api/health":
-            ensure_migrated()
-
-    @app.after_request
-    def echo_request_id(response):
-        request_id = getattr(g, "request_id", "")
-        if request_id:
-            response.headers["X-Request-ID"] = request_id
+    @app.middleware("http")
+    async def request_context(request: Request, call_next):
+        incoming = str(request.headers.get("x-request-id") or "").strip()[:80]
+        request_id = incoming or str(uuid.uuid4())
+        client_ip = request.client.host if request.client else ""
+        user_agent = str(request.headers.get("user-agent") or "")
+        tokens = bind_http_context(request_id, client_ip, user_agent)
+        try:
+            length = request.headers.get("content-length")
+            if length:
+                try:
+                    too_big = int(length) > upload_cap
+                except ValueError:
+                    too_big = False
+                if too_big:
+                    response = respond({
+                        "success": False,
+                        "message": f"Upload exceeds the {limit_mb} MB limit.",
+                    }, 413)
+                    response.headers["X-Request-ID"] = request_id
+                    return response
+            if request.url.path != "/api/health":
+                ensure_migrated()
+            try:
+                response = await call_next(request)
+            except RequestValidationError:
+                raise
+            except HTTPException as error:
+                detail = error.detail if isinstance(error.detail, dict) else {"detail": error.detail}
+                response = JSONResponse(detail, status_code=error.status_code)
+            except Exception as error:
+                if request.url.path.startswith("/api/"):
+                    APP_LOGGER.exception("unhandled api exception")
+                    audit(
+                        "server.exception",
+                        outcome="exception",
+                        summary=f"{type(error).__name__}: {error}",
+                        extra={"path": request.url.path, "method": request.method},
+                        exc_info=True,
+                    )
+                    response = respond({
+                        "success": False,
+                        "message": "The server could not complete this request.",
+                    }, 500)
+                else:
+                    raise
+        finally:
+            reset_http_context(tokens)
+        response.headers["X-Request-ID"] = request_id
         return response
 
-    @app.errorhandler(413)
-    def too_large(_):
-        return jsonify({
-            "success": False,
-            "message": f"Upload exceeds the {max(MAX_UPLOAD_MB, LCL_MAX_UPLOAD_MB)} MB limit.",
-        }), 413
+    if CORS_ORIGINS:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=CORS_ORIGINS,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
-    @app.errorhandler(Exception)
-    def unhandled_error(error):
-        from flask import request
-        from werkzeug.exceptions import HTTPException
+    from blueprints.ask import router as ask_router
+    from blueprints.cases import router as cases_router
+    from blueprints.dashboard import router as dashboard_router
+    from blueprints.debosch import router as debosch_router
+    from blueprints.delcl import router as delcl_router
+    from blueprints.files import router as files_router
+    from blueprints.gca import router as gca_router
+    from blueprints.health import router as health_router
+    from blueprints.icb import router as icb_router
+    from blueprints.lcl import router as lcl_router
+    from blueprints.leave import router as leave_router
+    from blueprints.logs import router as logs_router
+    from blueprints.remarks import router as remarks_router
+    from blueprints.sops import router as sops_router
+    from blueprints.unloco import router as unloco_router
 
-        if isinstance(error, HTTPException):
-            return error
-        if request.path.startswith("/api/"):
-            APP_LOGGER.exception("unhandled api exception")
-            audit(
-                "server.exception",
-                outcome="exception",
-                summary=f"{type(error).__name__}: {error}",
-                extra={"path": request.path, "method": request.method},
-                exc_info=True,
-            )
-            return jsonify({
-                "success": False,
-                "message": "The server could not complete this request.",
-            }), 500
-        raise error
+    for feature in (
+        health_router,
+        logs_router,
+        files_router,
+        sops_router,
+        cases_router,
+        ask_router,
+        leave_router,
+        lcl_router,
+        dashboard_router,
+        icb_router,
+        unloco_router,
+        delcl_router,
+        debosch_router,
+        gca_router,
+        remarks_router,
+    ):
+        app.include_router(feature)
 
     @app.get("/")
     def index():
-        if not (STATIC_DIR / "index.html").is_file():
-            return jsonify({
+        index_file = STATIC_DIR / "index.html"
+        if not index_file.is_file():
+            return respond({
                 "success": True,
                 "message": "MALSTAR_Toolkit API is running. Frontend build not found.",
             })
-        return send_from_directory(STATIC_DIR, "index.html")
-
-    def send_lcl_page():
-        if (STATIC_DIR / "lcl.html").is_file():
-            return send_from_directory(STATIC_DIR, "lcl.html")
-        abort(404)
+        return FileResponse(index_file)
 
     @app.get("/lcl")
     @app.get("/lcl/")
     @app.get("/lcl.html")
     def lcl_page():
-        return send_lcl_page()
+        page = STATIC_DIR / "lcl.html"
+        if page.is_file():
+            return FileResponse(page)
+        return respond({"success": False, "message": "Not found"}, 404)
 
-    @app.get("/<path:asset_path>")
-    def spa_or_static(asset_path):
-        if asset_path.startswith("api/"):
-            abort(404)
-        target = STATIC_DIR / asset_path
-        if target.is_file():
-            return send_from_directory(STATIC_DIR, asset_path)
-        if (STATIC_DIR / "index.html").is_file():
-            return send_from_directory(STATIC_DIR, "index.html")
-        abort(404)
+    @app.get("/{asset_path:path}")
+    def spa_or_static(asset_path: str):
+        return _static_response(asset_path)
 
-    return app
+    return attach_test_client(app)
 
 
 app = create_app()
@@ -178,7 +207,8 @@ def _warm_debosch():
 
 
 if __name__ == "__main__":
-    import threading
+    import uvicorn
+
     threading.Thread(target=_warm_lcl_cache, daemon=True).start()
     threading.Thread(target=_warm_unloco, daemon=True).start()
     threading.Thread(target=_warm_delcl, daemon=True).start()
@@ -186,10 +216,5 @@ if __name__ == "__main__":
     host = os.environ.get("FLASK_HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", os.environ.get("FLASK_PORT", "5000")))
     debug = os.environ.get("FLASK_DEBUG", "false").lower() in ("1", "true", "yes")
-    if debug:
-        app.run(host=host, port=port, debug=True)
-    else:
-        from waitress import serve
-
-        print(f"MALSTAR_Toolkit on http://{host}:{port} (waitress, 1 process, 8 threads)")
-        serve(app, host=host, port=port, threads=8, channel_timeout=900)
+    print(f"MALSTAR_Toolkit on http://{host}:{port} (uvicorn)")
+    uvicorn.run(app, host=host, port=port, log_level="debug" if debug else "info")

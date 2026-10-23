@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, request
+from fastapi import APIRouter, Depends, Request
 
 from logging_util import audit
 from services.debosch import (
@@ -8,68 +8,69 @@ from services.debosch import (
     list_debosch,
     update_debosch,
 )
+from webutil import json_dict, query_int, read_upload, respond
 
-bp = Blueprint("debosch", __name__)
+router = APIRouter()
 
 
 def _label(row):
     return row.get("organizationCode") or row.get("fullName") or "DE-BOSCH"
 
 
-@bp.get("/api/de-bosch")
-def list_records():
-    q = str(request.args.get("q") or "")
-    page = request.args.get("page", 1, type=int)
-    page_size = request.args.get("pageSize", 50, type=int)
+@router.get("/api/de-bosch")
+def list_debosch_records(request: Request):
+    q = str(request.query_params.get("q") or "")
+    page = query_int(request, "page", 1)
+    page_size = query_int(request, "pageSize", 50)
     payload = list_debosch(q, page, page_size)
-    return jsonify({"success": True, **payload})
+    return respond({"success": True, **payload})
 
 
-@bp.post("/api/de-bosch")
-def create_record():
-    row, error = create_debosch(request.get_json(silent=True) or {})
+@router.post("/api/de-bosch")
+def create_debosch_record(payload: dict = Depends(json_dict)):
+    row, error = create_debosch(payload)
     if error:
         audit("debosch.create", "failure", summary=error)
-        return jsonify({"success": False, "message": error}), 400
+        return respond({"success": False, "message": error}, 400)
     audit("debosch.create", summary=_label(row), resource_id=str(row["id"]))
-    return jsonify({"success": True, "message": "DE-BOSCH created", "data": row}), 201
+    return respond({"success": True, "message": "DE-BOSCH created", "data": row}, 201)
 
 
-@bp.put("/api/de-bosch/<int:record_id>")
-def update_record(record_id):
-    row, error = update_debosch(record_id, request.get_json(silent=True) or {})
+@router.put("/api/de-bosch/{record_id}")
+def update_debosch_record(record_id: int, payload: dict = Depends(json_dict)):
+    row, error = update_debosch(record_id, payload)
     if error:
         status = 404 if error == "Record not found" else 400
         audit("debosch.update", "failure", resource_id=record_id, summary=error)
-        return jsonify({"success": False, "message": error}), status
+        return respond({"success": False, "message": error}, status)
     audit("debosch.update", summary=_label(row), resource_id=str(row["id"]))
-    return jsonify({"success": True, "message": "DE-BOSCH updated", "data": row})
+    return respond({"success": True, "message": "DE-BOSCH updated", "data": row})
 
 
-@bp.delete("/api/de-bosch/<int:record_id>")
-def delete_record(record_id):
+@router.delete("/api/de-bosch/{record_id}")
+def delete_debosch_record(record_id: int):
     row, error = delete_debosch(record_id)
     if error:
         audit("debosch.delete", "failure", resource_id=record_id, summary=error)
-        return jsonify({"success": False, "message": error}), 404
+        return respond({"success": False, "message": error}, 404)
     audit("debosch.delete", summary=_label(row), resource_id=str(row["id"]))
-    return jsonify({"success": True, "message": "DE-BOSCH deleted", "data": row})
+    return respond({"success": True, "message": "DE-BOSCH deleted", "data": row})
 
 
-@bp.post("/api/de-bosch/import")
-def import_records():
-    if "file" not in request.files:
+@router.post("/api/de-bosch/import")
+def import_debosch_records(upload=Depends(read_upload)):
+    if not upload:
         audit("debosch.import", "failure", summary="no file uploaded")
-        return jsonify({"success": False, "message": "No file was uploaded."}), 400
-    file = request.files["file"]
-    filename = file.filename or "Bosch-DE.xlsx"
-    result, error = import_debosch_file(filename, file.read())
+        return respond({"success": False, "message": "No file was uploaded."}, 400)
+    filename, data = upload
+    filename = filename or "Bosch-DE.xlsx"
+    result, error = import_debosch_file(filename, data)
     if error:
         audit("debosch.import", "failure", summary=error)
-        return jsonify({"success": False, "message": error}), 400
+        return respond({"success": False, "message": error}, 400)
     audit("debosch.import", summary=f"file={result['filename']} rows={result['rowCount']}")
     noun = "organization" if result["rowCount"] == 1 else "organizations"
-    return jsonify({
+    return respond({
         "success": True,
         "message": f"Imported {result['rowCount']:,} DE-BOSCH {noun}",
         "data": result,

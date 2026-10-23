@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request
+from fastapi import APIRouter, Depends, Request
 
 from config import DASHBOARD_MAX_ROWS
 from db import get_connection
@@ -11,12 +11,13 @@ from services.dashboard_analytics import (
     parse_dashboard_record,
 )
 from util import now_stamp
+from webutil import json_dict, respond
 
-bp = Blueprint("dashboard", __name__)
+router = APIRouter()
 
 
-def parse_dashboard_date_arg(name):
-    value = str(request.args.get(name) or "").strip()
+def parse_dashboard_date_arg(request: Request, name):
+    value = str(request.query_params.get(name) or "").strip()
     if not value:
         return "", None
     try:
@@ -26,36 +27,35 @@ def parse_dashboard_date_arg(name):
     return value, None
 
 
-@bp.get("/api/dashboard")
-def get_dashboard():
-    date_from, error = parse_dashboard_date_arg("dateFrom")
+@router.get("/api/dashboard")
+def get_dashboard(request: Request):
+    date_from, error = parse_dashboard_date_arg(request, "dateFrom")
     if error:
-        return jsonify({"success": False, "message": error}), 400
-    date_to, error = parse_dashboard_date_arg("dateTo")
+        return respond({"success": False, "message": error}, 400)
+    date_to, error = parse_dashboard_date_arg(request, "dateTo")
     if error:
-        return jsonify({"success": False, "message": error}), 400
+        return respond({"success": False, "message": error}, 400)
     mailboxes = []
-    for value in request.args.getlist("mailbox"):
+    for value in request.query_params.getlist("mailbox"):
         text = str(value or "").strip()[:160]
         if text:
             mailboxes.append(text)
     with get_connection() as conn:
         data = build_dashboard_payload(conn, date_from, date_to, mailboxes)
-    return jsonify({"success": True, "data": data})
+    return respond({"success": True, "data": data})
 
 
-@bp.post("/api/dashboard/import")
-def import_dashboard():
-    payload = request.get_json(silent=True) or {}
+@router.post("/api/dashboard/import")
+def import_dashboard(payload: dict = Depends(json_dict)):
     filename = str(payload.get("filename") or "daily-report.csv").strip() or "daily-report.csv"
     raw_rows = payload.get("records")
     if not isinstance(raw_rows, list):
         audit("dashboard.import", "failure", summary="JSON records missing")
-        return jsonify({"success": False, "message": "No records were sent."}), 400
+        return respond({"success": False, "message": "No records were sent."}, 400)
     if len(raw_rows) > DASHBOARD_MAX_ROWS:
         message = f"CSV is limited to {DASHBOARD_MAX_ROWS} rows."
         audit("dashboard.import", "failure", summary=message)
-        return jsonify({"success": False, "message": message}), 400
+        return respond({"success": False, "message": message}, 400)
     records = []
     errors = []
     for index, raw in enumerate(raw_rows, start=2):
@@ -72,14 +72,14 @@ def import_dashboard():
             "failure",
             summary=f"file={filename} validation errors={len(errors)}",
         )
-        return jsonify({
+        return respond({
             "success": False,
             "message": "CSV validation failed. Nothing was imported.",
             "errors": errors[:100],
-        }), 400
+        }, 400)
     if not records:
         audit("dashboard.import", "failure", summary=f"file={filename} no data rows")
-        return jsonify({"success": False, "message": "CSV contains no data rows."}), 400
+        return respond({"success": False, "message": "CSV contains no data rows."}, 400)
     stamp = now_stamp()
     with get_connection() as conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -124,7 +124,7 @@ def import_dashboard():
         )
         data = build_dashboard_payload(conn, "", "")
     audit("dashboard.import", summary=f"file={filename} rows={len(records)}")
-    return jsonify({
+    return respond({
         "success": True,
         "message": "Dashboard updated",
         "processed": len(records),

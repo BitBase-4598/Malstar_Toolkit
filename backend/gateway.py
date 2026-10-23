@@ -4,14 +4,15 @@ Tencent Cloud security groups on this CVM allow 80 but not 8080.
 This gateway keeps Time Motion Tracker Pro at / and exposes Customer Remarks at /remarks/.
 """
 
-import json
 import os
 import socket
 import urllib.error
 import urllib.request
 
-from flask import Flask, Response, request
-from waitress import serve
+import uvicorn
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse, StreamingResponse
+from starlette.routing import Route
 
 TIMER_UPSTREAM = os.environ.get("TIMER_UPSTREAM", "http://127.0.0.1:8081")
 REMARKS_UPSTREAM = os.environ.get("REMARKS_UPSTREAM", "http://127.0.0.1:8080")
@@ -36,19 +37,6 @@ WRITE_TIMEOUT = 900
 HEAVY_GET_PREFIXES = ("/api/lcl", "/api/unlocode")
 
 
-app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 512 * 1024 * 1024
-app.config["MAX_FORM_MEMORY_SIZE"] = 512 * 1024 * 1024
-
-
-@app.before_request
-def route_remarks_first():
-    path = request.path
-    if path == "/remarks" or path.startswith("/remarks/"):
-        subpath = path[len("/remarks"):].lstrip("/")
-        return _forward(REMARKS_UPSTREAM, subpath)
-
-
 def _forward_timeout(subpath, method):
     if method in {"POST", "PUT", "PATCH"}:
         return WRITE_TIMEOUT
@@ -59,36 +47,39 @@ def _forward_timeout(subpath, method):
 
 
 def _json_error(message, status):
-    payload = json.dumps({"success": False, "message": message})
-    return Response(payload, status, [("Content-Type", "application/json")])
+    return JSONResponse({"success": False, "message": message}, status_code=status)
 
 
-def _forward(target_base, subpath=""):
-    url = target_base.rstrip("/") + "/" + subpath.lstrip("/")
-    query = request.query_string.decode()
-    if query:
-        url = f"{url}?{query}"
-    headers = {
-        key: value
-        for key, value in request.headers
-        if key.lower() not in SKIP_REQ_HEADERS
-    }
-    body = request.get_data()
+def _open_upstream(url, headers, body, method, timeout):
     req = urllib.request.Request(
         url,
         data=body if body else None,
         headers=headers,
-        method=request.method,
+        method=method,
     )
+    return urllib.request.urlopen(req, timeout=timeout)
+
+
+async def _forward(request, target_base, subpath=""):
+    url = target_base.rstrip("/") + "/" + subpath.lstrip("/")
+    query = request.url.query
+    if query:
+        url = f"{url}?{query}"
+    headers = {
+        key: value
+        for key, value in request.headers.items()
+        if key.lower() not in SKIP_REQ_HEADERS
+    }
+    body = await request.body()
     timeout = _forward_timeout(subpath, request.method)
     try:
-        response = urllib.request.urlopen(req, timeout=timeout)
+        response = _open_upstream(url, headers, body, request.method, timeout)
     except urllib.error.HTTPError as error:
-        out_headers = [
-            (key, value)
+        out_headers = {
+            key: value
             for key, value in error.headers.items()
             if key.lower() not in SKIP_RES_HEADERS
-        ]
+        }
 
         def error_chunks():
             try:
@@ -100,7 +91,7 @@ def _forward(target_base, subpath=""):
             finally:
                 error.close()
 
-        return Response(error_chunks(), error.code, out_headers)
+        return StreamingResponse(error_chunks(), status_code=error.code, headers=out_headers)
     except TimeoutError:
         return _json_error("The request timed out.", 504)
     except socket.timeout:
@@ -111,11 +102,11 @@ def _forward(target_base, subpath=""):
             return _json_error("The request timed out.", 504)
         return _json_error("The upstream service is unavailable.", 502)
 
-    out_headers = [
-        (key, value)
+    out_headers = {
+        key: value
         for key, value in response.headers.items()
         if key.lower() not in SKIP_RES_HEADERS
-    ]
+    }
 
     def body_chunks():
         try:
@@ -127,27 +118,24 @@ def _forward(target_base, subpath=""):
         finally:
             response.close()
 
-    return Response(body_chunks(), response.status, out_headers)
+    return StreamingResponse(body_chunks(), status_code=response.status, headers=out_headers)
 
 
-@app.route("/remarks", methods=["GET", "HEAD"])
-def remarks_root():
-    return _forward(REMARKS_UPSTREAM)
+async def dispatch(request):
+    path = request.url.path
+    if path == "/remarks" or path.startswith("/remarks/"):
+        subpath = path[len("/remarks"):].lstrip("/")
+        return await _forward(request, REMARKS_UPSTREAM, subpath)
+    return await _forward(request, TIMER_UPSTREAM, path.lstrip("/"))
 
 
-@app.route("/remarks/<path:asset_path>", methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
-def remarks_proxy(asset_path):
-    return _forward(REMARKS_UPSTREAM, asset_path)
-
-
-@app.route("/", defaults={"asset_path": ""}, methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
-@app.route("/<path:asset_path>", methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
-def timer_proxy(asset_path):
-    return _forward(TIMER_UPSTREAM, asset_path)
+app = Starlette(routes=[Route("/{path:path}", dispatch, methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])])
+# Starlette Route path does not match "/" with {path:path} in every version. Mount both.
+app.router.routes.insert(0, Route("/", dispatch, methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]))
 
 
 if __name__ == "__main__":
     print(f"Public gateway on http://{LISTEN_HOST}:{LISTEN_PORT}")
     print(f"  /remarks -> {REMARKS_UPSTREAM}")
     print(f"  /        -> {TIMER_UPSTREAM}")
-    serve(app, host=LISTEN_HOST, port=LISTEN_PORT, threads=8, channel_timeout=900)
+    uvicorn.run(app, host=LISTEN_HOST, port=LISTEN_PORT, timeout_keep_alive=900)

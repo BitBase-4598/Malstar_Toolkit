@@ -18,8 +18,7 @@ os.environ["DE_LCL_XLSX_PATH"] = str(TMP / "missing-delcl.xlsx")
 os.environ["BOSCH_DE_XLSX_PATH"] = str(TMP / "missing-bosch-de.xlsx")
 sys.path.insert(0, str(ROOT))
 
-from flask import Flask
-from werkzeug.exceptions import NotFound
+from starlette.exceptions import HTTPException
 
 from db import fts_ready, get_connection, migrate
 from db_engine import table_exists
@@ -166,13 +165,11 @@ def test_migrate_existing_schema_8_adds_lcl_shipment_id():
 
 def test_stored_path_rejects_traversal():
     migrate()
-    flask_app = Flask(__name__)
-    with flask_app.app_context():
-        try:
-            stored_path("../secret.txt")
-            raised = False
-        except NotFound:
-            raised = True
+    try:
+        stored_path("../secret.txt")
+        raised = False
+    except HTTPException as error:
+        raised = error.status_code == 404
     assert raised
 
 
@@ -294,7 +291,9 @@ def test_unhandled_api_exception_is_audited():
     def boom():
         raise RuntimeError("boom-test")
 
-    test_app.add_url_rule("/api/__test-boom", endpoint="test_boom_exc", view_func=boom)
+    test_app.add_api_route("/api/__test-boom", boom, methods=["GET"])
+    added = test_app.router.routes.pop()
+    test_app.router.routes.insert(0, added)
     client = test_app.test_client()
     response = client.get("/api/__test-boom")
     assert response.status_code == 500

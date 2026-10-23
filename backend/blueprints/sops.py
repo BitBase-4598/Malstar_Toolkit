@@ -1,17 +1,18 @@
-from flask import Blueprint, jsonify, request
+from fastapi import APIRouter, Depends, Request
 
 from db import get_connection
 from logging_util import audit
 from services.rag import index_sop, touch_index_state
 from services.sops import load_sop, parse_sop_payload, replace_sop_children
 from util import now_stamp
+from webutil import json_dict, respond
 
-bp = Blueprint("sops", __name__)
+router = APIRouter()
 
 
-@bp.get("/api/sops")
-def list_sops():
-    q = str(request.args.get("q") or "").strip()
+@router.get("/api/sops")
+def list_sops(request: Request):
+    q = str(request.query_params.get("q") or "").strip()
     with get_connection() as conn:
         if q:
             rows = conn.execute(
@@ -64,15 +65,15 @@ def list_sops():
             }
             for row in rows
         ]
-    return jsonify({"success": True, "data": data})
+    return respond({"success": True, "data": data})
 
 
-@bp.post("/api/sops")
-def create_sop():
-    payload, error = parse_sop_payload(request.get_json(silent=True) or {})
+@router.post("/api/sops")
+def create_sop(payload: dict = Depends(json_dict)):
+    payload, error = parse_sop_payload(payload)
     if error:
         audit("sop.create", "failure", summary=error)
-        return jsonify({"success": False, "message": error}), 400
+        return respond({"success": False, "message": error}, 400)
     stamp = now_stamp()
     with get_connection() as conn:
         cur = conn.execute(
@@ -95,29 +96,29 @@ def create_sop():
         index_sop(conn, sop_id)
         data = load_sop(conn, sop_id)
     audit("sop.create", resource_id=sop_id, summary=payload["title"])
-    return jsonify({"success": True, "message": "SOP created", "data": data}), 201
+    return respond({"success": True, "message": "SOP created", "data": data}, 201)
 
 
-@bp.get("/api/sops/<int:sop_id>")
-def get_sop(sop_id):
+@router.get("/api/sops/{sop_id}")
+def get_sop(sop_id: int):
     with get_connection() as conn:
         data = load_sop(conn, sop_id)
     if not data:
-        return jsonify({"success": False, "message": "SOP not found"}), 404
-    return jsonify({"success": True, "data": data})
+        return respond({"success": False, "message": "SOP not found"}, 404)
+    return respond({"success": True, "data": data})
 
 
-@bp.put("/api/sops/<int:sop_id>")
-def update_sop(sop_id):
-    payload, error = parse_sop_payload(request.get_json(silent=True) or {})
+@router.put("/api/sops/{sop_id}")
+def update_sop(sop_id: int, payload: dict = Depends(json_dict)):
+    payload, error = parse_sop_payload(payload)
     if error:
         audit("sop.update", "failure", resource_id=sop_id, summary=error)
-        return jsonify({"success": False, "message": error}), 400
+        return respond({"success": False, "message": error}, 400)
     with get_connection() as conn:
         existing = conn.execute("SELECT ID FROM Sops WHERE ID=?", (sop_id,)).fetchone()
         if not existing:
             audit("sop.update", "failure", resource_id=sop_id, summary="not found")
-            return jsonify({"success": False, "message": "SOP not found"}), 404
+            return respond({"success": False, "message": "SOP not found"}, 404)
         conn.execute(
             """
             UPDATE Sops
@@ -138,20 +139,20 @@ def update_sop(sop_id):
         index_sop(conn, sop_id)
         data = load_sop(conn, sop_id)
     audit("sop.update", resource_id=sop_id, summary=payload["title"])
-    return jsonify({"success": True, "message": "SOP saved", "data": data})
+    return respond({"success": True, "message": "SOP saved", "data": data})
 
 
-@bp.delete("/api/sops/<int:sop_id>")
-def delete_sop(sop_id):
+@router.delete("/api/sops/{sop_id}")
+def delete_sop(sop_id: int):
     with get_connection() as conn:
         row = conn.execute("SELECT Title FROM Sops WHERE ID=?", (sop_id,)).fetchone()
         if not row:
             audit("sop.delete", "failure", resource_id=sop_id, summary="not found")
-            return jsonify({"success": False, "message": "SOP not found"}), 404
+            return respond({"success": False, "message": "SOP not found"}, 404)
         conn.execute("DELETE FROM RagChunks WHERE SourceType='sop' AND SourceID=?", (sop_id,))
         conn.execute("DELETE FROM SopSteps WHERE SopID=?", (sop_id,))
         conn.execute("DELETE FROM SopAttachments WHERE SopID=?", (sop_id,))
         conn.execute("DELETE FROM Sops WHERE ID=?", (sop_id,))
         touch_index_state(conn)
     audit("sop.delete", resource_id=sop_id, summary=row["Title"])
-    return jsonify({"success": True, "message": "SOP deleted"})
+    return respond({"success": True, "message": "SOP deleted"})

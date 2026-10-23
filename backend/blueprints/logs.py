@@ -2,24 +2,26 @@ import csv
 import io
 from datetime import datetime
 
-from flask import Blueprint, Response, jsonify, request
+from fastapi import APIRouter, Depends, Request
+from starlette.responses import Response
 
 from db import get_connection
 from logging_util import is_key_log_action, log_event
+from webutil import json_dict, query_int, respond
 
-bp = Blueprint("logs", __name__)
+router = APIRouter()
 
 
-def activity_log_filters():
+def activity_log_filters(request: Request):
     clauses = []
     params = []
-    timestamp = str(request.args.get("timestamp") or "").strip()
-    action = str(request.args.get("action") or "").strip()
-    detail = str(request.args.get("detail") or "").strip()
-    client_ip = str(request.args.get("clientIp") or "").strip()
-    module = str(request.args.get("module") or "").strip()
-    outcome = str(request.args.get("outcome") or "").strip().casefold()
-    request_id = str(request.args.get("requestId") or "").strip()
+    timestamp = str(request.query_params.get("timestamp") or "").strip()
+    action = str(request.query_params.get("action") or "").strip()
+    detail = str(request.query_params.get("detail") or "").strip()
+    client_ip = str(request.query_params.get("clientIp") or "").strip()
+    module = str(request.query_params.get("module") or "").strip()
+    outcome = str(request.query_params.get("outcome") or "").strip().casefold()
+    request_id = str(request.query_params.get("requestId") or "").strip()
     if timestamp:
         clauses.append("LOWER(Timestamp) LIKE LOWER(?)")
         params.append(f"%{timestamp}%")
@@ -79,11 +81,11 @@ LOG_SELECT = """
 """
 
 
-@bp.get("/api/activity-logs")
-def list_activity_logs():
-    page = max(request.args.get("page", 1, type=int), 1)
-    page_size = min(max(request.args.get("pageSize", 80, type=int), 1), 500)
-    where, params = activity_log_filters()
+@router.get("/api/activity-logs")
+def list_activity_logs(request: Request):
+    page = max(query_int(request, "page", 1), 1)
+    page_size = min(max(query_int(request, "pageSize", 80), 1), 500)
+    where, params = activity_log_filters(request)
     with get_connection() as conn:
         total = conn.execute(f"SELECT COUNT(*) FROM ActivityLogs {where}", params).fetchone()[0]
         rows = conn.execute(
@@ -96,7 +98,7 @@ def list_activity_logs():
             """,
             params + [page_size, (page - 1) * page_size],
         ).fetchall()
-    return jsonify({
+    return respond({
         "success": True,
         "data": [activity_log_row(row) for row in rows],
         "pagination": {
@@ -108,9 +110,9 @@ def list_activity_logs():
     })
 
 
-@bp.get("/api/activity-logs/export")
-def export_activity_logs():
-    where, params = activity_log_filters()
+@router.get("/api/activity-logs/export")
+def export_activity_logs(request: Request):
+    where, params = activity_log_filters(request)
     with get_connection() as conn:
         rows = conn.execute(
             f"""
@@ -154,23 +156,19 @@ def export_activity_logs():
             item["requestId"],
             item["eventId"],
         ])
-    csv_text = output.getvalue()
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     return Response(
-        csv_text,
-        mimetype="text/csv; charset=utf-8",
-        headers={
-            "Content-Disposition": f"attachment; filename=activity-log-{stamp}.csv",
-        },
+        content=output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename=activity-log-{stamp}.csv"},
     )
 
 
-@bp.post("/api/activity-logs")
-def create_activity_log():
-    data = request.get_json(silent=True) or {}
+@router.post("/api/activity-logs")
+def create_activity_log(data: dict = Depends(json_dict)):
     action = str(data.get("action") or "").strip() or "UI event"
     detail = str(data.get("detail") or "").strip()
     if not is_key_log_action(action):
-        return jsonify({"success": True, "skipped": True})
+        return respond({"success": True, "skipped": True})
     stamp = log_event(action, detail)
-    return jsonify({"success": True, "timestamp": stamp})
+    return respond({"success": True, "timestamp": stamp})

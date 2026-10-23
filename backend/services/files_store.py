@@ -3,8 +3,8 @@ from datetime import datetime
 from pathlib import Path
 
 import mammoth
-from flask import abort
 from openpyxl import load_workbook
+from starlette.exceptions import HTTPException
 
 from config import (
     ALLOWED_FILE_KINDS,
@@ -51,7 +51,7 @@ def looks_like_image(data, suffix):
 def stored_path(stored_name):
     path = (ensure_upload_dir() / stored_name).resolve()
     if path.parent != ensure_upload_dir().resolve():
-        abort(404)
+        raise HTTPException(status_code=404)
     return path
 
 

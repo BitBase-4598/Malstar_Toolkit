@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, request
+from fastapi import APIRouter, Depends
 
 from config import ASK_MAX_QUESTION, llm_enabled
 from db import get_connection
@@ -11,33 +11,33 @@ from services.rag import (
     reindex_all,
     search_chunks,
 )
+from webutil import json_dict, respond
 
-bp = Blueprint("ask", __name__)
+router = APIRouter()
 
 
-@bp.get("/api/ask/status")
+@router.get("/api/ask/status")
 def ask_status():
     with get_connection() as conn:
         data = rag_status(conn)
-    return jsonify({"success": True, "data": data})
+    return respond({"success": True, "data": data})
 
 
-@bp.post("/api/ask/reindex")
+@router.post("/api/ask/reindex")
 def ask_reindex():
     with get_connection() as conn:
         reindex_all(conn)
         data = rag_status(conn)
     audit("ask.reindex", summary=f"chunks={data['chunkCount']}")
-    return jsonify({"success": True, "message": "Index rebuilt", "data": data})
+    return respond({"success": True, "message": "Index rebuilt", "data": data})
 
 
-@bp.post("/api/ask")
-def ask_question():
-    data = request.get_json(silent=True) or {}
+@router.post("/api/ask")
+def ask_question(data: dict = Depends(json_dict)):
     question = str(data.get("question") or data.get("q") or "").strip()
     if not question:
         audit("ask.query", "failure", summary="empty question")
-        return jsonify({"success": False, "message": "A question is required."}), 400
+        return respond({"success": False, "message": "A question is required."}, 400)
     if len(question) > ASK_MAX_QUESTION:
         question = question[:ASK_MAX_QUESTION]
     with get_connection() as conn:
@@ -45,7 +45,7 @@ def ask_question():
         rows = search_chunks(conn, question)
     if indexing and not rows:
         audit("ask.query", summary=question[:200], extra={"mode": "indexing"})
-        return jsonify({
+        return respond({
             "success": True,
             "data": {
                 "question": question,
@@ -76,7 +76,7 @@ def ask_question():
         summary=question[:200],
         extra={"mode": mode, "llmError": llm_error or ""},
     )
-    return jsonify({
+    return respond({
         "success": True,
         "data": {
             "question": question,

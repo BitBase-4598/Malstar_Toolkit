@@ -10,10 +10,10 @@ The running app uses **SQLite only**. Put the database file at `/home/data/malst
 Startup command (Configuration → General settings). Keep this exact string:
 
 ```
-gunicorn --bind=0.0.0.0:8000 --chdir backend --workers 1 --threads 8 --timeout 120 app:app
+python -m uvicorn app:app --host 0.0.0.0 --port 8000 --app-dir backend --timeout-keep-alive 120
 ```
 
-Do not use `source`, `antenv/bin/gunicorn`, or `WEBSITES_PORT=8080` on this code-deploy app.
+Do not use `source`, `antenv/bin/gunicorn`, or `WEBSITES_PORT=8080` on this code-deploy app. Keep one worker so SQLite stays on a single process.
 
 ## 1. Application settings
 
@@ -61,6 +61,6 @@ Portal: Monitoring → Health check → `/api/health`. That path returns 503 if 
 
 Keep **one instance**. `/home/data` is not safe across scale-out until it is an Azure Files mount.
 
-Keep `--workers 1 --threads 8` on F1.
+Keep a single uvicorn process on F1.
 
 Always On and custom domains are plan-SKU limits. Entra Easy Auth is unchanged.
