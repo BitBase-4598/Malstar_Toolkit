@@ -2884,9 +2884,14 @@ tbody tr.selected td {
 
 .dash-lower {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 16px;
   align-items: start;
+}
+
+.dash-conclusions-card {
+  width: 100%;
+  min-width: 0;
 }
 
 .dash-chart-body {
@@ -3150,8 +3155,15 @@ tbody tr.selected td {
   background: var(--maersk-hover);
 }
 
-.dash-data .dash-subject {
+.dash-data .dash-subject,
+.dash-data .dash-reasons {
   white-space: normal;
+}
+
+.dash-reasons {
+  min-width: 160px;
+  max-width: 320px;
+  overflow-wrap: anywhere;
 }
 
 .dash-bar-label {
@@ -3266,9 +3278,12 @@ tbody tr.selected td {
 
 @media (max-width: 1100px) {
   .dash-kpis,
-  .dash-charts,
-  .dash-lower {
+  .dash-charts {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .dash-lower {
+    grid-template-columns: 1fr;
   }
 
   .dash-kpi-highest {

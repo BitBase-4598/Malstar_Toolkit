@@ -126,27 +126,79 @@ def median_value(values):
     return (ordered[mid - 1] + ordered[mid]) / 2
 
 
-ABNORMAL_PROCESS_MINUTES = 8 * 60
+# Booking creation turn time (I-E) and time usage (J-I) cleaning thresholds.
+TURN_TIME_MAX_MINUTES = 2880
+TIME_USAGE_MIN_FOR_TURN = 2  # strict: J-I must be >
+TIME_USAGE_MAX_MINUTES = 1440
+TIME_USAGE_MIN_MINUTES = 1.7
 
 
-def is_abnormal_process_time(minutes):
-    if minutes is None:
-        return True
-    return abs(minutes) > ABNORMAL_PROCESS_MINUTES
+def has_complete_times(item, need_received=False):
+    if parse_dash_datetime(item.get("handlingTime")) is None:
+        return False
+    if parse_dash_datetime(item.get("bookingConvertedTime")) is None:
+        return False
+    if need_received and parse_dash_datetime(item.get("emailReceived")) is None:
+        return False
+    return True
 
 
-def mean_without_abnormal(values):
-    remaining = [value for value in values if not is_abnormal_process_time(value)]
+def is_valid_time_usage(item):
+    """Booking creation time usage (J-I): converted, times complete, 1.7 ≤ J-I ≤ 1440."""
+    if not is_converted_status(item.get("emailStatus")):
+        return False
+    if not has_complete_times(item, need_received=False):
+        return False
+    usage = item.get("processMinutes")
+    if usage is None:
+        return False
+    try:
+        value = float(usage)
+    except (TypeError, ValueError):
+        return False
+    return TIME_USAGE_MIN_MINUTES <= value <= TIME_USAGE_MAX_MINUTES
+
+
+def is_valid_turn_time(item):
+    """Booking creation turn time (I-E): converted, E/I/J complete, 0≤I-E≤2880 and 2<J-I≤1440."""
+    if not is_converted_status(item.get("emailStatus")):
+        return False
+    if not has_complete_times(item, need_received=True):
+        return False
+    turn = item.get("handleWaitMinutes")
+    usage = item.get("processMinutes")
+    if turn is None or usage is None:
+        return False
+    try:
+        turn_value = float(turn)
+        usage_value = float(usage)
+    except (TypeError, ValueError):
+        return False
+    if not (0 <= turn_value <= TURN_TIME_MAX_MINUTES):
+        return False
+    return TIME_USAGE_MIN_FOR_TURN < usage_value <= TIME_USAGE_MAX_MINUTES
+
+
+def mean_minutes(values):
+    remaining = [float(value) for value in values if value is not None]
     if not remaining:
         return None
     return round(sum(remaining) / len(remaining), 1), len(remaining)
 
 
 def average_process_times(items):
-    return mean_without_abnormal(
+    return mean_minutes(
         item["processMinutes"]
         for item in items
-        if item.get("processMinutes") is not None
+        if is_valid_time_usage(item)
+    )
+
+
+def average_turn_times(items):
+    return mean_minutes(
+        item["handleWaitMinutes"]
+        for item in items
+        if is_valid_turn_time(item)
     )
 
 
@@ -212,32 +264,25 @@ def build_dashboard_payload(conn, date_from="", date_to="", mailbox=""):
     converted = [item for item in items if is_converted_status(item["emailStatus"])]
     processing = [item for item in items if is_processing_status(item["emailStatus"])]
     missing_ship = [item for item in items if not item["shipmentNumber"]]
-    process_ok = [
-        item
-        for item in items
-        if item["processMinutes"] is not None and item["processMinutes"] >= 0
-    ]
+    usage_ok = [item for item in items if is_valid_time_usage(item)]
+    turn_ok = [item for item in items if is_valid_turn_time(item)]
     process_neg = [
         item
         for item in items
         if item["processMinutes"] is not None and item["processMinutes"] < 0
     ]
-    waits = [
-        item["handleWaitMinutes"]
-        for item in items
-        if item["handleWaitMinutes"] is not None
-    ]
+    waits = [item["handleWaitMinutes"] for item in turn_ok]
     avg_result = average_process_times(items)
     avg_process, avg_process_count = avg_result if avg_result else (None, 0)
     max_process = None
-    if process_ok:
-        max_process = max(process_ok, key=lambda item: item["processMinutes"])
+    if usage_ok:
+        max_process = max(usage_ok, key=lambda item: item["processMinutes"])
     handler_counts = {}
     handler_process = {}
     for item in items:
         handler = item["handledBy"] or "(blank)"
         handler_counts[handler] = handler_counts.get(handler, 0) + 1
-        if item["processMinutes"] is not None:
+        if is_valid_time_usage(item):
             handler_process.setdefault(handler, []).append(item["processMinutes"])
     by_handler = sorted(
         [{"label": name, "count": count} for name, count in handler_counts.items()],
@@ -260,7 +305,7 @@ def build_dashboard_payload(conn, date_from="", date_to="", mailbox=""):
     by_hour = [{"label": f"{hour:02d}:00", "count": hour_counts[hour]} for hour in range(24)]
     avg_by_handler = []
     for name, values in handler_process.items():
-        result = mean_without_abnormal(values)
+        result = mean_minutes(values)
         if result is None:
             continue
         minutes, count = result
@@ -279,15 +324,13 @@ def build_dashboard_payload(conn, date_from="", date_to="", mailbox=""):
     wait_limit = max(60, int(wait_median * 1.5)) if wait_median is not None else 60
     wait_outliers = [
         item
-        for item in items
+        for item in turn_ok
         if item["handleWaitMinutes"] is not None and item["handleWaitMinutes"] > wait_limit
     ]
     wait_outliers.sort(key=lambda item: item["handleWaitMinutes"], reverse=True)
     slowest_wait = wait_outliers[0] if wait_outliers else None
-    if not slowest_wait:
-        with_wait = [item for item in items if item["handleWaitMinutes"] is not None]
-        if with_wait:
-            slowest_wait = max(with_wait, key=lambda item: item["handleWaitMinutes"])
+    if not slowest_wait and turn_ok:
+        slowest_wait = max(turn_ok, key=lambda item: item["handleWaitMinutes"])
 
     message_ids = {}
     for item in items:
@@ -313,7 +356,7 @@ def build_dashboard_payload(conn, date_from="", date_to="", mailbox=""):
             "kind": "average-process",
             "text": (
                 f"Average process-time is {avg_process} min across {avg_process_count} "
-                "bookings after removing process times over 8 hours."
+                "Shipment Converted bookings with time usage between 1.7 and 1440 minutes."
             ),
         })
     if top_handler:

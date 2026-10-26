@@ -45,26 +45,40 @@ function volumeByHour(rows, weekdayId) {
   }));
 }
 
-const OVER_8H_MINUTES = 8 * 60;
+const TIME_USAGE_MIN_MINUTES = 1.7;
+const TIME_USAGE_MAX_MINUTES = 1440;
 
 function roundOne(value) {
   return Math.round(value * 10) / 10;
 }
 
-function processAverages(rows, includeOver8h) {
+function isConvertedStatus(status) {
+  return String(status || "").toLowerCase().includes("converted");
+}
+
+function hasCompleteUsageTimes(row) {
+  return Boolean(String(row.handlingTime || "").trim() && String(row.bookingConvertedTime || "").trim());
+}
+
+function isValidTimeUsage(row) {
+  if (!isConvertedStatus(row.emailStatus) || !hasCompleteUsageTimes(row)) {
+    return false;
+  }
+  if (row.processMinutes == null || row.processMinutes === "") {
+    return false;
+  }
+  const value = Number(row.processMinutes);
+  return Number.isFinite(value) && value >= TIME_USAGE_MIN_MINUTES && value <= TIME_USAGE_MAX_MINUTES;
+}
+
+function processAverages(rows) {
   const all = [];
   const byHandler = new Map();
   for (const row of rows) {
-    if (row.processMinutes == null || row.processMinutes === "") {
+    if (!isValidTimeUsage(row)) {
       continue;
     }
     const value = Number(row.processMinutes);
-    if (!Number.isFinite(value)) {
-      continue;
-    }
-    if (!includeOver8h && Math.abs(value) > OVER_8H_MINUTES) {
-      continue;
-    }
     all.push(value);
     const handler = row.handledBy || "(blank)";
     const list = byHandler.get(handler);
@@ -399,11 +413,10 @@ function HourChart({ items }) {
 
 const DASH_TABLE_PAGE_SIZE = 50;
 
-function DataTable({
+function FlaggedTable({
   rows,
-  maxProcessOrder,
-  emptyMessage = "No bookings in this date range.",
-  note = "Complete rows for the selected date range",
+  emptyMessage = "No abnormal rows in this date range.",
+  note = "Abnormal waits or process-times",
 }) {
   const [page, setPage] = useState(1);
   const total = rows.length;
@@ -421,10 +434,10 @@ function DataTable({
   const pages = Array.from({ length: totalPages }, (_, index) => index + 1);
 
   return (
-    <section className="card dash-data">
+    <section className="card dash-data dash-flagged">
       <div className="summary">
         <div>
-          <strong>All bookings</strong>
+          <strong>Flagged rows</strong>
           <p className="dash-section-note">{note}</p>
         </div>
         <span className="dash-count-chip">
@@ -448,18 +461,19 @@ function DataTable({
               <th>Date</th>
               <th>Mailbox</th>
               <th>Subject</th>
+              <th>Reasons</th>
             </tr>
           </thead>
           <tbody>
             {visible.length === 0 ? (
               <tr>
-                <td colSpan="13" className="empty">
+                <td colSpan="14" className="empty">
                   {emptyMessage}
                 </td>
               </tr>
             ) : (
               visible.map((row) => (
-                <tr key={row.id} className={row.orderNumber && row.orderNumber === maxProcessOrder ? "selected" : ""}>
+                <tr key={row.id} className={row.isHighestProcess ? "selected" : ""}>
                   <td>
                     <strong>{row.orderNumber || "—"}</strong>
                   </td>
@@ -477,6 +491,7 @@ function DataTable({
                   <td>{row.date || "—"}</td>
                   <td>{row.mailbox || "—"}</td>
                   <td className="dash-subject">{row.subject || "—"}</td>
+                  <td className="dash-reasons">{(row.reasons || []).join(", ") || "—"}</td>
                 </tr>
               ))
             )}
@@ -484,7 +499,7 @@ function DataTable({
         </table>
       </div>
       <div className="pagination">
-        <span>{total === 0 ? "No bookings" : `Showing ${from}–${to} of ${total}`}</span>
+        <span>{total === 0 ? "No flagged rows" : `Showing ${from}–${to} of ${total}`}</span>
         <div className="pagination-nav">
           <button type="button" disabled={safePage <= 1} onClick={() => setPage((value) => value - 1)}>
             Previous
@@ -498,7 +513,7 @@ function DataTable({
               searchable={totalPages > 8}
               options={pages.map((number) => ({ value: String(number), label: String(number) }))}
               onChange={(next) => setPage(Number(next))}
-              ariaLabel="Select bookings page"
+              ariaLabel="Select flagged rows page"
             />
             of {totalPages}
           </label>
@@ -519,7 +534,6 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [hourWeekday, setHourWeekday] = useState("all");
-  const [includeOver8h, setIncludeOver8h] = useState(false);
   const [mailboxes, setMailboxes] = useState([]);
   const loadSeq = useRef(0);
 
@@ -619,16 +633,11 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
     }
     return items;
   }, [meta?.hasBlankMailbox, meta?.mailboxes]);
-  const tableEmptyMessage = mailboxes.length
-    ? "No bookings for the selected mailboxes in these dates."
-    : "No bookings in this date range.";
-  const tableNote = mailboxes.length
-    ? "Complete rows for the selected dates and mailboxes"
-    : "Complete rows for the selected date range";
   const rows = data?.rows || [];
+  const flaggedRows = data?.flagged || [];
   const hourItems = useMemo(() => volumeByHour(rows, hourWeekday), [rows, hourWeekday]);
   const hourWeekdayLabel = WEEKDAY_FILTERS.find((item) => item.id === hourWeekday)?.label || "All";
-  const processStats = useMemo(() => processAverages(rows, includeOver8h), [rows, includeOver8h]);
+  const processStats = useMemo(() => processAverages(rows), [rows]);
   const quadrantPoints = useMemo(() => {
     const minutes = new Map(processStats.processByHandler.map((item) => [item.label, item.minutes]));
     return (data?.series?.byHandler || [])
@@ -640,7 +649,7 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
       .filter((item) => item.count > 0 && Number.isFinite(item.minutes));
   }, [data?.series?.byHandler, processStats.processByHandler]);
   const avgProcessLabel = processStats.avg == null ? "—" : `${processStats.avg} min`;
-  const avgProcessNote = includeOver8h ? "including over 8 hours" : "excluding over 8 hours";
+  const avgProcessNote = "Shipment Converted, 1.7–1440 min";
   const conclusions = useMemo(() => {
     const items = data?.conclusions || [];
     if (processStats.avg == null) {
@@ -652,12 +661,13 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
       }
       return {
         ...item,
-        text: includeOver8h
-          ? `Average process-time is ${processStats.avg} min across ${processStats.count} bookings including process times over 8 hours.`
-          : `Average process-time is ${processStats.avg} min across ${processStats.count} bookings after removing process times over 8 hours.`,
+        text: (
+          `Average process-time is ${processStats.avg} min across ${processStats.count} `
+          + "Shipment Converted bookings with time usage between 1.7 and 1440 minutes."
+        ),
       };
     });
-  }, [data?.conclusions, includeOver8h, processStats]);
+  }, [data?.conclusions, processStats]);
 
   return (
     <div className="dash-layout">
@@ -703,17 +713,6 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
               />
             </label>
           </div>
-          <label className="dash-switch">
-            <input
-              type="checkbox"
-              role="switch"
-              checked={includeOver8h}
-              disabled={empty}
-              onChange={(event) => setIncludeOver8h(event.target.checked)}
-            />
-            <span className="dash-switch-ui" aria-hidden="true" />
-            Include over 8 hours in averages
-          </label>
         </div>
         <p className="dash-meta">
           {empty
@@ -849,7 +848,7 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
             </div>
           </div>
           <div className="dash-lower">
-            <section className="card">
+            <section className="card dash-conclusions-card">
               <div className="summary">
                 <div>
                   <strong>Conclusions</strong>
@@ -864,58 +863,8 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
                 ))}
               </ul>
             </section>
-            <section className="card dash-flagged">
-              <div className="summary">
-                <div>
-                  <strong>Flagged rows</strong>
-                  <p className="dash-section-note">Abnormal waits or process-times</p>
-                </div>
-                <span className="dash-count-chip">{data.flagged?.length || 0}</span>
-              </div>
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Order</th>
-                      <th>Shipment</th>
-                      <th>Handler</th>
-                      <th>Process</th>
-                      <th>Wait</th>
-                      <th>Reasons</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(data.flagged || []).length === 0 ? (
-                      <tr>
-                        <td colSpan="6" className="empty">
-                          No abnormal rows in this date range.
-                        </td>
-                      </tr>
-                    ) : (
-                      data.flagged.map((row) => (
-                        <tr key={row.id} className={row.isHighestProcess ? "selected" : ""}>
-                          <td>
-                            <strong>{row.orderNumber || "—"}</strong>
-                          </td>
-                          <td>{row.shipmentNumber || "—"}</td>
-                          <td>{shortHandler(row.handledBy)}</td>
-                          <td>{formatMinutes(row.processMinutes)}</td>
-                          <td>{formatMinutes(row.handleWaitMinutes)}</td>
-                          <td>{(row.reasons || []).join(", ")}</td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </section>
           </div>
-          <DataTable
-            rows={rows}
-            maxProcessOrder={kpis.maxProcessOrder}
-            emptyMessage={tableEmptyMessage}
-            note={tableNote}
-          />
+          <FlaggedTable rows={flaggedRows} />
         </>
       ) : null}
     </div>

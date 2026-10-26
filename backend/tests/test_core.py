@@ -28,9 +28,12 @@ from config import SCHEMA_VERSION
 
 from services.dashboard_analytics import (
     average_process_times,
+    average_turn_times,
     build_dashboard_payload,
     format_minutes,
-    mean_without_abnormal,
+    is_valid_time_usage,
+    is_valid_turn_time,
+    mean_minutes,
     minutes_between,
     parse_dashboard_record,
 )
@@ -50,28 +53,86 @@ def test_format_minutes():
     assert format_minutes(235) == "3h 55m"
 
 
-def test_mean_without_abnormal():
-    assert mean_without_abnormal([]) is None
-    assert mean_without_abnormal([500]) is None
-    assert mean_without_abnormal([-500, 500]) is None
-    assert mean_without_abnormal([-5, 500]) == (-5.0, 1)
-    assert mean_without_abnormal([10, 20, 30]) == (20.0, 3)
-    assert mean_without_abnormal([-12, 10, 20, 481]) == (6.0, 3)
-    assert mean_without_abnormal([-481, 10, 20]) == (15.0, 2)
-    assert mean_without_abnormal([480, 60]) == (270.0, 2)
-    assert mean_without_abnormal([-480, 60]) == (-210.0, 2)
+def test_mean_minutes():
+    assert mean_minutes([]) is None
+    assert mean_minutes([10, 20, 30]) == (20.0, 3)
+    assert mean_minutes([1.7, 2.3]) == (2.0, 2)
+
+
+def _usage_item(process_minutes, status="Shipment Converted", handling="2026-08-21 08:10:00", converted="2026-08-21 08:40:00"):
+    return {
+        "emailStatus": status,
+        "emailReceived": "2026-08-21 08:00:00",
+        "handlingTime": handling,
+        "bookingConvertedTime": converted,
+        "handleWaitMinutes": 10,
+        "processMinutes": process_minutes,
+    }
+
+
+def _turn_item(wait_minutes, process_minutes, status="Shipment Converted"):
+    return {
+        "emailStatus": status,
+        "emailReceived": "2026-08-21 08:00:00",
+        "handlingTime": "2026-08-21 08:10:00",
+        "bookingConvertedTime": "2026-08-21 09:00:00",
+        "handleWaitMinutes": wait_minutes,
+        "processMinutes": process_minutes,
+    }
+
+
+def test_is_valid_time_usage():
+    assert is_valid_time_usage(_usage_item(30))
+    assert is_valid_time_usage(_usage_item(1.7))
+    assert is_valid_time_usage(_usage_item(1440))
+    assert not is_valid_time_usage(_usage_item(1.6))
+    assert not is_valid_time_usage(_usage_item(1441))
+    assert not is_valid_time_usage(_usage_item(30, status="Processing"))
+    assert not is_valid_time_usage(_usage_item(30, converted=""))
+    # Usage does not require I >= E.
+    assert is_valid_time_usage({
+        "emailStatus": "Shipment Converted",
+        "emailReceived": "2026-08-21 09:00:00",
+        "handlingTime": "2026-08-21 08:10:00",
+        "bookingConvertedTime": "2026-08-21 08:40:00",
+        "handleWaitMinutes": -50,
+        "processMinutes": 30,
+    })
+
+
+def test_is_valid_turn_time():
+    assert is_valid_turn_time(_turn_item(10, 50))
+    assert is_valid_turn_time(_turn_item(0, 3))
+    assert is_valid_turn_time(_turn_item(2880, 1440))
+    assert not is_valid_turn_time(_turn_item(-1, 50))
+    assert not is_valid_turn_time(_turn_item(2881, 50))
+    assert not is_valid_turn_time(_turn_item(10, 2))
+    assert not is_valid_turn_time(_turn_item(10, 1441))
+    assert not is_valid_turn_time(_turn_item(10, 50, status="Processing"))
 
 
 def test_average_process_times():
     items = [
-        {"processMinutes": 10},
-        {"processMinutes": 500},
-        {"processMinutes": -12},
-        {"processMinutes": -500},
-        {"processMinutes": None},
+        _usage_item(10),
+        _usage_item(500),
+        _usage_item(-12),
+        _usage_item(2000),
+        _usage_item(None),
+        _usage_item(20, status="Processing"),
     ]
-    assert average_process_times(items) == (-1.0, 2)
-    assert average_process_times([{"processMinutes": 481}]) is None
+    assert average_process_times(items) == (255.0, 2)
+    assert average_process_times([_usage_item(1)]) is None
+    assert average_process_times([_usage_item(1441)]) is None
+
+
+def test_average_turn_times():
+    items = [
+        _turn_item(10, 50),
+        _turn_item(20, 3),
+        _turn_item(30, 2),
+        _turn_item(40, 50, status="Processing"),
+    ]
+    assert average_turn_times(items) == (15.0, 2)
 
 
 def test_parse_dashboard_record():
