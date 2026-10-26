@@ -15,6 +15,10 @@ export default function ModalShell({
 }) {
   const panelRef = useRef(null);
   const previousFocus = useRef(null);
+  const onCloseRef = useRef(onClose);
+  const busyRef = useRef(busy);
+  onCloseRef.current = onClose;
+  busyRef.current = busy;
 
   useEffect(() => {
     previousFocus.current = document.activeElement;
@@ -30,9 +34,9 @@ export default function ModalShell({
     preferred?.focus();
 
     const onKeyDown = (event) => {
-      if (event.key === "Escape" && !busy) {
+      if (event.key === "Escape" && !busyRef.current) {
         event.preventDefault();
-        onClose?.();
+        onCloseRef.current?.();
         return;
       }
       if (event.key !== "Tab") {
@@ -60,7 +64,7 @@ export default function ModalShell({
         target.focus();
       }
     };
-  }, [busy, onClose]);
+  }, []);
 
   return (
     <div
