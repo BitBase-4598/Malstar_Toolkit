@@ -26,6 +26,7 @@ export const CASE_MAILBOXES = [
   "CUSLCLLEUR.SZH@LnS.maersk.com",
   "HKGLCL@LnS.maersk.com",
   "TWNLCL-CUS@LnS.maersk.com",
+  "CN.BOSCH.CFSPRSEXP@lns.maersk.com",
 ];
 
 export const emptyForm = {

@@ -87,6 +87,8 @@ export default function CaseFormModal({
       onClose={onClose}
       onSubmit={onSave}
       labelledBy="badcases-modal-title"
+      closeOnOverlay={false}
+      closeOnEscape={false}
     >
       <div className="modal-head">
         <div>

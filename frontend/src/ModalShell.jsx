@@ -11,14 +11,18 @@ export default function ModalShell({
   onSubmit,
   labelledBy,
   describedBy,
+  closeOnOverlay = true,
+  closeOnEscape = true,
   children,
 }) {
   const panelRef = useRef(null);
   const previousFocus = useRef(null);
   const onCloseRef = useRef(onClose);
   const busyRef = useRef(busy);
+  const closeOnEscapeRef = useRef(closeOnEscape);
   onCloseRef.current = onClose;
   busyRef.current = busy;
+  closeOnEscapeRef.current = closeOnEscape;
 
   useEffect(() => {
     previousFocus.current = document.activeElement;
@@ -34,7 +38,7 @@ export default function ModalShell({
     preferred?.focus();
 
     const onKeyDown = (event) => {
-      if (event.key === "Escape" && !busyRef.current) {
+      if (event.key === "Escape" && closeOnEscapeRef.current && !busyRef.current) {
         event.preventDefault();
         onCloseRef.current?.();
         return;
@@ -70,7 +74,9 @@ export default function ModalShell({
     <div
       className="overlay"
       role="presentation"
-      onMouseDown={(event) => event.target === event.currentTarget && !busy && onClose?.()}
+      onMouseDown={(event) =>
+        closeOnOverlay && event.target === event.currentTarget && !busy && onClose?.()
+      }
     >
       <As
         ref={panelRef}
