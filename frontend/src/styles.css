@@ -2658,13 +2658,136 @@ tbody tr.selected td {
   box-shadow: 0 8px 16px rgba(0, 36, 61, 0.06);
 }
 
+.dash-toolbar-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
 .dash-toolbar-kicker {
-  margin: 0 0 8px;
+  margin: 0;
   font-size: var(--type-label);
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--maersk-muted);
+}
+
+.dash-help {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.dash-help-btn {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--maersk-border);
+  background: var(--maersk-white);
+  color: var(--maersk-navy);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dash-help-btn:hover,
+.dash-help-btn[aria-expanded="true"] {
+  border-color: var(--maersk-blue);
+  color: var(--maersk-blue);
+  background: #e8f6fb;
+}
+
+.dash-help-btn:focus-visible {
+  outline: 2px solid var(--maersk-blue);
+  outline-offset: 2px;
+}
+
+.dash-help-bubble {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  z-index: 12;
+  width: min(420px, calc(100vw - 48px));
+  max-height: min(70vh, 520px);
+  overflow: auto;
+  padding: 14px 16px 16px;
+  background: var(--maersk-white);
+  border: 1px solid var(--maersk-border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 28px rgba(0, 36, 61, 0.14);
+  color: var(--maersk-text);
+  font-size: var(--type-ui);
+  line-height: 1.45;
+}
+
+.dash-help-bubble::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: 8px;
+  width: 10px;
+  height: 10px;
+  background: var(--maersk-white);
+  border-left: 1px solid var(--maersk-border);
+  border-top: 1px solid var(--maersk-border);
+  transform: rotate(45deg);
+}
+
+.dash-help-title {
+  display: block;
+  margin: 0 0 8px;
+  font-size: var(--type-body);
+  font-weight: 700;
+  color: var(--maersk-navy);
+}
+
+.dash-help-lead {
+  margin: 0 0 12px;
+  color: var(--maersk-muted);
+}
+
+.dash-help-bubble section + section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--maersk-border);
+}
+
+.dash-help-bubble h4 {
+  margin: 0 0 6px;
+  font-size: var(--type-ui);
+  font-weight: 700;
+  color: var(--maersk-navy);
+}
+
+.dash-help-bubble p {
+  margin: 0 0 6px;
+}
+
+.dash-help-bubble ul {
+  margin: 0;
+  padding-left: 1.15em;
+}
+
+.dash-help-bubble li + li {
+  margin-top: 4px;
+}
+
+.dash-help-bubble code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+  color: var(--maersk-navy);
+}
+
+.dash-help-bubble em {
+  font-style: normal;
+  font-weight: 700;
+  color: var(--maersk-navy);
 }
 
 .dash-dates {

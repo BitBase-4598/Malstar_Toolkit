@@ -413,6 +413,116 @@ function HourChart({ items }) {
 
 const DASH_TABLE_PAGE_SIZE = 50;
 
+function MetricsHelp() {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+    const onPointer = (event) => {
+      if (rootRef.current && !rootRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (event) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="dash-help" ref={rootRef}>
+      <button
+        type="button"
+        className="dash-help-btn"
+        aria-label="How metrics are calculated"
+        aria-expanded={open}
+        aria-controls="dash-metrics-help"
+        onClick={() => setOpen((value) => !value)}
+      >
+        ?
+      </button>
+      {open ? (
+        <div className="dash-help-bubble" id="dash-metrics-help" role="dialog" aria-label="Dashboard metrics help">
+          <strong className="dash-help-title">Metrics &amp; cleaning rules</strong>
+          <p className="dash-help-lead">
+            Timestamps from the daily report: <em>E</em> Email Received, <em>I</em> Handling Time,{" "}
+            <em>J</em> Booking Converted Time. Status “Shipment Converted” means the status text contains
+            “converted”.
+          </p>
+          <section>
+            <h4>Formulas</h4>
+            <ul>
+              <li>
+                <strong>Process time (time usage)</strong> = <code>J − I</code> (minutes)
+              </li>
+              <li>
+                <strong>Handle wait (turn time)</strong> = <code>I − E</code> (minutes)
+              </li>
+              <li>
+                <strong>Conversion rate</strong> = Converted ÷ Total × 100
+              </li>
+            </ul>
+          </section>
+          <section>
+            <h4>Average process-time (and handler averages)</h4>
+            <p>A row is included only when all of these hold:</p>
+            <ul>
+              <li>Status is Shipment Converted</li>
+              <li>Handling Time and Booking Converted Time are parseable</li>
+              <li>
+                <code>1.7 ≤ J − I ≤ 1440</code> minutes
+              </li>
+            </ul>
+            <p>Does <em>not</em> require <code>I ≥ E</code> or any turn-time cap.</p>
+          </section>
+          <section>
+            <h4>Handle wait / slowest wait / long-wait flags</h4>
+            <p>A row is included only when all of these hold:</p>
+            <ul>
+              <li>Status is Shipment Converted</li>
+              <li>E, I, and J are all parseable</li>
+              <li>
+                <code>0 ≤ I − E ≤ 2880</code> minutes
+              </li>
+              <li>
+                <code>2 &lt; J − I ≤ 1440</code> minutes
+              </li>
+            </ul>
+            <p>Long waits are then those above max(60&nbsp;min, median wait × 1.5) within that set.</p>
+          </section>
+          <section>
+            <h4>Other KPIs</h4>
+            <ul>
+              <li>
+                <strong>Highest process-time</strong> — max <code>J − I</code> among rows that pass the
+                average process-time filter
+              </li>
+              <li>
+                <strong>Volume by hour</strong> — count of rows by Email Received hour (optional weekday
+                filter)
+              </li>
+              <li>
+                <strong>Flagged rows</strong> — highest process, long wait, still processing, missing
+                shipment, duplicate message id, converted before handling
+              </li>
+            </ul>
+          </section>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function FlaggedTable({
   rows,
   emptyMessage = "No abnormal rows in this date range.",
@@ -674,7 +784,10 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
       <input ref={inputRef} hidden type="file" accept=".csv,text/csv" onChange={upload} />
       <div className="dash-toolbar">
         <div>
-          <p className="dash-toolbar-kicker">Reporting period</p>
+          <div className="dash-toolbar-head">
+            <p className="dash-toolbar-kicker">Reporting period</p>
+            <MetricsHelp />
+          </div>
           <div className="dash-dates">
             <label>
               From
