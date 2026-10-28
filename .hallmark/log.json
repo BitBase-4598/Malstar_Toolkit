@@ -1,0 +1,16 @@
+[
+ {
+  "mode": "redesign",
+  "depth": "restyle",
+  "scope": "app",
+  "theme": "brand",
+  "shape": "app screen",
+  "genre": "modern-minimal",
+  "brand": "Maersk",
+  "signature": "tool workspace tables",
+  "waived": [],
+  "prompt": "beautify MALSTAR toolkit app shell",
+  "fingerprint": "malstar-restyle-20261028",
+  "date": "2026-10-28"
+ }
+]
