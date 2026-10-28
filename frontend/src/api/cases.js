@@ -36,6 +36,11 @@ export const casesApi = {
       body: JSON.stringify({ status }),
     }),
   deleteCase: (id) => request(`${BASE}/${id}`, { method: "DELETE" }),
+  exportCases: async (q = "") => {
+    const query = q ? `?q=${encodeURIComponent(q)}` : "";
+    const response = await request(`${BASE}/export${query}`);
+    return response.blob();
+  },
   uploadCaseFile: async (id, file) => {
     const form = new FormData();
     form.append("file", file);

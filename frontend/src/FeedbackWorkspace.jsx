@@ -198,7 +198,26 @@ const FeedbackWorkspace = forwardRef(function FeedbackWorkspace(
     setModal(true);
   };
 
-  useImperativeHandle(ref, () => ({ openNew }));
+  const exportReport = useCallback(async () => {
+    try {
+      const blob = await api.exportCases(debounced);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+      link.href = url;
+      link.download = `badcases-export-${stamp}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      onNotice?.({ type: "success", text: "BadCases report exported." });
+      await onRefreshLogs?.();
+    } catch (error) {
+      onNotice?.({ type: "error", text: error.message });
+    }
+  }, [debounced, onNotice, onRefreshLogs]);
+
+  useImperativeHandle(ref, () => ({ openNew, exportReport }), [exportReport]);
 
   const applyCase = (data) => {
     setEditing(data);

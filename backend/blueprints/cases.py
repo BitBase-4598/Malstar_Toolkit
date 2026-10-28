@@ -3,6 +3,7 @@ from flask import Blueprint, jsonify, request, send_file
 from db import get_connection
 from logging_util import APP_LOGGER, audit
 from services.cases import (
+    build_cases_export,
     case_file_disk_names,
     case_heading,
     create_case,
@@ -33,6 +34,19 @@ def list_cases_route():
     with get_connection() as conn:
         data, pagination = list_cases(conn, q, page, page_size)
     return jsonify({"success": True, "data": data, "pagination": pagination})
+
+
+@bp.get("/api/cases/export")
+def export_cases_route():
+    q = str(request.args.get("q") or "").strip()
+    buffer, filename, count = build_cases_export(q)
+    audit("case.export", summary=f"rows={count}" + (f" q={q}" if q else ""))
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 
 @bp.post("/api/cases")

@@ -1,7 +1,8 @@
 import csv
 from io import BytesIO, StringIO
 
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font, PatternFill
 
 from config import CASES_MAX_IMPORT_ROWS, MAX_JSON_UPLOAD_MB
 from db import get_connection
@@ -15,6 +16,39 @@ from services.files_store import (
 from util import now_stamp
 
 STATUSES = ("pending_review", "reviewed", "closed")
+
+STATUS_LABELS = {
+    "pending_review": "Pending review",
+    "reviewed": "Reviewed",
+    "closed": "Closed",
+}
+
+EXPORT_COLUMNS = (
+    ("id", "ID"),
+    ("status", "Status"),
+    ("bookingOrderId", "Booking order ID"),
+    ("shipmentNumber", "Shipment number"),
+    ("email", "Email"),
+    ("name", "Name"),
+    ("hbl", "HBL"),
+    ("startTime", "Start time"),
+    ("completionTime", "Completion time"),
+    ("wronglyIdentified", "Wrongly identified"),
+    ("incorrect", "Incorrect"),
+    ("corrected", "Corrected"),
+    ("causeOfError", "Cause of error"),
+    ("receivedDate", "Received date"),
+    ("adjustedHbl", "Adjusted HBL"),
+    ("gscPic", "GSC PIC"),
+    ("week", "Week"),
+    ("date", "Date"),
+    ("category", "Category"),
+    ("description", "Description"),
+    ("action", "Action"),
+    ("fileCount", "File count"),
+    ("createdAt", "Created at"),
+    ("updatedAt", "Updated at"),
+)
 
 CATEGORIES = (
     "Human Error",
@@ -230,8 +264,82 @@ def case_to_dict(row, file_count=0, files=None):
     return data
 
 
-def list_cases(conn, query="", page=1, page_size=10):
+def _cases_search_clause(query=""):
     q = str(query or "").strip()
+    if not q:
+        return "", []
+    like = f"%{q}%"
+    where = """
+        WHERE CAST(Cases.ID AS TEXT) LIKE ?
+           OR Cases.Name LIKE ?
+           OR Cases.HBL LIKE ?
+           OR Cases.Email LIKE ?
+           OR Cases.Category LIKE ?
+           OR Cases.Description LIKE ?
+           OR Cases.BookingOrderId LIKE ?
+           OR Cases.ShipmentNumber LIKE ?
+    """
+    return where, [like, like, like, like, like, like, like, like]
+
+
+def list_all_cases(conn, query=""):
+    where, params = _cases_search_clause(query)
+    join = """
+        SELECT
+            Cases.*,
+            COALESCE(files.cnt, 0) AS FileCount
+        FROM Cases
+        LEFT JOIN (
+            SELECT CaseID, COUNT(*) AS cnt FROM CaseFiles GROUP BY CaseID
+        ) files ON files.CaseID = Cases.ID
+    """
+    rows = conn.execute(
+        f"""
+        {join}
+        {where}
+        ORDER BY Cases.UpdatedAt DESC, Cases.ID DESC
+        """,
+        params,
+    ).fetchall()
+    return [case_to_dict(row, file_count=row["FileCount"]) for row in rows]
+
+
+def build_cases_export(query=""):
+    with get_connection() as conn:
+        rows = list_all_cases(conn, query)
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "BadCases"
+    headers = [label for _key, label in EXPORT_COLUMNS]
+    sheet.append(headers)
+    header_fill = PatternFill("solid", fgColor="D6EAF8")
+    for cell in sheet[1]:
+        cell.font = Font(bold=True)
+        cell.fill = header_fill
+    for row in rows:
+        values = []
+        for key, _label in EXPORT_COLUMNS:
+            value = row.get(key)
+            if key == "status":
+                value = STATUS_LABELS.get(value, value or "")
+            elif value is None:
+                value = ""
+            values.append(value)
+        sheet.append(values)
+    for index, (_key, label) in enumerate(EXPORT_COLUMNS, start=1):
+        width = max(12, min(len(label) + 4, 28))
+        if _key in ("description", "email", "causeOfError", "wronglyIdentified"):
+            width = 36
+        sheet.column_dimensions[sheet.cell(1, index).column_letter].width = width
+    sheet.freeze_panes = "A2"
+    buffer = BytesIO()
+    workbook.save(buffer)
+    buffer.seek(0)
+    stamp = now_stamp().replace(":", "").replace(" ", "-")
+    return buffer, f"badcases-export-{stamp}.xlsx", len(rows)
+
+
+def list_cases(conn, query="", page=1, page_size=10):
     page = max(int(page or 1), 1)
     page_size = min(max(int(page_size or 10), 1), 100)
     join = """
@@ -243,21 +351,7 @@ def list_cases(conn, query="", page=1, page_size=10):
             SELECT CaseID, COUNT(*) AS cnt FROM CaseFiles GROUP BY CaseID
         ) files ON files.CaseID = Cases.ID
     """
-    where = ""
-    params = []
-    if q:
-        like = f"%{q}%"
-        where = """
-            WHERE CAST(Cases.ID AS TEXT) LIKE ?
-               OR Cases.Name LIKE ?
-               OR Cases.HBL LIKE ?
-               OR Cases.Email LIKE ?
-               OR Cases.Category LIKE ?
-               OR Cases.Description LIKE ?
-               OR Cases.BookingOrderId LIKE ?
-               OR Cases.ShipmentNumber LIKE ?
-        """
-        params = [like, like, like, like, like, like, like, like]
+    where, params = _cases_search_clause(query)
     total = conn.execute(f"SELECT COUNT(*) FROM Cases {where}", params).fetchone()[0]
     offset = (page - 1) * page_size
     rows = conn.execute(

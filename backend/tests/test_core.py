@@ -453,6 +453,45 @@ def test_cases_crud_and_status():
     assert missing_get.status_code == 404
 
 
+def test_cases_export_xlsx():
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    migrate()
+    from app import app
+
+    client = app.test_client()
+    created = client.post("/api/cases", json={
+        "bookingOrderId": "BK-EXPORT-1",
+        "shipmentNumber": "SHP-EXPORT-1",
+        "email": "export@example.com",
+        "description": "Export me",
+        "status": "reviewed",
+    })
+    assert created.status_code == 201
+    response = client.get("/api/cases/export")
+    assert response.status_code == 200
+    assert "spreadsheetml" in (response.mimetype or "")
+    book = load_workbook(BytesIO(response.data))
+    sheet = book.active
+    headers = [cell.value for cell in sheet[1]]
+    assert "Booking order ID" in headers
+    assert "Shipment number" in headers
+    assert "Description" in headers
+    assert "File count" in headers
+    assert "Status" in headers
+    rows = list(sheet.iter_rows(min_row=2, values_only=True))
+    assert any(row[headers.index("Booking order ID")] == "BK-EXPORT-1" for row in rows)
+    matched = next(row for row in rows if row[headers.index("Booking order ID")] == "BK-EXPORT-1")
+    assert matched[headers.index("Status")] == "Reviewed"
+    assert matched[headers.index("Description")] == "Export me"
+    filtered = client.get("/api/cases/export?q=BK-EXPORT-1")
+    assert filtered.status_code == 200
+    filtered_book = load_workbook(BytesIO(filtered.data))
+    assert filtered_book.active.max_row >= 2
+
+
 def test_case_list_pagination():
     migrate()
     from app import app

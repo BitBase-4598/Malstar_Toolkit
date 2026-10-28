@@ -1,5 +1,5 @@
 import { lazy } from "react";
-import { CalendarDays, ClipboardList, FileText, FolderOpen, Inbox, LayoutDashboard, MessageCircle, Plus, RefreshCw, ScrollText, Upload } from "lucide-react";
+import { CalendarDays, ClipboardList, Download, FileText, FolderOpen, Inbox, LayoutDashboard, MessageCircle, Plus, RefreshCw, ScrollText, Upload } from "lucide-react";
 import LeaveForecast from "./LeaveForecast";
 import Dashboard from "./Dashboard";
 
@@ -58,10 +58,16 @@ function DashboardActions({ dashRef, dashImporting, dashPage, lclRef, lclImporti
 
 function FeedbackActions({ feedbackRef }) {
   return (
-    <button className="primary" type="button" onClick={() => feedbackRef.current?.openNew()}>
-      <Plus size={16} />
-      New case
-    </button>
+    <>
+      <button className="ghost" type="button" onClick={() => feedbackRef.current?.exportReport()}>
+        <Download size={16} />
+        Export report
+      </button>
+      <button className="primary" type="button" onClick={() => feedbackRef.current?.openNew()}>
+        <Plus size={16} />
+        New case
+      </button>
+    </>
   );
 }
 
