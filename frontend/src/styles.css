@@ -5,6 +5,12 @@
 /* Hallmark · pre-emit critique: P_ok H_ok E_ok S_ok R_ok V_ok · weakest: tracked labels, fixed via Floor 54 */
 /* Hallmark · brand: Maersk (spec 2026-10-28) · redesign: restyle · scope: app */
 /* Hallmark · waive 24b · dense MALSTAR ops console · toolkit keeps 6/10px control rhythm for tables */
+/* Hallmark · dismissed 3 · Maersk navy rail kept as brand chrome, not a feature card stripe */
+/* Hallmark · dismissed F7 · one control recipe across the dense ops console keeps scan parity */
+/* Hallmark · answered F3 · tool titles wrap in the topbar; balance softens two-line heads */
+/* Hallmark · answered F6 · Ops KPI figures use tabular nums for column compare */
+/* Hallmark · answered F24 · toast keeps the hairline edge; shadow dropped */
+/* Hallmark · finish-review: in-thread · WARNs closed · Floor 0 FAIL · Reflex 24b waived */
 @import url("./tokens.css");
 @import url("./base.css");
 
@@ -82,7 +88,7 @@ select {
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  border-right: 3px solid var(--maersk-blue);
+  border-right: 1px solid color-mix(in srgb, var(--maersk-blue) 55%, var(--maersk-navy));
 }
 
 .sidebar.is-collapsed {
@@ -289,6 +295,9 @@ select {
   font-weight: 600;
   line-height: 1.15;
   letter-spacing: -0.02em;
+  text-wrap: balance;
+  overflow-wrap: break-word;
+  min-width: 0;
 }
 
 .brand {
@@ -318,8 +327,11 @@ select {
   font-size: var(--type-brand);
   font-weight: 700;
   line-height: 1;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
   color: var(--maersk-white);
+  text-wrap: balance;
+  overflow-wrap: break-word;
+  min-width: 0;
 }
 
 .sidebar-brand h1 {
@@ -346,7 +358,7 @@ select {
   margin: 0;
   font-size: var(--type-label);
   font-weight: 500;
-  letter-spacing: 0.var(--space-3xs);
+  letter-spacing: 0;
   color: var(--maersk-blue);
 }
 
@@ -449,6 +461,9 @@ select {
   font-size: var(--type-section);
   font-weight: 600;
   line-height: 1.2;
+  text-wrap: balance;
+  overflow-wrap: break-word;
+  min-width: 0;
 }
 
 .page-intro p {
@@ -765,7 +780,7 @@ td.copied {
 
 .actions button:hover {
   background: var(--maersk-bright-blue);
-  color: var(--maersk-blue-dark);
+  color: var(--maersk-navy);
 }
 
 .actions .danger:hover,
@@ -888,7 +903,7 @@ td.copied {
   font-weight: 500;
   background: var(--maersk-white);
   border: 1px solid var(--maersk-border);
-  box-shadow: 0 var(--space-xs) var(--space-lg) color-mix(in srgb, var(--maersk-navy) 16%, transparent);
+  box-shadow: none;
   border-radius: var(--radius-lg);
   animation: toast-in var(--motion-toast-in) var(--motion-ease);
 }
@@ -1024,6 +1039,9 @@ td.copied {
 .modal-head h2 {
   font-size: var(--type-section);
   font-weight: 600;
+  text-wrap: balance;
+  overflow-wrap: break-word;
+  min-width: 0;
 }
 
 .modal-head p {
@@ -1271,12 +1289,13 @@ td.copied {
   border: 1px solid var(--maersk-border);
   border-radius: 3px;
   background: var(--maersk-white);
-  color: var(--maersk-white);
+  color: transparent;
 }
 
 .field-select-check.is-on {
   background: var(--maersk-navy);
   border-color: var(--maersk-navy);
+  color: var(--maersk-white);
 }
 
 .field-select-menu button.is-active,
@@ -1688,7 +1707,7 @@ tbody tr.selected td {
 
 .actions a:hover {
   background: var(--maersk-bright-blue);
-  color: var(--maersk-blue-dark);
+  color: var(--maersk-navy);
 }
 
 .status-pill {
@@ -2378,7 +2397,7 @@ tbody tr.selected td {
 
 .status-pill.annual {
   background: var(--maersk-bright-blue);
-  color: var(--maersk-blue-dark);
+  color: var(--maersk-navy);
 }
 
 .status-pill.sick {
@@ -2664,8 +2683,8 @@ tbody tr.selected td {
 
 .dash-help-btn:hover,
 .dash-help-btn[aria-expanded="true"] {
-  border-color: var(--maersk-blue);
-  color: var(--maersk-blue);
+  border-color: var(--maersk-navy);
+  color: var(--maersk-navy);
   background: var(--maersk-bright-blue);
 }
 
@@ -2686,7 +2705,7 @@ tbody tr.selected td {
   background: var(--maersk-white);
   border: 1px solid var(--maersk-border);
   border-radius: var(--radius-lg);
-  box-shadow: 0 var(--space-sm) 28px color-mix(in srgb, var(--maersk-navy) 14%, transparent);
+  box-shadow: none;
   color: var(--maersk-text);
   font-size: var(--type-ui);
   line-height: 1.45;
@@ -2940,6 +2959,7 @@ tbody tr.selected td {
   font-size: 28px;
   line-height: 1.15;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
 .dash-kpi-count {
@@ -3182,7 +3202,7 @@ tbody tr.selected td {
 
 .status-pill.processing {
   background: var(--maersk-bright-blue);
-  color: var(--maersk-blue-dark);
+  color: var(--maersk-navy);
 }
 
 .unloco-status-cell {
@@ -3788,7 +3808,7 @@ html.lcl-html #root {
 
 .lcl-brand .brand-kicker {
   margin: 0;
-  letter-spacing: 0.16em;
+  letter-spacing: 0;
   font-size: var(--type-label);
   color: var(--maersk-blue);
 }
@@ -3798,6 +3818,9 @@ html.lcl-html #root {
   font-size: var(--type-title);
   font-weight: 600;
   line-height: 1.2;
+  text-wrap: balance;
+  overflow-wrap: break-word;
+  min-width: 0;
 }
 
 .lcl-topbar-meta {
@@ -3948,9 +3971,9 @@ html.lcl-html #root {
 .lcl-map-arrow::before {
   content: "";
   width: 22px;
-  height: 0;
-  border-top: var(--space-3xs) solid var(--maersk-blue);
-  border-right: 6px solid var(--maersk-blue);
+  height: 10px;
+  background: var(--maersk-blue);
+  border: 0;
   transform: rotate(0deg);
   clip-path: polygon(0 40%, 70% 40%, 70% 0, 100% 50%, 70% 100%, 70% 60%, 0 60%);
 }
