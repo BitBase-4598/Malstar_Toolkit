@@ -135,6 +135,17 @@ def test_average_turn_times():
     assert average_turn_times(items) == (15.0, 2)
 
 
+def test_dashboard_payload_exposes_cleaning_rules():
+    migrate()
+    with get_connection() as conn:
+        payload = build_dashboard_payload(conn)
+    assert payload["kpis"]["avgProcessCount"] == 0
+    assert payload["kpis"]["avgProcessNote"] == "Shipment Converted, 1.7–1440 min"
+    assert payload["rules"]["timeUsageFilter"].startswith("Shipment Converted")
+    assert "2 < J − I ≤ 1440" in payload["rules"]["turnTimeFilter"]
+    assert "median wait" in payload["rules"]["longWait"]
+
+
 def test_parse_dashboard_record():
     record, error = parse_dashboard_record({
         "orderNumber": "OD1",
