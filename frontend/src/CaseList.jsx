@@ -44,7 +44,7 @@ export default function CaseList({
         {total} {total === 1 ? "case" : "cases"}
       </p>
       <section className="card">
-        <div className="table-wrap">
+        <div className="table-wrap badcases-table-wrap">
           <table className="wide-table badcases-table">
             <thead>
               <tr>

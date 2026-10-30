@@ -49,7 +49,7 @@ export default function Sidebar({ section, onSectionChange }) {
       </button>
       <nav className="sidebar-nav" aria-label="Main">
         <p className="sidebar-nav-label">Tools</p>
-        {TOOLS.map((item) => {
+        {TOOLS.filter((item) => !item.hidden).map((item) => {
           const Icon = item.icon;
           const active = section === item.id;
           return (

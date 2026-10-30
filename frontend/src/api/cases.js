@@ -11,7 +11,7 @@ export const FEEDBACK_CATEGORIES = [
 
 const BASE = `${API_ROOT}/cases`;
 
-export const CASE_PAGE_SIZE = 10;
+export const CASE_PAGE_SIZE = 13;
 
 export const casesApi = {
   listCases: (q = "", page = 1, pageSize = CASE_PAGE_SIZE) =>

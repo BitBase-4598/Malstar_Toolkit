@@ -151,6 +151,7 @@ export const TOOLS = [
     icon: ClipboardList,
     Workspace: SopWorkspace,
     Actions: SopsActions,
+    hidden: true, // unfinished — keep out of sidebar
   },
   {
     id: "ask",
@@ -160,6 +161,7 @@ export const TOOLS = [
     icon: MessageCircle,
     Workspace: AskWorkspace,
     Actions: AskActions,
+    hidden: true, // unfinished — keep out of sidebar
   },
   {
     id: "logs",
