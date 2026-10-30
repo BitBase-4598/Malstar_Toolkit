@@ -1,0 +1,23 @@
+{
+  "product": "MALSTAR Toolkit",
+  "scope": "app",
+  "brand": "Maersk",
+  "brand_spec": ".hallmark/brand-spec.md",
+  "preserve": [
+    "routes",
+    "handlers",
+    "tool wiring",
+    "Maersk fonts/palette"
+  ],
+  "introduce": [
+    "tokens.css",
+    "base.css",
+    "shell restyle"
+  ],
+  "inferences": {
+    "audience": "MALSTAR / GSC operators",
+    "use": "clearer shell for tools and tables",
+    "tone": "utilitarian / technical",
+    "material": "existing UI, no invented metrics"
+  }
+}
