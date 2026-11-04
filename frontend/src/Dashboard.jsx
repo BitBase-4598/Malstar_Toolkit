@@ -1,4 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { Upload } from "lucide-react";
 import { api } from "./api";
 import FieldSelect from "./FieldSelect";
 
@@ -135,23 +136,25 @@ function StatusLabel({ value }) {
   return <span className={`status-pill dash-status${tone ? ` ${tone}` : ""}`}>{label}</span>;
 }
 
-function BarList({ items, valueKey = "count", highlightKey }) {
+function BarList({ items, valueKey = "count", highlightKey, formatValue, className = "" }) {
   const max = Math.max(...items.map((item) => Number(item[valueKey]) || 0), 1);
   return (
-    <ul className="dash-bars">
+    <ul className={`dash-bars${className ? ` ${className}` : ""}`}>
       {items.map((item) => {
         const value = Number(item[valueKey]) || 0;
         const width = Math.max((value / max) * 100, value ? 4 : 0);
         const highlighted = highlightKey ? item[highlightKey] : false;
         return (
           <li key={item.label} className={highlighted ? "is-highest" : ""}>
-            <span className="dash-bar-label" title={item.label}>
+            <span className="dash-bar-label" title={item.title || item.label}>
               {shortHandler(item.label)}
             </span>
             <span className="dash-bar-track">
               <span className="dash-bar-fill" style={{ width: `${width}%` }} />
             </span>
-            <span className="dash-bar-value">{valueKey === "minutes" ? `${value} min` : value}</span>
+            <span className="dash-bar-value">
+              {formatValue ? formatValue(item, value) : valueKey === "minutes" ? `${value} min` : value}
+            </span>
           </li>
         );
       })}
@@ -636,6 +639,414 @@ function FlaggedTable({
   );
 }
 
+const NONMOD_TOP = 8;
+const NONMOD_ROW_CAP = 500;
+
+function formatRatio(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return "—";
+  }
+  return `${Math.round(number * 1000) / 10}%`;
+}
+
+function mailboxKey(value) {
+  const text = String(value || "").trim();
+  return text || "(blank)";
+}
+
+function changedFieldSummary(changes) {
+  if (!changes || typeof changes !== "object") {
+    return "—";
+  }
+  const parts = [];
+  for (const [path, pair] of Object.entries(changes)) {
+    const oldValue = String(pair?.old || "").trim();
+    const newValue = String(pair?.new || "").trim();
+    if (oldValue === newValue || (!oldValue && !newValue)) {
+      continue;
+    }
+    parts.push(`${path}: ${oldValue || "—"} → ${newValue || "—"}`);
+  }
+  if (!parts.length) {
+    return "—";
+  }
+  const shown = parts.slice(0, 2).join("; ");
+  return parts.length > 2 ? `${shown} +${parts.length - 2}` : shown;
+}
+
+function NonModSection({ onNotice, onRefreshLogs }) {
+  const inputRef = useRef(null);
+  const loadSeq = useRef(0);
+  const rowsSeq = useRef(0);
+  const [snapshot, setSnapshot] = useState(null);
+  const [ranking, setRanking] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [importing, setImporting] = useState(false);
+  const [mailbox, setMailbox] = useState("");
+  const [rowsOpen, setRowsOpen] = useState(false);
+  const [rows, setRows] = useState(null);
+  const [rowsTotal, setRowsTotal] = useState(0);
+  const [rowsLoading, setRowsLoading] = useState(false);
+  const [rowsPage, setRowsPage] = useState(1);
+
+  const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
+    setLoading(true);
+    try {
+      const [latestResult, rankResult] = await Promise.all([
+        api.getNonModLatest(),
+        api.getNonModFieldRanking(),
+      ]);
+      if (seq !== loadSeq.current) {
+        return;
+      }
+      const latest = latestResult.data || null;
+      const ranked = rankResult.data?.fieldRanking || latest?.fieldRanking || [];
+      setSnapshot(latest);
+      setRanking(ranked);
+      rowsSeq.current += 1;
+      setRows(null);
+      setRowsTotal(0);
+      setRowsOpen(false);
+      setRowsPage(1);
+    } catch (error) {
+      if (seq === loadSeq.current) {
+        onNotice?.({ type: "error", text: error.message });
+      }
+    } finally {
+      if (seq === loadSeq.current) {
+        setLoading(false);
+      }
+    }
+  }, [onNotice]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const meta = snapshot?.meta;
+  const empty = !meta?.reportDate;
+  const reportDate = meta?.reportDate || "";
+
+  useEffect(() => {
+    if (!mailbox) {
+      return;
+    }
+    const names = new Set((snapshot?.byMailbox || []).map((item) => mailboxKey(item.mailbox)));
+    if (!names.has(mailbox)) {
+      setMailbox("");
+    }
+  }, [mailbox, snapshot]);
+
+  const mailboxOptions = useMemo(() => {
+    const items = [{ value: "", label: "All mailboxes" }];
+    for (const item of snapshot?.byMailbox || []) {
+      const key = mailboxKey(item.mailbox);
+      items.push({ value: key, label: key });
+    }
+    return items;
+  }, [snapshot]);
+
+  const mailboxBars = useMemo(
+    () =>
+      (snapshot?.byMailbox || []).map((item) => {
+        const key = mailboxKey(item.mailbox);
+        return {
+          label: key,
+          title: key,
+          count: item.count,
+          matched: item.matched,
+          isActive: Boolean(mailbox) && mailbox === key,
+        };
+      }),
+    [mailbox, snapshot]
+  );
+
+  const rankingBars = useMemo(
+    () =>
+      ranking.slice(0, NONMOD_TOP).map((item) => ({
+        label: item.path,
+        title: item.path,
+        count: item.count,
+      })),
+    [ranking]
+  );
+
+  const filteredRows = useMemo(() => {
+    const list = rows || [];
+    if (!mailbox) {
+      return list;
+    }
+    return list.filter((row) => mailboxKey(row.mailbox) === mailbox);
+  }, [mailbox, rows]);
+
+  useEffect(() => {
+    setRowsPage(1);
+  }, [mailbox, reportDate]);
+
+  const rowPages = Math.max(1, Math.ceil(filteredRows.length / DASH_TABLE_PAGE_SIZE) || 1);
+  const safeRowPage = Math.min(rowsPage, rowPages);
+  const visibleRows = filteredRows.slice(
+    (safeRowPage - 1) * DASH_TABLE_PAGE_SIZE,
+    safeRowPage * DASH_TABLE_PAGE_SIZE
+  );
+  const rowFrom = filteredRows.length === 0 ? 0 : (safeRowPage - 1) * DASH_TABLE_PAGE_SIZE + 1;
+  const rowTo = Math.min(safeRowPage * DASH_TABLE_PAGE_SIZE, filteredRows.length);
+
+  const openRows = async () => {
+    const next = !rowsOpen;
+    setRowsOpen(next);
+    if (!next || rows || !reportDate) {
+      return;
+    }
+    const seq = ++rowsSeq.current;
+    const date = reportDate;
+    setRowsLoading(true);
+    try {
+      const size = Math.min(Math.max(Number(meta?.rowCount) || NONMOD_ROW_CAP, 1), NONMOD_ROW_CAP);
+      const result = await api.listNonModRows(date, 1, size);
+      if (seq !== rowsSeq.current) {
+        return;
+      }
+      setRows(result.data || []);
+      setRowsTotal(result.pagination?.total || 0);
+    } catch (error) {
+      if (seq !== rowsSeq.current) {
+        return;
+      }
+      onNotice?.({ type: "error", text: error.message });
+      setRowsOpen(false);
+    } finally {
+      if (seq === rowsSeq.current) {
+        setRowsLoading(false);
+      }
+    }
+  };
+
+  const upload = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+    if (!String(file.name || "").toLowerCase().endsWith(".xlsx")) {
+      onNotice?.({ type: "error", text: "Upload an .xlsx workbook." });
+      return;
+    }
+    setImporting(true);
+    try {
+      const result = await api.uploadNonMod(file);
+      onNotice?.({ type: "success", text: result.message || "Non-Mod workbook uploaded" });
+      await onRefreshLogs?.();
+      await load();
+    } catch (error) {
+      onNotice?.({ type: "error", text: error.message });
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  return (
+    <div className="dash-section dash-nonmod" id="non-mod">
+      <div className="dash-section-head">
+        <h3>Non-Modification</h3>
+        <p>OnePlatform merge workbook for the latest report date. This does not replace the daily report CSV.</p>
+      </div>
+      <section className="card">
+        <div className="summary">
+          <div>
+            <strong>{empty ? "No workbook yet" : meta.filename}</strong>
+            <p className="dash-section-note">
+              {empty
+                ? "Upload the merged .xlsx. The browser sends the file; the server reads it."
+                : `${reportDate} · ${meta.rowCount} rows · ${meta.uploadedAt}`}
+            </p>
+          </div>
+          <div className="dash-nonmod-tools">
+            {!empty ? (
+              <label className="dash-mailbox">
+                Mailbox
+                <FieldSelect
+                  fitMenu
+                  value={mailbox}
+                  disabled={mailboxOptions.length <= 1}
+                  searchable={mailboxOptions.length > 8}
+                  placeholder="All mailboxes"
+                  ariaLabel="Filter Non-Mod rows by mailbox"
+                  options={mailboxOptions}
+                  onChange={setMailbox}
+                />
+              </label>
+            ) : null}
+            <button className="primary" type="button" onClick={() => inputRef.current?.click()} disabled={importing}>
+              <Upload size={16} />
+              {importing ? "Uploading..." : "Upload xlsx"}
+            </button>
+          </div>
+        </div>
+      </section>
+      <input
+        ref={inputRef}
+        hidden
+        type="file"
+        accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        onChange={upload}
+      />
+      {loading && !snapshot ? <p className="preview-empty">Loading Non-Mod…</p> : null}
+      {!empty ? (
+        <>
+          <div className="dash-kpis">
+            <article className="dash-kpi">
+              <span>Selected bookings</span>
+              <strong className="dash-kpi-count">{snapshot.selectedBookings}</strong>
+            </article>
+            <article className="dash-kpi">
+              <span>Matched bookings</span>
+              <strong className="dash-kpi-count">{snapshot.matchedBookings}</strong>
+              <em>{formatRatio(snapshot.modifiedPct)} modified</em>
+            </article>
+            <article className="dash-kpi">
+              <span>Unmatched</span>
+              <strong className="dash-kpi-count">{snapshot.unmatchedBookings}</strong>
+            </article>
+            <article className="dash-kpi">
+              <span>Non-mod</span>
+              <strong className="dash-kpi-count">{formatRatio(snapshot.nonModPct)}</strong>
+              <em>unmatched ÷ selected</em>
+            </article>
+          </div>
+          <div className="dash-charts">
+            <section className="card">
+              <div className="summary">
+                <div>
+                  <strong>By mailbox</strong>
+                  <p className="dash-section-note">Bar length is bookings. Value is matched / selected.</p>
+                </div>
+              </div>
+              <div className="dash-chart-body">
+                {mailboxBars.length ? (
+                  <BarList items={mailboxBars} highlightKey="isActive" formatValue={(item, value) => `${item.matched}/${value}`} />
+                ) : (
+                  <p className="dash-section-note">No mailbox rows in this snapshot.</p>
+                )}
+              </div>
+            </section>
+            <section className="card">
+              <div className="summary">
+                <div>
+                  <strong>Field ranking</strong>
+                  <p className="dash-section-note">
+                    {ranking.length
+                      ? `Top ${Math.min(NONMOD_TOP, ranking.length)} of ${ranking.length} paths where old ≠ new`
+                      : "Paths where old ≠ new"}
+                  </p>
+                </div>
+              </div>
+              <div className="dash-chart-body">
+                {rankingBars.length ? (
+                  <BarList className="is-paths" items={rankingBars} />
+                ) : (
+                  <p className="dash-section-note">No field changes in this snapshot.</p>
+                )}
+              </div>
+            </section>
+          </div>
+          <section className="card dash-data">
+            <div className="summary">
+              <div>
+                <strong>Detail rows</strong>
+                <p className="dash-section-note">
+                  {reportDate}
+                  {mailbox ? ` · ${mailbox}` : ""}
+                  {rowsTotal > (rows?.length || 0) ? ` · showing ${rows.length} of ${rowsTotal}` : ""}
+                </p>
+              </div>
+              <button className="ghost" type="button" aria-expanded={rowsOpen} onClick={openRows} disabled={rowsLoading}>
+                {rowsLoading ? "Loading..." : rowsOpen ? "Hide rows" : "Show rows"}
+              </button>
+            </div>
+            {rowsOpen ? (
+              <>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Order</th>
+                        <th>Shipment</th>
+                        <th>Mailbox</th>
+                        <th>Order status</th>
+                        <th>Matched</th>
+                        <th>Changes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleRows.length === 0 ? (
+                        <tr>
+                          <td colSpan="6" className="empty">
+                            {rowsLoading ? "Loading rows…" : "No rows for this mailbox."}
+                          </td>
+                        </tr>
+                      ) : (
+                        visibleRows.map((row) => (
+                          <tr key={row.id}>
+                            <td>
+                              <strong>{row.orderNumber || "—"}</strong>
+                            </td>
+                            <td>{row.shipmentNumber || "—"}</td>
+                            <td title={row.mailbox}>{mailboxKey(row.mailbox)}</td>
+                            <td>
+                              <StatusLabel value={row.orderStatus} />
+                            </td>
+                            <td>
+                              <span className={`status-pill dash-status${row.matched ? " converted" : ""}`}>
+                                {row.matched ? "Matched" : "Unmatched"}
+                              </span>
+                            </td>
+                            <td className="dash-reasons" title={changedFieldSummary(row.changes)}>
+                              {changedFieldSummary(row.changes)}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="pagination">
+                  <span>
+                    {filteredRows.length === 0
+                      ? "No detail rows"
+                      : `Showing ${rowFrom}–${rowTo} of ${filteredRows.length}`}
+                  </span>
+                  <div className="pagination-nav">
+                    <button
+                      type="button"
+                      disabled={safeRowPage <= 1}
+                      onClick={() => setRowsPage((value) => value - 1)}
+                    >
+                      Previous
+                    </button>
+                    <span>
+                      Page {safeRowPage} of {rowPages}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={safeRowPage >= rowPages}
+                      onClick={() => setRowsPage((value) => value + 1)}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : null}
+          </section>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImportingChange }, ref) {
   const inputRef = useRef();
   const [data, setData] = useState(null);
@@ -980,6 +1391,7 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
           <FlaggedTable rows={flaggedRows} />
         </>
       ) : null}
+      <NonModSection onNotice={onNotice} onRefreshLogs={onRefreshLogs} />
     </div>
   );
 });

@@ -2975,6 +2975,39 @@ tbody tr.selected td {
   line-height: 1.4;
 }
 
+.dash-nonmod-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.dash-nonmod-tools .dash-mailbox {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--type-ui);
+  font-weight: 600;
+  color: var(--maersk-muted);
+  min-width: min(280px, 100%);
+}
+
+.dash-nonmod-tools .dash-mailbox .field-select {
+  width: min(280px, 100%);
+}
+
+.dash-nonmod .dash-bar-label,
+.dash-bars.is-paths .dash-bar-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dash-bars.is-paths li {
+  grid-template-columns: minmax(160px, 48%) minmax(0, 1fr) 42px;
+}
+
 .dash-count-chip {
   display: inline-flex;
   align-items: center;
