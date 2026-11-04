@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>malstar_toolkit · 文件数据流向</title>
+  <style>
+    :root {
+      --bg: #0f1218;
+      --bg2: #171b24;
+      --bg3: #1e2430;
+      --stroke: #3a4356;
+      --stroke2: #2a3140;
+      --text: #e8ecf4;
+      --muted: #9aa3b5;
+      --accent: #6ea8fe;
+      --accent-soft: rgba(110, 168, 254, 0.14);
+      --ok: #6bcf8e;
+      --warn: #e6b35a;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: "Segoe UI", system-ui, -apple-system, sans-serif;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f6f7fa;
+        --bg2: #ffffff;
+        --bg3: #eef1f6;
+        --stroke: #c9d0dc;
+        --stroke2: #dde2ea;
+        --text: #1a2030;
+        --muted: #5c667a;
+        --accent: #2563eb;
+        --accent-soft: rgba(37, 99, 235, 0.1);
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    header {
+      padding: 28px 28px 12px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 1.6rem; margin: 0 0 8px; font-weight: 650; }
+    h2 { font-size: 1.15rem; margin: 0 0 10px; font-weight: 600; }
+    h3 { font-size: 0.95rem; margin: 0 0 8px; font-weight: 600; }
+    .sub { color: var(--muted); max-width: 70ch; }
+    .stats {
+      display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px;
+    }
+    .stat {
+      background: var(--bg2);
+      border: 1px solid var(--stroke2);
+      border-radius: 10px;
+      padding: 10px 14px;
+      min-width: 100px;
+    }
+    .stat b { display: block; font-size: 1.25rem; }
+    .stat span { color: var(--muted); font-size: 0.8rem; }
+    main { max-width: 1200px; margin: 0 auto; padding: 8px 28px 48px; }
+    section { margin-top: 28px; }
+    .callout {
+      background: var(--accent-soft);
+      border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+      border-radius: 10px;
+      padding: 12px 14px;
+      color: var(--text);
+      font-size: 0.92rem;
+    }
+    .filters {
+      display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 14px;
+    }
+    .pill {
+      appearance: none;
+      border: 1px solid var(--stroke);
+      background: var(--bg2);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    .pill:hover { border-color: var(--accent); }
+    .pill.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .panel {
+      background: var(--bg2);
+      border: 1px solid var(--stroke2);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .panel-h {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--stroke2);
+      font-weight: 600;
+    }
+    .panel-b { padding: 12px; }
+    .layer-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+    .chip {
+      font-size: 0.75rem; color: var(--muted);
+      border: 1px solid var(--stroke2); border-radius: 999px; padding: 3px 8px;
+      background: var(--bg3);
+    }
+    .svg-wrap { overflow: auto; width: 100%; border-radius: 8px; background: var(--bg); }
+    svg text { user-select: none; }
+    .node { cursor: pointer; }
+    .node:hover rect { stroke: var(--accent); stroke-width: 2; }
+    .hint { color: var(--muted); font-size: 0.82rem; margin-top: 10px; }
+    table {
+      width: 100%; border-collapse: collapse; font-size: 0.86rem;
+    }
+    th, td {
+      text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--stroke2);
+      vertical-align: top;
+    }
+    th { color: var(--muted); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: .03em; }
+    code, .mono {
+      font-family: var(--mono); font-size: 0.84em;
+      background: var(--bg3); padding: 1px 5px; border-radius: 4px;
+    }
+    .grid2 {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+    }
+    @media (max-width: 900px) {
+      .grid2 { grid-template-columns: 1fr; }
+      header, main { padding-left: 16px; padding-right: 16px; }
+    }
+    .step { display: flex; gap: 10px; align-items: flex-start; margin: 6px 0; }
+    .god { margin-bottom: 12px; }
+    .god strong { display: block; }
+    .god span { color: var(--muted); font-size: 0.85rem; }
+    #detail {
+      margin-top: 12px; padding: 10px 12px; border-radius: 8px;
+      background: var(--bg3); border: 1px solid var(--stroke2);
+      min-height: 2.4em; font-size: 0.9rem;
+    }
+    .toolbar {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    }
+    .toolbar button.secondary {
+      appearance: none; border: 1px solid var(--stroke); background: var(--bg3);
+      color: var(--text); border-radius: 8px; padding: 6px 10px; cursor: pointer; font-size: 0.82rem;
+    }
+    .legend { display: flex; flex-wrap: wrap; gap: 14px; color: var(--muted); font-size: 0.8rem; margin-top: 8px; }
+    .legend i {
+      display: inline-block; width: 22px; height: 0; border-top: 2px solid var(--stroke);
+      vertical-align: middle; margin-right: 6px;
+    }
+    .legend .back { border-top-style: dashed; border-color: var(--accent); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>malstar_toolkit 文件数据流向</h1>
+    <p class="sub">
+      仿 Graphify：用确定性 import / 路由边构建知识图。数据沿
+      <span class="mono">UI → api/* → blueprints → services → SQLite / uploads / Azure</span>
+      下沉；审计与 RAG 为横切边。本页为可本地打开的独立交互 HTML。
+    </p>
+    <div class="stats">
+      <div class="stat"><b>5</b><span>分层</span></div>
+      <div class="stat"><b id="stat-nodes">—</b><span>模块节点</span></div>
+      <div class="stat"><b id="stat-edges">—</b><span>数据边</span></div>
+      <div class="stat"><b>27</b><span>SQLite 表</span></div>
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <div class="callout">
+        <strong>边类型</strong> —
+        EXTRACTED：AST import、Flask 路由、service→SQL 表。
+        INFERRED：Ask 索引由 Files/SOP 写入触发。
+        回边（虚线）：<span class="mono">files_store ↔ rag</span>。
+        AMBIGUOUS：<span class="mono">gateway.py</span> 仅生产反代，不进业务路径。
+      </div>
+    </section>
+
+    <section>
+      <h2>分层数据流图</h2>
+      <div class="filters" id="domain-filters" role="tablist" aria-label="业务域筛选"></div>
+      <div class="panel">
+        <div class="panel-h">
+          <span id="panel-title">全景 · 文件间流向</span>
+          <div class="toolbar">
+            <button class="secondary" type="button" id="btn-fit">适应宽度</button>
+            <button class="secondary" type="button" id="btn-download">下载 SVG</button>
+          </div>
+        </div>
+        <div class="panel-b">
+          <div class="layer-pills" id="layer-pills"></div>
+          <div class="svg-wrap" id="svg-wrap"></div>
+          <div class="legend">
+            <span><i></i>EXTRACTED 边</span>
+            <span><i class="back"></i>回边 / 环</span>
+            <span>点击节点查看详情</span>
+          </div>
+          <div id="detail">点击图中节点，查看该模块在流向中的角色。</div>
+          <p class="hint">实线 = 调用/写入；虚线高亮 = 回边。可用上方 pill 按业务域过滤。</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>按业务域的端到端管道</h2>
+      <p class="sub">每个工具一条「UI → api → blueprint → service → 落盘/表」管道。</p>
+      <div class="panel">
+        <div class="panel-b" style="overflow:auto">
+          <table id="domain-table">
+            <thead>
+              <tr>
+                <th>域</th><th>UI</th><th>API</th><th>Blueprint</th><th>Service</th><th>数据汇</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid2">
+      <div class="panel">
+        <div class="panel-h">Ask / RAG 主路径</div>
+        <div class="panel-b" id="ask-steps"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-h">God nodes（高连接度）</div>
+        <div class="panel-b" id="god-nodes"></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>启动与静态资源旁路</h2>
+      <div class="panel">
+        <div class="panel-b" style="overflow:auto">
+          <table id="bypass-table">
+            <thead><tr><th>源</th><th>目标</th><th>数据</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const LAYER_LABELS = [
+      "UI Workspaces",
+      "API Client",
+      "Flask Blueprints",
+      "Services",
+      "Persistence / External",
+    ];
+
+    const DOMAIN_OPTIONS = [
+      { id: "all", label: "全景" },
+      { id: "ask", label: "Ask / RAG" },
+      { id: "records", label: "SearchBar 目录" },
+      { id: "cases", label: "BadCases" },
+      { id: "ops", label: "Dashboard / LCL / GCA" },
+      { id: "leave", label: "Leave Forecast" },
+      { id: "files", label: "Files / SOPs" },
+      { id: "logs", label: "Activity Log" },
+    ];
+
+    const NODES = [
+      { id: "ui-app", label: "App.jsx / tools.jsx", layer: 0, domains: ["all"], detail: "挂载各工具 Workspace，统一 toast / section 切换。" },
+      { id: "ui-ask", label: "AskWorkspace", layer: 0, domains: ["ask"], detail: "提问、重建索引；展示 citations。" },
+      { id: "ui-records", label: "RecordsWorkspace", layer: 0, domains: ["records"], detail: "Remarks / ICB / UNLOCO / DeLCL / DeBosch 目录检索。" },
+      { id: "ui-cases", label: "FeedbackWorkspace", layer: 0, domains: ["cases"], detail: "BadCases 列表与附件。" },
+      { id: "ui-dash", label: "Dashboard / LCL / GCA", layer: 0, domains: ["ops"], detail: "运营看板、LCL 体积图、GCA Hypercare。" },
+      { id: "ui-leave", label: "LeaveForecast", layer: 0, domains: ["leave"], detail: "请假计划与人员。" },
+      { id: "ui-files", label: "FileManager / SopWorkspace", layer: 0, domains: ["files", "ask"], detail: "上传文件与 SOP 编辑；写入后触发 RAG 索引。" },
+      { id: "ui-logs", label: "ActivityLog", layer: 0, domains: ["logs"], detail: "轮询活动日志。" },
+      { id: "api", label: "api/index.js → client.js", layer: 1, domains: ["all"], detail: "聚合各 api/*.js；client.js 是唯一 fetch 出口（BASE_URL/api）。" },
+      { id: "app", label: "app.py (create_app)", layer: 2, domains: ["all"], detail: "注册全部 blueprint；migrate；托管 SPA 静态资源。" },
+      { id: "bp-ask", label: "blueprints/ask.py", layer: 2, domains: ["ask"], detail: "GET/POST /api/ask* → rag。" },
+      { id: "bp-remarks", label: "blueprints/remarks.py", layer: 2, domains: ["records"], detail: "Customer remarks CRUD + CSV import。" },
+      { id: "bp-icb", label: "blueprints/icb|unloco|delcl|debosch", layer: 2, domains: ["records"], detail: "目录类 REST 端点簇。" },
+      { id: "bp-cases", label: "blueprints/cases.py", layer: 2, domains: ["cases"], detail: "Cases CRUD 与附件预览。" },
+      { id: "bp-dash", label: "blueprints/dashboard|lcl|gca", layer: 2, domains: ["ops"], detail: "看板与导入 API。" },
+      { id: "bp-leave", label: "blueprints/leave.py", layer: 2, domains: ["leave"], detail: "请假人/计划 API。" },
+      { id: "bp-files", label: "blueprints/files|sops.py", layer: 2, domains: ["files", "ask"], detail: "文件与 SOP；保存后调 rag 重建。" },
+      { id: "bp-logs", label: "blueprints/logs.py", layer: 2, domains: ["logs"], detail: "读取 ActivityLogs。" },
+      { id: "svc-rag", label: "services/rag.py", layer: 3, domains: ["ask", "files"], detail: "切块、FTS 检索、可选 Azure OpenAI 生成答案。" },
+      { id: "svc-remarks", label: "services/remarks.py", layer: 3, domains: ["records"], detail: "CustomerRemarks 读写。" },
+      { id: "svc-catalog", label: "services/icb|unloco|delcl|debosch", layer: 3, domains: ["records"], detail: "目录表 + 可选种子 CSV/XLSX。" },
+      { id: "svc-cases", label: "services/cases.py", layer: 3, domains: ["cases"], detail: "Cases / CaseFiles。" },
+      { id: "svc-ops", label: "services/dashboard|lcl|gca", layer: 3, domains: ["ops"], detail: "聚合分析与导入缓存。" },
+      { id: "svc-leave", label: "services/leave.py", layer: 3, domains: ["leave"], detail: "LeavePlans / LeavePeople。" },
+      { id: "svc-files", label: "services/files_store|sops", layer: 3, domains: ["files", "ask", "cases"], detail: "磁盘路径 + 元数据；与 rag 互调。" },
+      { id: "db", label: "db.py → db_engine → SQLite", layer: 4, domains: ["all"], detail: "God node：schema migrate + 连接。" },
+      { id: "uploads", label: "uploads/ + ToolkitFiles", layer: 4, domains: ["files", "ask", "cases"], detail: "二进制落盘；元数据在 ToolkitFiles。" },
+      { id: "azure", label: "Azure OpenAI (optional)", layer: 4, domains: ["ask"], detail: "config 中 endpoint/key/deployment；缺失则仅检索模式。" },
+      { id: "audit", label: "ActivityLogs + logging_util", layer: 4, domains: ["logs", "all"], detail: "横切 audit() 写入。" },
+      { id: "seed", label: "CSV/XLSX seed paths (config)", layer: 4, domains: ["records", "ops"], detail: "环境变量指向的种子文件路径。" },
+    ];
+
+    const EDGES = [
+      { from: "ui-app", to: "api", label: "mount tools", domains: ["all"] },
+      { from: "ui-ask", to: "api", label: "ask / reindex", domains: ["ask"] },
+      { from: "ui-records", to: "api", label: "CRUD + import", domains: ["records"] },
+      { from: "ui-cases", to: "api", label: "cases + files", domains: ["cases"] },
+      { from: "ui-dash", to: "api", label: "summary / import", domains: ["ops"] },
+      { from: "ui-leave", to: "api", label: "plans / people", domains: ["leave"] },
+      { from: "ui-files", to: "api", label: "upload / SOP CRUD", domains: ["files"] },
+      { from: "ui-logs", to: "api", label: "list / export", domains: ["logs"] },
+      { from: "api", to: "app", label: "HTTP /api/*", domains: ["all"] },
+      { from: "app", to: "bp-ask", label: "register", domains: ["ask"] },
+      { from: "app", to: "bp-remarks", label: "register", domains: ["records"] },
+      { from: "app", to: "bp-icb", label: "register", domains: ["records"] },
+      { from: "app", to: "bp-cases", label: "register", domains: ["cases"] },
+      { from: "app", to: "bp-dash", label: "register", domains: ["ops"] },
+      { from: "app", to: "bp-leave", label: "register", domains: ["leave"] },
+      { from: "app", to: "bp-files", label: "register", domains: ["files"] },
+      { from: "app", to: "bp-logs", label: "register", domains: ["logs"] },
+      { from: "bp-ask", to: "svc-rag", label: "search / generate", domains: ["ask"] },
+      { from: "bp-remarks", to: "svc-remarks", label: "query / upsert", domains: ["records"] },
+      { from: "bp-icb", to: "svc-catalog", label: "query / import", domains: ["records"] },
+      { from: "bp-cases", to: "svc-cases", label: "CRUD", domains: ["cases"] },
+      { from: "bp-cases", to: "svc-files", label: "attachments", domains: ["cases"] },
+      { from: "bp-dash", to: "svc-ops", label: "analytics", domains: ["ops"] },
+      { from: "bp-leave", to: "svc-leave", label: "plans", domains: ["leave"] },
+      { from: "bp-files", to: "svc-files", label: "store / SOP", domains: ["files"] },
+      { from: "bp-files", to: "svc-rag", label: "reindex on save", domains: ["ask", "files"] },
+      { from: "bp-logs", to: "audit", label: "read logs", domains: ["logs"] },
+      { from: "svc-rag", to: "db", label: "RagChunks + FTS", domains: ["ask"] },
+      { from: "svc-rag", to: "uploads", label: "read docx/xlsx", domains: ["ask"] },
+      { from: "svc-rag", to: "azure", label: "chat completion", domains: ["ask"] },
+      { from: "svc-rag", to: "svc-files", label: "preview / path", domains: ["ask"], back: true },
+      { from: "svc-remarks", to: "db", label: "CustomerRemarks", domains: ["records"] },
+      { from: "svc-catalog", to: "db", label: "Icb/Unloco/De*", domains: ["records"] },
+      { from: "svc-catalog", to: "seed", label: "optional CSV/XLSX", domains: ["records"] },
+      { from: "svc-cases", to: "db", label: "Cases / CaseFiles", domains: ["cases"] },
+      { from: "svc-ops", to: "db", label: "Dashboard*/Gca*/Lcl*", domains: ["ops"] },
+      { from: "svc-ops", to: "seed", label: "LCL/GCA xlsx", domains: ["ops"] },
+      { from: "svc-leave", to: "db", label: "LeavePlans/People", domains: ["leave"] },
+      { from: "svc-files", to: "db", label: "ToolkitFiles / Sops*", domains: ["files"] },
+      { from: "svc-files", to: "uploads", label: "disk bytes", domains: ["files"] },
+      { from: "svc-files", to: "svc-rag", label: "index after write", domains: ["ask", "files"], back: true },
+      { from: "bp-ask", to: "audit", label: "audit()", domains: ["ask"] },
+      { from: "bp-remarks", to: "audit", label: "audit()", domains: ["records"] },
+      { from: "bp-cases", to: "audit", label: "audit()", domains: ["cases"] },
+      { from: "bp-files", to: "audit", label: "audit()", domains: ["files"] },
+    ];
+
+    const DOMAIN_TABLE = [
+      ["Ask", "AskWorkspace.jsx", "api/ask.js", "blueprints/ask.py", "services/rag.py", "RagChunks(+FTS) → Azure OpenAI"],
+      ["Remarks", "RecordTable (remarks)", "api/remarks.js", "blueprints/remarks.py", "services/remarks.py", "CustomerRemarks"],
+      ["ICB / UNLOCO / De*", "IcbTable / Unloco / De*", "api/icb|unloco|delcl|debosch.js", "blueprints/*", "services/*", "IcbStations / Unlocodes / De*"],
+      ["BadCases", "FeedbackWorkspace + Case*", "api/cases.js", "blueprints/cases.py", "services/cases.py", "Cases + CaseFiles + uploads/"],
+      ["Ops Dashboard", "Dashboard.jsx", "api/dashboard.js", "blueprints/dashboard.py", "dashboard_analytics.py", "DashboardMeta / Bookings"],
+      ["LCL Volume", "LclDashboard + LclMap", "api/lcl.js", "blueprints/lcl.py", "lcl.py + centroids", "LclImportMeta / xlsx"],
+      ["GCA Hypercare", "GcaDashboard.jsx", "api/gca.js", "blueprints/gca.py", "services/gca.py", "GcaBookings / Feedback"],
+      ["Leave", "LeaveForecast.jsx", "api/leave.js", "blueprints/leave.py", "services/leave.py", "LeavePlans / People"],
+      ["Files + SOPs", "FileManager / SopWorkspace", "api/files.js + sops.js", "files|sops.py", "files_store + sops (+rag)", "ToolkitFiles / Sops* / uploads/"],
+      ["Logs", "ActivityLog.jsx", "api/logs.js", "blueprints/logs.py", "logging_util.audit", "ActivityLogs + log file"],
+    ];
+
+    const ASK_STEPS = [
+      ["1 UI", "AskWorkspace 提交 question"],
+      ["2 API", "POST /api/ask → blueprints/ask.py"],
+      ["3 Index", "rag.maybe_backfill_index / search_chunks"],
+      ["4 Sources", "读 ToolkitFiles(uploads) + Sops 文本切块"],
+      ["5 Store", "写入 RagChunks / RagChunksFts"],
+      ["6 LLM", "可选 Azure OpenAI generate_answer"],
+      ["7 Out", "citations + answer JSON 回前端"],
+    ];
+
+    const GOD_NODES = [
+      ["db.py / db_engine.py", "几乎所有 service 的读写汇聚点"],
+      ["api/client.js", "前端唯一 HTTP 出口，BASE_URL + /api"],
+      ["logging_util.audit", "跨 blueprint 审计边 → ActivityLogs"],
+      ["services/rag.py", "Files/SOPs → 索引 → Ask 枢纽"],
+      ["services/files_store.py", "磁盘与元数据桥；与 rag 形成回边"],
+    ];
+
+    const BYPASS = [
+      ["gateway.py", "app.py :8080", "HTTP 反代 /remarks/（生产）"],
+      ["app.py", "frontend/dist", "SPA 静态文件 + /lcl.html"],
+      ["envfile.py", "config.py", ".env → DATABASE_PATH / Azure 密钥"],
+      ["config.py", "services/*", "路径上限、RAG 参数、种子文件路径"],
+      ["main.jsx", "App.jsx", "React 挂载；无服务端数据"],
+    ];
+
+    let selectedDomain = "all";
+    let selectedNode = null;
+    let scale = 1;
+
+    function matchesDomain(domains, selected) {
+      if (selected === "all") return true;
+      return domains.includes(selected) || domains.includes("all");
+    }
+
+    /** Simple layered layout (rank = layer). */
+    function layoutGraph(nodes, edges) {
+      const NW = 168, NH = 44, RANK_GAP = 78, NODE_GAP = 28, PAD = 24;
+      const byLayer = new Map();
+      for (const n of nodes) {
+        if (!byLayer.has(n.layer)) byLayer.set(n.layer, []);
+        byLayer.get(n.layer).push(n);
+      }
+      const layers = [...byLayer.keys()].sort((a, b) => a - b);
+      const pos = new Map();
+      let maxW = 0;
+      const ranks = [];
+      let y = PAD + 18;
+      for (const layer of layers) {
+        const list = byLayer.get(layer);
+        const width = list.length * NW + (list.length - 1) * NODE_GAP;
+        maxW = Math.max(maxW, width);
+        ranks.push({ layer, y, count: list.length, width });
+        y += NH + RANK_GAP;
+      }
+      const totalW = Math.max(maxW, 320) + PAD * 2;
+      const totalH = y - RANK_GAP + PAD;
+      for (const r of ranks) {
+        const list = byLayer.get(r.layer);
+        const startX = (totalW - r.width) / 2;
+        list.forEach((n, i) => {
+          pos.set(n.id, {
+            x: startX + i * (NW + NODE_GAP),
+            y: r.y,
+            w: NW,
+            h: NH,
+            cx: startX + i * (NW + NODE_GAP) + NW / 2,
+            cy: r.y + NH / 2,
+            bottom: r.y + NH,
+            top: r.y,
+          });
+        });
+      }
+      const laidEdges = edges.map((e) => {
+        const a = pos.get(e.from);
+        const b = pos.get(e.to);
+        return {
+          ...e,
+          x1: a.cx,
+          y1: a.bottom,
+          x2: b.cx,
+          y2: b.top,
+          isBack: !!e.back || a.cy > b.cy,
+        };
+      });
+      return { pos, laidEdges, ranks, width: totalW, height: totalH, NW, NH };
+    }
+
+    function cssVar(name) {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    }
+
+    function renderFilters() {
+      const el = document.getElementById("domain-filters");
+      el.innerHTML = "";
+      for (const opt of DOMAIN_OPTIONS) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "pill" + (opt.id === selectedDomain ? " active" : "");
+        btn.textContent = opt.label;
+        btn.setAttribute("role", "tab");
+        btn.setAttribute("aria-selected", opt.id === selectedDomain ? "true" : "false");
+        btn.addEventListener("click", () => {
+          selectedDomain = opt.id;
+          selectedNode = null;
+          render();
+        });
+        el.appendChild(btn);
+      }
+    }
+
+    function renderDiagram() {
+      const nodes = NODES.filter((n) => matchesDomain(n.domains, selectedDomain));
+      const idSet = new Set(nodes.map((n) => n.id));
+      const edges = EDGES.filter(
+        (e) => matchesDomain(e.domains, selectedDomain) && idSet.has(e.from) && idSet.has(e.to)
+      );
+      const L = layoutGraph(nodes, edges);
+      const stroke = cssVar("--stroke");
+      const accent = cssVar("--accent");
+      const fill = cssVar("--bg2");
+      const chrome = cssVar("--bg3");
+      const text = cssVar("--text");
+      const muted = cssVar("--muted");
+
+      const pills = document.getElementById("layer-pills");
+      pills.innerHTML = LAYER_LABELS.map((label, i) =>
+        `<span class="chip">L${i}: ${label}</span>`
+      ).join("");
+
+      const title = DOMAIN_OPTIONS.find((d) => d.id === selectedDomain)?.label || selectedDomain;
+      document.getElementById("panel-title").textContent = `${title} · 文件间流向`;
+
+      const ns = "http://www.w3.org/2000/svg";
+      const svg = document.createElementNS(ns, "svg");
+      svg.setAttribute("width", String(L.width * scale));
+      svg.setAttribute("height", String(L.height * scale));
+      svg.setAttribute("viewBox", `0 0 ${L.width} ${L.height}`);
+      svg.setAttribute("id", "flow-svg");
+
+      const defs = document.createElementNS(ns, "defs");
+      defs.innerHTML = `
+        <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="${stroke}" />
+        </marker>
+        <marker id="arrow-back" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="${accent}" />
+        </marker>`;
+      svg.appendChild(defs);
+
+      for (const r of L.ranks) {
+        const list = nodes.filter((n) => n.layer === r.layer);
+        const xs = list.map((n) => L.pos.get(n.id).x);
+        const minX = Math.min(...xs) - 8;
+        const maxX = Math.max(...xs) + L.NW + 8;
+        const band = document.createElementNS(ns, "rect");
+        band.setAttribute("x", minX);
+        band.setAttribute("y", r.y - 8);
+        band.setAttribute("width", maxX - minX);
+        band.setAttribute("height", L.NH + 16);
+        band.setAttribute("rx", "6");
+        band.setAttribute("fill", chrome);
+        band.setAttribute("opacity", "0.55");
+        svg.appendChild(band);
+        const lab = document.createElementNS(ns, "text");
+        lab.setAttribute("x", minX);
+        lab.setAttribute("y", r.y - 12);
+        lab.setAttribute("fill", muted);
+        lab.setAttribute("font-size", "11");
+        lab.setAttribute("font-family", "system-ui,sans-serif");
+        lab.textContent = LAYER_LABELS[r.layer] || `L${r.layer}`;
+        svg.appendChild(lab);
+      }
+
+      for (const e of L.laidEdges) {
+        const midY = (e.y1 + e.y2) / 2;
+        const path = document.createElementNS(ns, "path");
+        path.setAttribute(
+          "d",
+          `M ${e.x1} ${e.y1} C ${e.x1} ${midY}, ${e.x2} ${midY}, ${e.x2} ${e.y2}`
+        );
+        path.setAttribute("fill", "none");
+        path.setAttribute("stroke", e.isBack ? accent : stroke);
+        path.setAttribute("stroke-width", e.isBack ? "1.75" : "1.25");
+        if (e.isBack) path.setAttribute("stroke-dasharray", "5 4");
+        path.setAttribute("marker-end", e.isBack ? "url(#arrow-back)" : "url(#arrow)");
+        svg.appendChild(path);
+        if (e.label) {
+          const t = document.createElementNS(ns, "text");
+          t.setAttribute("x", (e.x1 + e.x2) / 2);
+          t.setAttribute("y", midY - 4);
+          t.setAttribute("fill", muted);
+          t.setAttribute("font-size", "9");
+          t.setAttribute("text-anchor", "middle");
+          t.setAttribute("font-family", "system-ui,sans-serif");
+          t.textContent = e.label;
+          svg.appendChild(t);
+        }
+      }
+
+      for (const n of nodes) {
+        const p = L.pos.get(n.id);
+        const g = document.createElementNS(ns, "g");
+        g.setAttribute("class", "node");
+        g.style.cursor = "pointer";
+        const rect = document.createElementNS(ns, "rect");
+        rect.setAttribute("x", p.x);
+        rect.setAttribute("y", p.y);
+        rect.setAttribute("width", L.NW);
+        rect.setAttribute("height", L.NH);
+        rect.setAttribute("rx", "6");
+        rect.setAttribute("fill", fill);
+        const isSink = n.layer === 4;
+        const isSel = selectedNode === n.id;
+        rect.setAttribute("stroke", isSel || isSink ? accent : stroke);
+        rect.setAttribute("stroke-width", isSel || isSink ? "1.75" : "1");
+        if (isSel) rect.setAttribute("fill", cssVar("--accent-soft"));
+        const label = document.createElementNS(ns, "text");
+        label.setAttribute("x", p.cx);
+        label.setAttribute("y", p.y + 27);
+        label.setAttribute("fill", text);
+        label.setAttribute("font-size", "11");
+        label.setAttribute("text-anchor", "middle");
+        label.setAttribute("font-family", "ui-monospace,Menlo,monospace");
+        label.textContent = n.label;
+        g.appendChild(rect);
+        g.appendChild(label);
+        g.addEventListener("click", () => {
+          selectedNode = n.id;
+          renderDiagram();
+          showDetail(n, edges);
+        });
+        svg.appendChild(g);
+      }
+
+      const wrap = document.getElementById("svg-wrap");
+      wrap.innerHTML = "";
+      wrap.appendChild(svg);
+
+      if (selectedNode) {
+        const n = nodes.find((x) => x.id === selectedNode);
+        if (n) showDetail(n, edges);
+        else {
+          selectedNode = null;
+          document.getElementById("detail").textContent = "点击图中节点，查看该模块在流向中的角色。";
+        }
+      } else {
+        document.getElementById("detail").textContent = "点击图中节点，查看该模块在流向中的角色。";
+      }
+    }
+
+    function showDetail(n, edges) {
+      const outs = edges.filter((e) => e.from === n.id).map((e) => `${e.label || "→"} → ${e.to}`);
+      const inns = edges.filter((e) => e.to === n.id).map((e) => `${e.from} → ${e.label || ""}`);
+      document.getElementById("detail").innerHTML =
+        `<strong class="mono">${n.label}</strong> · L${n.layer} ${LAYER_LABELS[n.layer]}` +
+        `<div style="margin-top:6px;color:var(--muted)">${n.detail || ""}</div>` +
+        `<div style="margin-top:8px"><span class="mono">in</span>: ${inns.length ? inns.join(" · ") : "—"}</div>` +
+        `<div><span class="mono">out</span>: ${outs.length ? outs.join(" · ") : "—"}</div>`;
+    }
+
+    function renderTables() {
+      const tb = document.querySelector("#domain-table tbody");
+      tb.innerHTML = DOMAIN_TABLE.map(
+        (r) => `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join("")}</tr>`
+      ).join("");
+      const ask = document.getElementById("ask-steps");
+      ask.innerHTML = ASK_STEPS.map(
+        ([s, d]) => `<div class="step"><code>${escapeHtml(s)}</code><span>${escapeHtml(d)}</span></div>`
+      ).join("");
+      const god = document.getElementById("god-nodes");
+      god.innerHTML = GOD_NODES.map(
+        ([n, w]) => `<div class="god"><strong>${escapeHtml(n)}</strong><span>${escapeHtml(w)}</span></div>`
+      ).join("");
+      const by = document.querySelector("#bypass-table tbody");
+      by.innerHTML = BYPASS.map(
+        (r) => `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join("")}</tr>`
+      ).join("");
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function render() {
+      document.getElementById("stat-nodes").textContent = String(NODES.length);
+      document.getElementById("stat-edges").textContent = String(EDGES.length);
+      renderFilters();
+      renderDiagram();
+      renderTables();
+    }
+
+    document.getElementById("btn-fit").addEventListener("click", () => {
+      scale = 1;
+      renderDiagram();
+      const wrap = document.getElementById("svg-wrap");
+      wrap.scrollLeft = 0;
+    });
+
+    document.getElementById("btn-download").addEventListener("click", () => {
+      const svg = document.getElementById("flow-svg");
+      if (!svg) return;
+      const clone = svg.cloneNode(true);
+      clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+      const blob = new Blob([clone.outerHTML], { type: "image/svg+xml;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `malstar-dataflow-${selectedDomain}.svg`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+
+    render();
+  </script>
+</body>
+</html>
