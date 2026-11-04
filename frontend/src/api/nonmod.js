@@ -28,9 +28,9 @@ export const nonmodApi = {
     });
   },
   getNonModLatest: (options) => request(`${API_ROOT}/non-mod/latest`, options),
-  listNonModRows: (reportDate = "", page = 1, pageSize = NONMOD_PAGE_SIZE, options) =>
+  listNonModRows: (reportDate = "", page = 1, pageSize = NONMOD_PAGE_SIZE, mailbox = "", options) =>
     request(
-      `${API_ROOT}/non-mod/rows${query({ reportDate, page, pageSize })}`,
+      `${API_ROOT}/non-mod/rows${query({ reportDate, page, pageSize, mailbox })}`,
       options,
     ),
   getNonModFieldRanking: (reportDate = "", options) =>

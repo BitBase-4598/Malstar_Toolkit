@@ -57,7 +57,13 @@ def non_mod_rows():
     parsed, error = parse_report_date(report_date)
     if error:
         return jsonify({"success": False, "message": error}), 400
-    payload, error = list_rows(parsed, _page_arg("page", 1), _page_arg("pageSize", 50))
+    mailbox = request.args.get("mailbox") if "mailbox" in request.args else None
+    payload, error = list_rows(
+        parsed,
+        _page_arg("page", 1),
+        _page_arg("pageSize", 50),
+        mailbox,
+    )
     if error:
         status = 404 if error.startswith("No Non-Mod snapshot") else 400
         return jsonify({"success": False, "message": error}), status

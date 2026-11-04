@@ -482,7 +482,26 @@ def snapshot_for_date(report_date):
     return {"upload": upload, "kpi": _load_kpi(upload)}, None
 
 
-def list_rows(report_date="", page=1, page_size=50):
+BLANK_MAILBOX = "(blank)"
+
+
+def _mailbox_filter(mailbox):
+    """Return a SQL fragment applied before pagination.
+
+    Missing or blank means every mailbox. ``(blank)`` matches rows stored
+    with an empty mailbox, the same sentinel the dashboard uses.
+    """
+    if mailbox is None:
+        return "", []
+    text = str(mailbox).strip()
+    if not text:
+        return "", []
+    if text == BLANK_MAILBOX:
+        return " AND Mailbox = ?", [""]
+    return " AND Mailbox = ?", [text[:160]]
+
+
+def list_rows(report_date="", page=1, page_size=50, mailbox=None):
     page = max(int(page or 1), 1)
     page_size = min(max(int(page_size or 50), 1), 10000)
     found, error = snapshot_for_date(report_date)
@@ -499,19 +518,20 @@ def list_rows(report_date="", page=1, page_size=50):
                 "totalPages": 1,
             },
         }, None
+    clause, params = _mailbox_filter(mailbox)
     with get_connection() as conn:
         total = conn.execute(
-            "SELECT COUNT(*) FROM NonModRows WHERE UploadID=?",
-            (upload["ID"],),
+            f"SELECT COUNT(*) FROM NonModRows WHERE UploadID=?{clause}",
+            (upload["ID"], *params),
         ).fetchone()[0]
         rows = conn.execute(
-            """
+            f"""
             SELECT * FROM NonModRows
-            WHERE UploadID=?
+            WHERE UploadID=?{clause}
             ORDER BY RowIndex, ID
             LIMIT ? OFFSET ?
             """,
-            (upload["ID"], page_size, (page - 1) * page_size),
+            (upload["ID"], *params, page_size, (page - 1) * page_size),
         ).fetchall()
     return {
         "data": [_row_to_dict(row) for row in rows],

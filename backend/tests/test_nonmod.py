@@ -297,6 +297,55 @@ def test_nonmod_rejects_non_xlsx_and_leaves_dashboard_bookings():
     assert after == before + 1
 
 
+def test_nonmod_rows_mailbox_filter_reaches_rows_past_first_pages():
+    client = _client()
+    rows = [_row(f"EARLY-{index:04d}", "early@example.com", "", "") for index in range(500)]
+    rows.append(_row("LATE-1", "late@example.com", "A", "B"))
+    rows.append(_row("BLANK-1", "", "", ""))
+    uploaded = _post(client, _workbook(rows), "wide-2026-11-03.xlsx")
+    assert uploaded.status_code == 200
+    data = uploaded.get_json()["data"]
+    assert data["selectedBookings"] == 502
+    assert data["matchedBookings"] == 1
+    assert data["unmatchedBookings"] == 501
+    by_mailbox = {item["mailbox"]: item for item in data["byMailbox"]}
+    assert by_mailbox["early@example.com"]["count"] == 500
+    assert by_mailbox["late@example.com"]["count"] == 1
+    assert by_mailbox["late@example.com"]["matched"] == 1
+    assert by_mailbox[""]["count"] == 1
+
+    late = client.get(
+        "/api/non-mod/rows?reportDate=2026-11-03&mailbox=late@example.com&pageSize=50"
+    )
+    assert late.status_code == 200
+    late_body = late.get_json()
+    assert late_body["pagination"]["total"] == 1
+    assert late_body["pagination"]["totalPages"] == 1
+    assert [row["orderNumber"] for row in late_body["data"]] == ["LATE-1"]
+
+    early = client.get(
+        "/api/non-mod/rows?reportDate=2026-11-03&mailbox=early@example.com&page=10&pageSize=50"
+    )
+    early_body = early.get_json()
+    assert early_body["pagination"]["total"] == 500
+    assert early_body["pagination"]["page"] == 10
+    assert len(early_body["data"]) == 50
+    assert early_body["data"][0]["orderNumber"] == "EARLY-0450"
+    assert early_body["data"][-1]["orderNumber"] == "EARLY-0499"
+    assert all(row["mailbox"] == "early@example.com" for row in early_body["data"])
+
+    blank = client.get("/api/non-mod/rows?reportDate=2026-11-03&mailbox=(blank)&pageSize=50")
+    blank_body = blank.get_json()
+    assert blank_body["pagination"]["total"] == 1
+    assert blank_body["data"][0]["orderNumber"] == "BLANK-1"
+    assert blank_body["data"][0]["mailbox"] == ""
+
+    first_page = client.get("/api/non-mod/rows?reportDate=2026-11-03&page=1&pageSize=50")
+    first_body = first_page.get_json()
+    assert first_body["pagination"]["total"] == 502
+    assert [row["orderNumber"] for row in first_body["data"]].count("LATE-1") == 0
+
+
 def test_nonmod_sample_workbook_contract():
     path = _sample_path()
     if path is None:

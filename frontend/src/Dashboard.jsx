@@ -640,7 +640,6 @@ function FlaggedTable({
 }
 
 const NONMOD_TOP = 8;
-const NONMOD_ROW_CAP = 500;
 
 function formatRatio(value) {
   const number = Number(value);
@@ -773,55 +772,49 @@ function NonModSection({ onNotice, onRefreshLogs }) {
     [ranking]
   );
 
-  const filteredRows = useMemo(() => {
-    const list = rows || [];
-    if (!mailbox) {
-      return list;
-    }
-    return list.filter((row) => mailboxKey(row.mailbox) === mailbox);
-  }, [mailbox, rows]);
-
   useEffect(() => {
-    setRowsPage(1);
-  }, [mailbox, reportDate]);
-
-  const rowPages = Math.max(1, Math.ceil(filteredRows.length / DASH_TABLE_PAGE_SIZE) || 1);
-  const safeRowPage = Math.min(rowsPage, rowPages);
-  const visibleRows = filteredRows.slice(
-    (safeRowPage - 1) * DASH_TABLE_PAGE_SIZE,
-    safeRowPage * DASH_TABLE_PAGE_SIZE
-  );
-  const rowFrom = filteredRows.length === 0 ? 0 : (safeRowPage - 1) * DASH_TABLE_PAGE_SIZE + 1;
-  const rowTo = Math.min(safeRowPage * DASH_TABLE_PAGE_SIZE, filteredRows.length);
-
-  const openRows = async () => {
-    const next = !rowsOpen;
-    setRowsOpen(next);
-    if (!next || rows || !reportDate) {
-      return;
+    if (!rowsOpen || !reportDate) {
+      return undefined;
     }
     const seq = ++rowsSeq.current;
+    const page = rowsPage;
+    const box = mailbox;
     const date = reportDate;
     setRowsLoading(true);
-    try {
-      const size = Math.min(Math.max(Number(meta?.rowCount) || NONMOD_ROW_CAP, 1), NONMOD_ROW_CAP);
-      const result = await api.listNonModRows(date, 1, size);
-      if (seq !== rowsSeq.current) {
-        return;
+    let active = true;
+    (async () => {
+      try {
+        const result = await api.listNonModRows(date, page, DASH_TABLE_PAGE_SIZE, box);
+        if (!active || seq !== rowsSeq.current) {
+          return;
+        }
+        setRows(result.data || []);
+        setRowsTotal(result.pagination?.total || 0);
+      } catch (error) {
+        if (!active || seq !== rowsSeq.current) {
+          return;
+        }
+        onNotice?.({ type: "error", text: error.message });
+        setRowsOpen(false);
+      } finally {
+        if (active && seq === rowsSeq.current) {
+          setRowsLoading(false);
+        }
       }
-      setRows(result.data || []);
-      setRowsTotal(result.pagination?.total || 0);
-    } catch (error) {
-      if (seq !== rowsSeq.current) {
-        return;
-      }
-      onNotice?.({ type: "error", text: error.message });
-      setRowsOpen(false);
-    } finally {
-      if (seq === rowsSeq.current) {
-        setRowsLoading(false);
-      }
-    }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [rowsOpen, rowsPage, mailbox, reportDate, onNotice]);
+
+  const rowPages = Math.max(1, Math.ceil(rowsTotal / DASH_TABLE_PAGE_SIZE) || 1);
+  const safeRowPage = Math.min(rowsPage, rowPages);
+  const visibleRows = rows || [];
+  const rowFrom = rowsTotal === 0 ? 0 : (safeRowPage - 1) * DASH_TABLE_PAGE_SIZE + 1;
+  const rowTo = rowsTotal === 0 ? 0 : Math.min(safeRowPage * DASH_TABLE_PAGE_SIZE, rowsTotal);
+
+  const openRows = () => {
+    setRowsOpen((open) => !open);
   };
 
   const upload = async (event) => {
@@ -875,7 +868,10 @@ function NonModSection({ onNotice, onRefreshLogs }) {
                   placeholder="All mailboxes"
                   ariaLabel="Filter Non-Mod rows by mailbox"
                   options={mailboxOptions}
-                  onChange={setMailbox}
+                  onChange={(next) => {
+                    setMailbox(next);
+                    setRowsPage(1);
+                  }}
                 />
               </label>
             ) : null}
@@ -959,7 +955,6 @@ function NonModSection({ onNotice, onRefreshLogs }) {
                 <p className="dash-section-note">
                   {reportDate}
                   {mailbox ? ` · ${mailbox}` : ""}
-                  {rowsTotal > (rows?.length || 0) ? ` · showing ${rows.length} of ${rowsTotal}` : ""}
                 </p>
               </div>
               <button className="ghost" type="button" aria-expanded={rowsOpen} onClick={openRows} disabled={rowsLoading}>
@@ -1014,9 +1009,9 @@ function NonModSection({ onNotice, onRefreshLogs }) {
                 </div>
                 <div className="pagination">
                   <span>
-                    {filteredRows.length === 0
+                    {rowsTotal === 0
                       ? "No detail rows"
-                      : `Showing ${rowFrom}–${rowTo} of ${filteredRows.length}`}
+                      : `Showing ${rowFrom}–${rowTo} of ${rowsTotal}`}
                   </span>
                   <div className="pagination-nav">
                     <button
