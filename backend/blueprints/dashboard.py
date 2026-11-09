@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, send_file
 
 from config import DASHBOARD_MAX_ROWS
 from db import get_connection
@@ -11,7 +11,7 @@ from services.dashboard_analytics import (
     parse_dashboard_record,
     save_handler_roster,
 )
-from services.dashboard_reports import dispatch_due_reports, get_schedule, save_schedule, send_report
+from services.ops_pdf import build_ops_pdf
 from util import now_stamp
 
 bp = Blueprint("dashboard", __name__)
@@ -62,38 +62,31 @@ def write_handler_roster():
     })
 
 
-@bp.get("/api/dashboard/report-schedule")
-def read_report_schedule():
+@bp.get("/api/dashboard/export.pdf")
+def export_dashboard_pdf():
+    date_from, error = parse_dashboard_date_arg("dateFrom")
+    if error:
+        return jsonify({"success": False, "message": error}), 400
+    date_to, error = parse_dashboard_date_arg("dateTo")
+    if error:
+        return jsonify({"success": False, "message": error}), 400
+    mailboxes = []
+    for value in request.args.getlist("mailbox"):
+        text = str(value or "").strip()[:160]
+        if text:
+            mailboxes.append(text)
     with get_connection() as conn:
-        data = get_schedule(conn)
-    return jsonify({"success": True, "data": data})
-
-
-@bp.put("/api/dashboard/report-schedule")
-def write_report_schedule():
-    payload = request.get_json(silent=True) or {}
-    try:
-        with get_connection() as conn:
-            data = save_schedule(conn, payload)
-    except ValueError as error:
-        return jsonify({"success": False, "message": str(error)}), 400
-    audit("dashboard.schedule", summary="report schedule saved")
-    return jsonify({"success": True, "data": data, "message": "Report schedule saved"})
-
-
-@bp.post("/api/dashboard/report-schedule/send")
-def send_report_now():
-    payload = request.get_json(silent=True) or {}
-    cadence = str(payload.get("cadence") or "").strip()
-    try:
-        with get_connection() as conn:
-            result = send_report(conn, cadence, datetime.now())
-    except ValueError as error:
-        return jsonify({"success": False, "message": str(error)}), 400
-    except RuntimeError as error:
-        return jsonify({"success": False, "message": str(error)}), 400
-    audit("dashboard.schedule", summary=f"sent {cadence} report")
-    return jsonify({"success": True, "data": result, "message": f"Sent {result['subject']}"})
+        data = build_dashboard_payload(conn, date_from, date_to, mailboxes)
+    pdf = build_ops_pdf(data)
+    start = data["meta"].get("dateFrom") or "all"
+    end = data["meta"].get("dateTo") or "all"
+    audit("dashboard.export", summary=f"pdf {start} {end}")
+    return send_file(
+        __import__("io").BytesIO(pdf),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=f"malstar-ops-{start}-to-{end}.pdf",
+    )
 
 
 @bp.post("/api/dashboard/import")

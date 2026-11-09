@@ -25,7 +25,11 @@ export async function request(url, options = {}) {
   try {
     const response = await fetch(url, { ...rest, signal: controller.signal });
     const contentType = response.headers.get("content-type") || "";
-    if (contentType.includes("application/octet-stream") || contentType.includes("officedocument")) {
+    if (
+      contentType.includes("application/octet-stream")
+      || contentType.includes("application/pdf")
+      || contentType.includes("officedocument")
+    ) {
       if (!response.ok) {
         throw new Error(`Download failed (HTTP ${response.status}).`);
       }

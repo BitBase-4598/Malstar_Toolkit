@@ -39,7 +39,7 @@ from services.dashboard_analytics import (
     parse_dashboard_record,
     save_handler_roster,
 )
-from services.dashboard_reports import dispatch_due_reports, save_schedule, send_report
+from services.ops_pdf import build_ops_pdf
 from services.files_store import sanitize_preview_html, stored_path
 from util import letters_only
 
@@ -258,34 +258,14 @@ def test_handler_roster_drops_people_outside_the_list():
         conn.execute("DELETE FROM DashboardHandlerRoster")
 
 
-def test_ops_report_schedule_sends_daily_once():
+def test_ops_pdf_contains_gsc_and_area():
     migrate()
-    sent = []
-
-    def capture(recipients, subject, body):
-        sent.append((recipients, subject, body))
-
     with get_connection() as conn:
-        save_schedule(conn, {
-            "dailyEnabled": True,
-            "monthlyEnabled": False,
-            "sendHour": 8,
-            "recipients": "ops@example.com",
-        })
-    when = __import__("datetime").datetime(2026, 11, 9, 8, 5)
-    first = dispatch_due_reports(when, capture)
-    second = dispatch_due_reports(when, capture)
-    assert len(first) == 1
-    assert first[0]["dateFrom"] == "2026-11-08"
-    assert "GSC:" in sent[0][2]
-    assert second == []
-    with get_connection() as conn:
-        try:
-            send_report(conn, "weekly", when, capture)
-            raised = False
-        except ValueError:
-            raised = True
-    assert raised
+        payload = build_dashboard_payload(conn, "2026-11-03", "2026-11-03")
+    pdf = build_ops_pdf(payload)
+    assert pdf.startswith(b"%PDF-1.4")
+    assert b"GSC" in pdf
+    assert b"Area" in pdf
 
 
 def test_migrate_schema_version_once():

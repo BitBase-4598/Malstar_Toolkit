@@ -33,15 +33,33 @@ export const dashboardApi = {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ names }),
   }),
-  getReportSchedule: () => request(`${API_ROOT}/dashboard/report-schedule`),
-  saveReportSchedule: (payload) => request(`${API_ROOT}/dashboard/report-schedule`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  }),
-  sendReportSchedule: (cadence) => request(`${API_ROOT}/dashboard/report-schedule/send`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ cadence }),
-  }),
+  exportDashboardPdf: async (dateFrom = "", dateTo = "", mailbox = "") => {
+    const params = new URLSearchParams();
+    if (dateFrom) {
+      params.set("dateFrom", dateFrom);
+    }
+    if (dateTo) {
+      params.set("dateTo", dateTo);
+    }
+    const mailboxes = Array.isArray(mailbox) ? mailbox : mailbox ? [mailbox] : [];
+    for (const name of mailboxes) {
+      if (name) {
+        params.append("mailbox", name);
+      }
+    }
+    const query = params.toString();
+    const response = await request(`${API_ROOT}/dashboard/export.pdf${query ? `?${query}` : ""}`);
+    const blob = await response.blob();
+    const disposition = response.headers.get("Content-Disposition") || "";
+    const match = disposition.match(/filename=\"?([^\";]+)\"?/);
+    const filename = match?.[1] || "malstar-ops.pdf";
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  },
 };

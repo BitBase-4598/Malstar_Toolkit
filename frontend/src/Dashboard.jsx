@@ -1094,128 +1094,6 @@ function NonModSection({ onNotice, onRefreshLogs }) {
   );
 }
 
-function ReportSchedule({ onNotice }) {
-  const [form, setForm] = useState({
-    dailyEnabled: false,
-    monthlyEnabled: false,
-    sendHour: 8,
-    recipients: "",
-    smtpConfigured: false,
-  });
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    api.getReportSchedule()
-      .then((result) => {
-        if (!active) {
-          return;
-        }
-        const data = result.data || {};
-        setForm({
-          dailyEnabled: Boolean(data.dailyEnabled),
-          monthlyEnabled: Boolean(data.monthlyEnabled),
-          sendHour: Number.isFinite(Number(data.sendHour)) ? Number(data.sendHour) : 8,
-          recipients: data.recipients || "",
-          smtpConfigured: Boolean(data.smtpConfigured),
-        });
-      })
-      .catch((error) => {
-        if (active) {
-          onNotice?.({ type: "error", text: error.message });
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [onNotice]);
-
-  const save = async () => {
-    setBusy(true);
-    try {
-      const result = await api.saveReportSchedule(form);
-      setForm((current) => ({ ...current, ...(result.data || {}), smtpConfigured: result.data?.smtpConfigured }));
-      onNotice?.({ type: "success", text: result.message || "Report schedule saved" });
-    } catch (error) {
-      onNotice?.({ type: "error", text: error.message });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const sendNow = async (cadence) => {
-    setBusy(true);
-    try {
-      await api.saveReportSchedule(form);
-      const result = await api.sendReportSchedule(cadence);
-      onNotice?.({ type: "success", text: result.message || "Report sent" });
-    } catch (error) {
-      onNotice?.({ type: "error", text: error.message });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <form
-      className="dash-report-schedule"
-      onSubmit={(event) => {
-        event.preventDefault();
-        save();
-      }}
-    >
-      <strong>Email schedule</strong>
-      <p>
-        Daily mail covers yesterday. Monthly mail goes out on the 1st for the previous month.
-        Times use the server clock.
-        {form.smtpConfigured ? "" : " SMTP_HOST and SMTP_FROM are not set, so sending will wait until they are."}
-      </p>
-      <label>
-        Recipients
-        <input
-          type="text"
-          value={form.recipients}
-          placeholder="name@maersk.com, other@maersk.com"
-          onChange={(event) => setForm((current) => ({ ...current, recipients: event.target.value }))}
-        />
-      </label>
-      <div className="dash-report-options">
-        <label>
-          <input
-            type="checkbox"
-            checked={form.dailyEnabled}
-            onChange={(event) => setForm((current) => ({ ...current, dailyEnabled: event.target.checked }))}
-          />
-          Daily
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={form.monthlyEnabled}
-            onChange={(event) => setForm((current) => ({ ...current, monthlyEnabled: event.target.checked }))}
-          />
-          Monthly
-        </label>
-        <label>
-          Hour
-          <input
-            type="number"
-            min="0"
-            max="23"
-            value={form.sendHour}
-            onChange={(event) => setForm((current) => ({ ...current, sendHour: Number(event.target.value) }))}
-          />
-        </label>
-      </div>
-      <div className="dash-report-actions">
-        <button type="submit" className="secondary" disabled={busy}>Save schedule</button>
-        <button type="button" className="ghost" disabled={busy} onClick={() => sendNow("daily")}>Send daily now</button>
-        <button type="button" className="ghost" disabled={busy} onClick={() => sendNow("monthly")}>Send monthly now</button>
-      </div>
-    </form>
-  );
-}
-
 function HandlerRoster({ names, onNotice, onSaved }) {
   const [text, setText] = useState("");
   const [open, setOpen] = useState(false);
@@ -1311,6 +1189,7 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [hourWeekday, setHourWeekday] = useState("all");
@@ -1492,9 +1371,23 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
               ? "Upload the LCL booking daily report CSV."
               : `${meta.filename} · ${meta.filteredCount} of ${meta.rowCount} rows · ${meta.uploadedAt}`}
           </p>
-          <button type="button" className="secondary dash-export-pdf" onClick={() => window.print()} disabled={empty}>
+          <button
+            type="button"
+            className="secondary dash-export-pdf"
+            disabled={empty || exporting}
+            onClick={async () => {
+              setExporting(true);
+              try {
+                await api.exportDashboardPdf(dateFrom, dateTo, mailboxes);
+              } catch (error) {
+                onNotice?.({ type: "error", text: error.message });
+              } finally {
+                setExporting(false);
+              }
+            }}
+          >
             <Download size={16} />
-            Export PDF
+            {exporting ? "Exporting..." : "Export PDF"}
           </button>
         </div>
       </div>
@@ -1632,7 +1525,6 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
                   )
                 ))}
               </ul>
-              <ReportSchedule onNotice={onNotice} />
             </section>
           </div>
           <FlaggedTable rows={flaggedRows} />
