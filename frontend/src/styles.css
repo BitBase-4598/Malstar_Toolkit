@@ -30,6 +30,22 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: "Maersk Text";
+  src: url("https://www.maersk.com/~/media/maersk/assets/fonts/MaerskText-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Maersk Text";
+  src: url("https://www.maersk.com/~/media/maersk/assets/fonts/MaerskText-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --maersk-navy: #00243d;
   --maersk-blue: #42b0d5;
@@ -3102,6 +3118,38 @@ tbody tr.selected td {
 .dash-conclusions-card {
   width: 100%;
   min-width: 0;
+  font-family: "Maersk Text", "Maersk Headline", Arial, sans-serif;
+}
+
+.dash-conclusions-card .summary strong,
+.dash-conclusion-section {
+  font-family: "Maersk Headline", Arial, sans-serif;
+  font-weight: 600;
+}
+
+.dash-conclusion-section {
+  display: block;
+  color: var(--maersk-navy);
+  font-size: var(--type-section);
+}
+
+.dash-conclusion-period {
+  display: block;
+  margin-top: 2px;
+  color: var(--maersk-blue-dark);
+  font-size: var(--type-ui);
+  font-weight: 700;
+}
+
+.dash-conclusions p {
+  margin: 8px 0 0;
+}
+
+.dash-key {
+  background: #e2f3fb;
+  color: var(--maersk-navy);
+  font-weight: 700;
+  padding: 0 0.12em;
 }
 
 .dash-chart-body {

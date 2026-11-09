@@ -111,6 +111,37 @@ function processAverages(rows, allowed) {
   return { avg, count: all.length, processByHandler };
 }
 
+function highlightKeywords(text, keywords) {
+  const source = String(text || "");
+  const keys = [...new Set(keywords || [])]
+    .map((item) => String(item || "").trim())
+    .filter((item) => item.length >= 3)
+    .sort((left, right) => right.length - left.length);
+  if (!source || !keys.length) {
+    return source;
+  }
+  const pattern = new RegExp(keys.map((item) => item.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "gi");
+  const nodes = [];
+  let cursor = 0;
+  let index = 0;
+  for (const match of source.matchAll(pattern)) {
+    if (match.index > cursor) {
+      nodes.push(source.slice(cursor, match.index));
+    }
+    nodes.push(
+      <mark className="dash-key" key={`${match.index}-${index}`}>
+        {match[0]}
+      </mark>
+    );
+    index += 1;
+    cursor = match.index + match[0].length;
+  }
+  if (cursor < source.length) {
+    nodes.push(source.slice(cursor));
+  }
+  return nodes;
+}
+
 function shortHandler(value) {
   const text = String(value || "").trim();
   if (!text) {
@@ -1388,24 +1419,10 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
       .filter((item) => item.count > 0 && Number.isFinite(item.minutes));
   }, [data?.series?.byHandler, processStats.processByHandler]);
   const avgProcessNote = "Shipment Converted, 1.7–1440 min";
-  const conclusions = useMemo(() => {
-    const items = data?.conclusions || [];
-    if (processStats.avg == null) {
-      return items;
-    }
-    return items.map((item) => {
-      if (item.kind !== "average-process") {
-        return item;
-      }
-      return {
-        ...item,
-        text: (
-          `Average process-time is ${processStats.avg} min across ${processStats.count} `
-          + "Shipment Converted bookings with time usage between 1.7 and 1440 minutes."
-        ),
-      };
-    });
-  }, [data?.conclusions, processStats]);
+  const conclusions = data?.conclusions || [];
+  const conclusionPeriod = meta?.dateFrom && meta?.dateTo
+    ? (meta.dateFrom === meta.dateTo ? meta.dateFrom : `${meta.dateFrom} to ${meta.dateTo}`)
+    : "";
 
   return (
     <div className="dash-layout">
@@ -1569,13 +1586,17 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
               <div className="summary">
                 <div>
                   <strong>Conclusions</strong>
-                  <p className="dash-section-note">Read-outs for this date range</p>
+                  <p className="dash-section-note">
+                    {conclusionPeriod ? `Each section for ${conclusionPeriod}` : "Each section for the selected dates"}
+                  </p>
                 </div>
               </div>
               <ul className="dash-conclusions">
                 {(conclusions || []).map((item) => (
-                  <li key={item.kind} className={item.kind === "highest-process" ? "is-highest" : ""}>
-                    {item.text}
+                  <li key={item.kind}>
+                    <strong className="dash-conclusion-section">{item.section || item.kind}</strong>
+                    {item.period ? <span className="dash-conclusion-period">{item.period}</span> : null}
+                    <p>{highlightKeywords(item.text, item.keywords)}</p>
                   </li>
                 ))}
               </ul>

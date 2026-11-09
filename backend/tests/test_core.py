@@ -221,6 +221,10 @@ def test_gsc_mailbox_spelling_and_split():
         assert payload["compare"]["gsc"]["avgProcessLabel"] == "10.0 min"
         assert payload["compare"]["area"]["total"] == 1
         assert payload["compare"]["area"]["avgWaitCount"] == 1
+        sections = [item["section"] for item in payload["conclusions"]]
+        assert sections[:2] == ["Overview", "By handler"]
+        assert payload["conclusions"][0]["period"] == "2026-11-03"
+        assert "GSC" in payload["conclusions"][0]["keywords"]
         conn.execute("DELETE FROM DashboardBookings")
 
 

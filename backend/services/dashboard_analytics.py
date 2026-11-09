@@ -298,6 +298,200 @@ def cohort_summary(items):
     }
 
 
+def short_handler_name(value):
+    text = str(value or "").strip()
+    if not text:
+        return "unknown"
+    return text.split("@", 1)[0]
+
+
+def section_note(kind, section, text, keywords, period):
+    return {
+        "kind": kind,
+        "section": section,
+        "text": text,
+        "keywords": [str(item) for item in keywords if item is not None and str(item) != ""],
+        "period": period,
+    }
+
+
+def _section_conclusions(
+    period,
+    items,
+    selected_mailboxes,
+    gsc_summary,
+    area_summary,
+    top_handler,
+    avg_by_handler,
+    by_hour,
+    roster,
+    avg_process,
+    avg_process_count,
+    max_process,
+    slowest_wait,
+    processing,
+    missing_ship,
+    duplicates,
+    process_neg,
+    wait_outliers,
+    wait_limit,
+    flagged,
+):
+    if not items:
+        text = (
+            f"No bookings for the selected mailboxes in {period}."
+            if selected_mailboxes
+            else f"No bookings in {period}. Upload a daily report CSV or widen the dates."
+        )
+        return [section_note("empty", "Overview", text, [period], period)]
+
+    notes = []
+    overview = (
+        f"Overview compares GSC with Area for {period}. "
+        f"GSC has {gsc_summary['total']} bookings at {gsc_summary['conversionRate']}% conversion, "
+        f"process {gsc_summary['avgProcessLabel']}, wait {gsc_summary['avgWaitLabel']}. "
+        f"Area has {area_summary['total']} bookings at {area_summary['conversionRate']}% conversion, "
+        f"process {area_summary['avgProcessLabel']}, wait {area_summary['avgWaitLabel']}."
+    )
+    notes.append(section_note(
+        "overview",
+        "Overview",
+        overview,
+        [
+            period,
+            "GSC",
+            "Area",
+            str(gsc_summary["total"]),
+            f"{gsc_summary['conversionRate']}%",
+            gsc_summary["avgProcessLabel"],
+            gsc_summary["avgWaitLabel"],
+            str(area_summary["total"]),
+            f"{area_summary['conversionRate']}%",
+            area_summary["avgProcessLabel"],
+            area_summary["avgWaitLabel"],
+        ],
+        period,
+    ))
+
+    if top_handler:
+        name = short_handler_name(top_handler["label"])
+        text = (
+            f"By handler counts bookings only for the saved roster of {len(roster)} people during {period}. "
+            f"Highest volume is {name} with {top_handler['count']} bookings."
+        )
+        notes.append(section_note(
+            "by-handler",
+            "By handler",
+            text,
+            [period, str(len(roster)), name, str(top_handler["count"])],
+            period,
+        ))
+    else:
+        notes.append(section_note(
+            "by-handler",
+            "By handler",
+            f"By handler found no roster bookings during {period}.",
+            [period, "roster"],
+            period,
+        ))
+
+    if avg_by_handler:
+        slowest = avg_by_handler[0]
+        slow_name = short_handler_name(slowest["label"])
+        group_avg = round(sum(item["minutes"] for item in avg_by_handler) / len(avg_by_handler), 1)
+        notes.append(section_note(
+            "quadrant",
+            "Handler quadrants",
+            (
+                f"Handler quadrants put more bookings toward the top and lower process time toward the right "
+                f"for {period}. The roster process average across handlers is {group_avg} min."
+            ),
+            [period, f"{group_avg} min"],
+            period,
+        ))
+        notes.append(section_note(
+            "process-by-handler",
+            "Avg process-time by handler",
+            (
+                f"Avg process-time by handler is J minus I for the roster in {period}, "
+                f"keeping 1.7 to 1440 minutes. "
+                f"The longest average is {slow_name} at {slowest['minutes']} min across {slowest['count']} rows."
+            ),
+            [period, "1.7", "1440", slow_name, f"{slowest['minutes']} min"],
+            period,
+        ))
+    else:
+        notes.append(section_note(
+            "quadrant",
+            "Handler quadrants",
+            f"Handler quadrants have no roster process times in {period}.",
+            [period],
+            period,
+        ))
+        notes.append(section_note(
+            "process-by-handler",
+            "Avg process-time by handler",
+            f"Avg process-time by handler has no cleaned roster rows in {period}.",
+            [period, "1.7", "1440"],
+            period,
+        ))
+
+    peak = max(by_hour, key=lambda item: item["count"]) if by_hour else None
+    if peak and peak["count"]:
+        text = (
+            f"Volume by hour received counts inbound email hours in {period}. "
+            f"The busiest hour is {peak['label']} with {peak['count']} emails."
+        )
+        notes.append(section_note(
+            "by-hour",
+            "Volume by hour",
+            text,
+            [period, peak["label"], str(peak["count"])],
+            period,
+        ))
+    else:
+        notes.append(section_note(
+            "by-hour",
+            "Volume by hour",
+            f"Volume by hour received has no parseable email times in {period}.",
+            [period],
+            period,
+        ))
+
+    bits = [f"{len(flagged[:40])} flagged rows"]
+    if processing:
+        bits.append(f"{len(processing)} still processing")
+    if missing_ship:
+        bits.append(f"{len(missing_ship)} missing a shipment number")
+    if wait_outliers:
+        bits.append(f"{len(wait_outliers)} long waits above {format_minutes(wait_limit)}")
+    if max_process:
+        bits.append(
+            f"highest process {format_minutes(max_process['processMinutes'])} "
+            f"on {max_process['orderNumber'] or 'an order'}"
+        )
+    if slowest_wait:
+        bits.append(
+            f"slowest wait {format_minutes(slowest_wait['handleWaitMinutes'])} "
+            f"on {slowest_wait['orderNumber'] or 'an order'}"
+        )
+    if duplicates:
+        bits.append(f"{len(duplicates)} duplicate message ids")
+    if process_neg:
+        bits.append(f"{len(process_neg)} converted before handling")
+    if avg_process is not None:
+        bits.append(f"average process {avg_process} min across {avg_process_count} cleaned rows")
+    flagged_text = f"Flagged rows collects abnormal bookings in {period}: " + "; ".join(bits) + "."
+    notes.append(section_note(
+        "flagged",
+        "Flagged rows",
+        flagged_text,
+        [period, str(len(flagged[:40])), str(len(processing)), str(len(missing_ship))],
+        period,
+    ))
+    return notes
+
+
 def split_gsc_area(items):
     gsc = []
     area = []
@@ -450,72 +644,6 @@ def build_dashboard_payload(conn, date_from="", date_to="", mailbox=""):
     duplicates = [group for group in message_ids.values() if len(group) > 1]
     duplicate_rows = [item for group in duplicates for item in group]
 
-    conclusions = []
-    if max_process:
-        conclusions.append({
-            "kind": "highest-process",
-            "text": (
-                f"Highest process-time is {format_minutes(max_process['processMinutes'])} "
-                f"on {max_process['orderNumber'] or 'an order'} "
-                f"({max_process['handledBy'] or 'unknown handler'})."
-            ),
-        })
-    if avg_process is not None:
-        conclusions.append({
-            "kind": "average-process",
-            "text": (
-                f"Average process-time is {avg_process} min across {avg_process_count} "
-                "Shipment Converted bookings with time usage between 1.7 and 1440 minutes."
-            ),
-        })
-    if top_handler:
-        conclusions.append({
-            "kind": "highest-volume",
-            "text": f"Highest volume is {top_handler['label']} with {top_handler['count']} bookings.",
-        })
-    if slowest_wait:
-        conclusions.append({
-            "kind": "slowest-wait",
-            "text": (
-                f"Slowest handle wait is {format_minutes(slowest_wait['handleWaitMinutes'])} "
-                f"on {slowest_wait['orderNumber'] or 'an order'}."
-            ),
-        })
-    if processing:
-        conclusions.append({
-            "kind": "processing",
-            "text": f"{len(processing)} booking{'s' if len(processing) != 1 else ''} still processing.",
-        })
-    if missing_ship:
-        conclusions.append({
-            "kind": "missing-shipment",
-            "text": f"{len(missing_ship)} row{'s' if len(missing_ship) != 1 else ''} missing a shipment number.",
-        })
-    if duplicates:
-        conclusions.append({
-            "kind": "duplicate-message",
-            "text": f"{len(duplicates)} message id{'s' if len(duplicates) != 1 else ''} appear on more than one row.",
-        })
-    if process_neg:
-        conclusions.append({
-            "kind": "converted-before-handling",
-            "text": f"{len(process_neg)} row{'s' if len(process_neg) != 1 else ''} have converted time before handling time.",
-        })
-    if wait_outliers:
-        conclusions.append({
-            "kind": "wait-outlier",
-            "text": f"{len(wait_outliers)} handle wait{'s' if len(wait_outliers) != 1 else ''} above {format_minutes(wait_limit)}.",
-        })
-    if not items:
-        conclusions.append({
-            "kind": "empty",
-            "text": (
-                "No bookings for the selected mailboxes in these dates."
-                if selected_mailboxes
-                else "No bookings in this date range. Upload a daily report CSV or widen the dates."
-            ),
-        })
-
     flagged_map = {}
     def flag_row(item, reason):
         current = flagged_map.get(item["id"])
@@ -542,6 +670,33 @@ def build_dashboard_payload(conn, date_from="", date_to="", mailbox=""):
     flagged = list(flagged_map.values())
     flagged.sort(key=lambda item: (not item["isHighestProcess"], -len(item["reasons"]), item["orderNumber"]))
     gsc_items, area_items = split_gsc_area(items)
+    gsc_summary = cohort_summary(gsc_items)
+    area_summary = cohort_summary(area_items)
+    period_start = date_from or date_min or "open"
+    period_end = date_to or date_max or "open"
+    period = period_start if period_start == period_end else f"{period_start} to {period_end}"
+    conclusions = _section_conclusions(
+        period=period,
+        items=items,
+        selected_mailboxes=selected_mailboxes,
+        gsc_summary=gsc_summary,
+        area_summary=area_summary,
+        top_handler=top_handler,
+        avg_by_handler=avg_by_handler,
+        by_hour=by_hour,
+        roster=roster,
+        avg_process=avg_process,
+        avg_process_count=avg_process_count,
+        max_process=max_process,
+        slowest_wait=slowest_wait,
+        processing=processing,
+        missing_ship=missing_ship,
+        duplicates=duplicates,
+        process_neg=process_neg,
+        wait_outliers=wait_outliers,
+        wait_limit=wait_limit,
+        flagged=flagged,
+    )
 
     return {
         "meta": {
@@ -559,8 +714,8 @@ def build_dashboard_payload(conn, date_from="", date_to="", mailbox=""):
             "handlerRoster": roster,
         },
         "compare": {
-            "gsc": cohort_summary(gsc_items),
-            "area": cohort_summary(area_items),
+            "gsc": gsc_summary,
+            "area": area_summary,
         },
         "kpis": {
             "total": total,
