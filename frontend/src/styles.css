@@ -3172,6 +3172,17 @@ tbody tr.selected td {
   color: var(--maersk-navy);
 }
 
+.dash-conclusion-group p {
+  color: #8a8a8a;
+  font-weight: 400;
+}
+
+.dash-conclusion-group .dash-key {
+  background: transparent;
+  color: #6e6e6e;
+  font-weight: 600;
+}
+
 .dash-key {
   background: #e2f3fb;
   color: var(--maersk-navy);

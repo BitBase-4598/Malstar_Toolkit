@@ -397,10 +397,12 @@ def _section_conclusions(
 
     if top_handler:
         name = short_handler_name(top_handler["label"])
-        handler_text = f"{name}, {top_handler['count']} bookings."
+        handler_text = (
+            f"{name} handled the most bookings on the roster, {top_handler['count']} in this period."
+        )
         handler_keys = [name, str(top_handler["count"])]
     else:
-        handler_text = "No roster bookings."
+        handler_text = "Nobody on the roster handled a booking in this period."
         handler_keys = []
     notes.append(section_note(
         "by-handler",
@@ -409,7 +411,6 @@ def _section_conclusions(
         handler_keys,
         period,
         group="handlers",
-        lead=f"Among the {len(roster)} roster handlers, one person carried the most bookings.",
     ))
 
     if avg_by_handler:
@@ -419,39 +420,35 @@ def _section_conclusions(
         notes.append(section_note(
             "quadrant",
             "Handler quadrants",
-            f"Roster process average {group_avg} min.",
+            f"The roster is finishing converted bookings quickly, at {group_avg} min on average.",
             [f"{group_avg} min"],
             period,
             group="handlers",
-            lead="The roster as a group is finishing converted work quickly.",
         ))
         notes.append(section_note(
             "process-by-handler",
             "Avg process-time by handler",
-            f"{slow_name}, {slowest['minutes']} min.",
+            f"{slow_name} is the slowest on average, at {slowest['minutes']} min.",
             [slow_name, f"{slowest['minutes']} min"],
             period,
             group="handlers",
-            lead="One roster handler is taking longer than the others on average.",
         ))
     else:
         notes.append(section_note(
             "quadrant",
             "Handler quadrants",
-            "No roster process times.",
+            "The roster has no cleaned process time to place on the quadrant.",
             [],
             period,
             group="handlers",
-            lead="There is not enough cleaned process time to place the roster.",
         ))
         notes.append(section_note(
             "process-by-handler",
             "Avg process-time by handler",
-            "No cleaned roster rows.",
+            "No roster handler has a cleaned average in this period.",
             [],
             period,
             group="handlers",
-            lead="No roster handler has a cleaned process time in this range.",
         ))
 
     peak = max(by_hour, key=lambda item: item["count"]) if by_hour else None
