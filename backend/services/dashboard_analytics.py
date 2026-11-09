@@ -325,16 +325,8 @@ def _section_conclusions(
     avg_by_handler,
     by_hour,
     roster,
-    avg_process,
-    avg_process_count,
-    max_process,
-    slowest_wait,
     processing,
     missing_ship,
-    duplicates,
-    process_neg,
-    wait_outliers,
-    wait_limit,
     flagged,
 ):
     if not items:
@@ -347,10 +339,13 @@ def _section_conclusions(
 
     notes = []
     overview = (
-        f"Overview compares GSC with Area for {period}. "
-        f"GSC has {gsc_summary['total']} bookings at {gsc_summary['conversionRate']}% conversion, "
+        f"GSC {gsc_summary['total']} bookings, {gsc_summary['converted']} converted "
+        f"({gsc_summary['conversionRate']}%), {gsc_summary['processing']} processing, "
+        f"{gsc_summary['missingShipment']} missing shipment, "
         f"process {gsc_summary['avgProcessLabel']}, wait {gsc_summary['avgWaitLabel']}. "
-        f"Area has {area_summary['total']} bookings at {area_summary['conversionRate']}% conversion, "
+        f"Area {area_summary['total']} bookings, {area_summary['converted']} converted "
+        f"({area_summary['conversionRate']}%), {area_summary['processing']} processing, "
+        f"{area_summary['missingShipment']} missing shipment, "
         f"process {area_summary['avgProcessLabel']}, wait {area_summary['avgWaitLabel']}."
     )
     notes.append(section_note(
@@ -358,15 +353,20 @@ def _section_conclusions(
         "Overview",
         overview,
         [
-            period,
             "GSC",
             "Area",
             str(gsc_summary["total"]),
+            str(gsc_summary["converted"]),
             f"{gsc_summary['conversionRate']}%",
+            str(gsc_summary["processing"]),
+            str(gsc_summary["missingShipment"]),
             gsc_summary["avgProcessLabel"],
             gsc_summary["avgWaitLabel"],
             str(area_summary["total"]),
+            str(area_summary["converted"]),
             f"{area_summary['conversionRate']}%",
+            str(area_summary["processing"]),
+            str(area_summary["missingShipment"]),
             area_summary["avgProcessLabel"],
             area_summary["avgWaitLabel"],
         ],
@@ -375,23 +375,20 @@ def _section_conclusions(
 
     if top_handler:
         name = short_handler_name(top_handler["label"])
-        text = (
-            f"By handler counts bookings only for the saved roster of {len(roster)} people during {period}. "
-            f"Highest volume is {name} with {top_handler['count']} bookings."
-        )
+        text = f"{name}, {top_handler['count']} bookings. Roster only, {len(roster)} people."
         notes.append(section_note(
             "by-handler",
             "By handler",
             text,
-            [period, str(len(roster)), name, str(top_handler["count"])],
+            [name, str(top_handler["count"]), str(len(roster))],
             period,
         ))
     else:
         notes.append(section_note(
             "by-handler",
             "By handler",
-            f"By handler found no roster bookings during {period}.",
-            [period, "roster"],
+            "No roster bookings.",
+            [],
             period,
         ))
 
@@ -402,91 +399,60 @@ def _section_conclusions(
         notes.append(section_note(
             "quadrant",
             "Handler quadrants",
-            (
-                f"Handler quadrants put more bookings toward the top and lower process time toward the right "
-                f"for {period}. The roster process average across handlers is {group_avg} min."
-            ),
-            [period, f"{group_avg} min"],
+            f"Roster process average {group_avg} min. More bookings up, lower process time right.",
+            [f"{group_avg} min"],
             period,
         ))
         notes.append(section_note(
             "process-by-handler",
             "Avg process-time by handler",
-            (
-                f"Avg process-time by handler is J minus I for the roster in {period}, "
-                f"keeping 1.7 to 1440 minutes. "
-                f"The longest average is {slow_name} at {slowest['minutes']} min across {slowest['count']} rows."
-            ),
-            [period, "1.7", "1440", slow_name, f"{slowest['minutes']} min"],
+            f"{slow_name}, {slowest['minutes']} min. Cleaned range 1.7–1440 min.",
+            [slow_name, f"{slowest['minutes']} min", "1.7–1440"],
             period,
         ))
     else:
         notes.append(section_note(
             "quadrant",
             "Handler quadrants",
-            f"Handler quadrants have no roster process times in {period}.",
-            [period],
+            "No roster process times.",
+            [],
             period,
         ))
         notes.append(section_note(
             "process-by-handler",
             "Avg process-time by handler",
-            f"Avg process-time by handler has no cleaned roster rows in {period}.",
-            [period, "1.7", "1440"],
+            "No cleaned roster rows. Range 1.7–1440 min.",
+            ["1.7–1440"],
             period,
         ))
 
     peak = max(by_hour, key=lambda item: item["count"]) if by_hour else None
     if peak and peak["count"]:
-        text = (
-            f"Volume by hour received counts inbound email hours in {period}. "
-            f"The busiest hour is {peak['label']} with {peak['count']} emails."
-        )
         notes.append(section_note(
             "by-hour",
             "Volume by hour",
-            text,
-            [period, peak["label"], str(peak["count"])],
+            f"{peak['label']}, {peak['count']} emails.",
+            [peak["label"], str(peak["count"])],
             period,
         ))
     else:
         notes.append(section_note(
             "by-hour",
             "Volume by hour",
-            f"Volume by hour received has no parseable email times in {period}.",
-            [period],
+            "No parseable email times.",
+            [],
             period,
         ))
 
-    bits = [f"{len(flagged[:40])} flagged rows"]
-    if processing:
-        bits.append(f"{len(processing)} still processing")
-    if missing_ship:
-        bits.append(f"{len(missing_ship)} missing a shipment number")
-    if wait_outliers:
-        bits.append(f"{len(wait_outliers)} long waits above {format_minutes(wait_limit)}")
-    if max_process:
-        bits.append(
-            f"highest process {format_minutes(max_process['processMinutes'])} "
-            f"on {max_process['orderNumber'] or 'an order'}"
-        )
-    if slowest_wait:
-        bits.append(
-            f"slowest wait {format_minutes(slowest_wait['handleWaitMinutes'])} "
-            f"on {slowest_wait['orderNumber'] or 'an order'}"
-        )
-    if duplicates:
-        bits.append(f"{len(duplicates)} duplicate message ids")
-    if process_neg:
-        bits.append(f"{len(process_neg)} converted before handling")
-    if avg_process is not None:
-        bits.append(f"average process {avg_process} min across {avg_process_count} cleaned rows")
-    flagged_text = f"Flagged rows collects abnormal bookings in {period}: " + "; ".join(bits) + "."
+    flagged_text = (
+        f"{len(flagged[:40])} flagged, {len(processing)} processing, "
+        f"{len(missing_ship)} missing shipment."
+    )
     notes.append(section_note(
         "flagged",
         "Flagged rows",
         flagged_text,
-        [period, str(len(flagged[:40])), str(len(processing)), str(len(missing_ship))],
+        [str(len(flagged[:40])), str(len(processing)), str(len(missing_ship))],
         period,
     ))
     return notes
@@ -685,16 +651,8 @@ def build_dashboard_payload(conn, date_from="", date_to="", mailbox=""):
         avg_by_handler=avg_by_handler,
         by_hour=by_hour,
         roster=roster,
-        avg_process=avg_process,
-        avg_process_count=avg_process_count,
-        max_process=max_process,
-        slowest_wait=slowest_wait,
         processing=processing,
         missing_ship=missing_ship,
-        duplicates=duplicates,
-        process_neg=process_neg,
-        wait_outliers=wait_outliers,
-        wait_limit=wait_limit,
         flagged=flagged,
     )
 
