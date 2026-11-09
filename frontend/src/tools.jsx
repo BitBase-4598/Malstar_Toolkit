@@ -50,7 +50,7 @@ function DashboardActions({ dashRef, dashImporting, dashPage, lclRef, lclImporti
   }
   return (
     <>
-      <button className="secondary" type="button" onClick={() => dashRef.current?.exportPdf()}>
+      <button className="primary" type="button" onClick={() => dashRef.current?.exportPdf()}>
         <Download size={16} />
         Export to PDF
       </button>
