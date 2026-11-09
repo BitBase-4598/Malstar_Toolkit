@@ -53,12 +53,65 @@ function writeLine(pdf, text, y, { size = 11, bold = false, color = [20, 20, 20]
   return cursor;
 }
 
+function skipColorFunction(css, start) {
+  let depth = 0;
+  for (let index = start; index < css.length; index += 1) {
+    const char = css[index];
+    if (char === "(") {
+      depth += 1;
+    } else if (char === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        return index + 1;
+      }
+    }
+  }
+  return css.length;
+}
+
+function replaceColorFunctions(css) {
+  const names = ["color-mix", "color", "oklch", "oklab", "lch", "lab"];
+  let output = "";
+  let index = 0;
+  while (index < css.length) {
+    let found = null;
+    for (const name of names) {
+      const at = css.indexOf(`${name}(`, index);
+      if (at !== -1 && (found === null || at < found.at)) {
+        found = { name, at };
+      }
+    }
+    if (!found) {
+      output += css.slice(index);
+      break;
+    }
+    const prefix = css.slice(Math.max(0, found.at - 1), found.at);
+    if (prefix && /[\w-]/.test(prefix)) {
+      output += css.slice(index, found.at + found.name.length);
+      index = found.at + found.name.length;
+      continue;
+    }
+    output += css.slice(index, found.at);
+    output += "#d4d4d4";
+    index = skipColorFunction(css, found.at + found.name.length);
+  }
+  return output;
+}
+
+function sanitizeClone(doc) {
+  for (const style of doc.querySelectorAll("style")) {
+    const text = (style.textContent || "").replace(/@font-face\s*\{[^}]*\}/g, "");
+    style.textContent = replaceColorFunctions(text);
+  }
+}
+
 async function chartImage(node) {
   const canvas = await html2canvas(node, {
     scale: 2,
     backgroundColor: "#ffffff",
     useCORS: true,
     logging: false,
+    onclone: (doc) => sanitizeClone(doc),
   });
   return canvas;
 }

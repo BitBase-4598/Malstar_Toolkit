@@ -4438,11 +4438,11 @@ html.lcl-html #root {
 }
 
 .dash-cohort.is-gsc {
-  border-color: color-mix(in srgb, var(--maersk-blue) 55%, var(--maersk-border));
+  border-color: #8ecfe0;
 }
 
 .dash-cohort.is-area {
-  border-color: color-mix(in srgb, var(--maersk-navy) 28%, var(--maersk-border));
+  border-color: #9aa3aa;
 }
 
 .dash-cohort h4 {
