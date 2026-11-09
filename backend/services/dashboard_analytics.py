@@ -305,10 +305,12 @@ def short_handler_name(value):
     return text.split("@", 1)[0]
 
 
-def section_note(kind, section, text, keywords, period):
+def section_note(kind, section, text, keywords, period, group="", lead=""):
     return {
         "kind": kind,
         "section": section,
+        "group": group,
+        "lead": lead,
         "text": text,
         "keywords": [str(item) for item in keywords if item is not None and str(item) != ""],
         "period": period,
@@ -371,26 +373,25 @@ def _section_conclusions(
             area_summary["avgWaitLabel"],
         ],
         period,
+        lead="Same six cards for both groups. Process keeps 1.7–1440 min. Wait keeps 0–2880 min and usage above 2 min.",
     ))
 
     if top_handler:
         name = short_handler_name(top_handler["label"])
-        text = f"{name}, {top_handler['count']} bookings. Roster only, {len(roster)} people."
-        notes.append(section_note(
-            "by-handler",
-            "By handler",
-            text,
-            [name, str(top_handler["count"]), str(len(roster))],
-            period,
-        ))
+        handler_text = f"{name}, {top_handler['count']} bookings."
+        handler_keys = [name, str(top_handler["count"])]
     else:
-        notes.append(section_note(
-            "by-handler",
-            "By handler",
-            "No roster bookings.",
-            [],
-            period,
-        ))
+        handler_text = "No roster bookings."
+        handler_keys = []
+    notes.append(section_note(
+        "by-handler",
+        "By handler",
+        handler_text,
+        handler_keys,
+        period,
+        group="handlers",
+        lead=f"Booking count for the saved roster of {len(roster)} people.",
+    ))
 
     if avg_by_handler:
         slowest = avg_by_handler[0]
@@ -399,16 +400,20 @@ def _section_conclusions(
         notes.append(section_note(
             "quadrant",
             "Handler quadrants",
-            f"Roster process average {group_avg} min. More bookings up, lower process time right.",
+            f"Roster process average {group_avg} min.",
             [f"{group_avg} min"],
             period,
+            group="handlers",
+            lead="More bookings sit higher. Lower process time sits to the right.",
         ))
         notes.append(section_note(
             "process-by-handler",
             "Avg process-time by handler",
-            f"{slow_name}, {slowest['minutes']} min. Cleaned range 1.7–1440 min.",
-            [slow_name, f"{slowest['minutes']} min", "1.7–1440"],
+            f"{slow_name}, {slowest['minutes']} min.",
+            [slow_name, f"{slowest['minutes']} min"],
             period,
+            group="handlers",
+            lead="Mean J−I inside 1.7–1440 min. Longest roster average.",
         ))
     else:
         notes.append(section_note(
@@ -417,13 +422,17 @@ def _section_conclusions(
             "No roster process times.",
             [],
             period,
+            group="handlers",
+            lead="More bookings sit higher. Lower process time sits to the right.",
         ))
         notes.append(section_note(
             "process-by-handler",
             "Avg process-time by handler",
-            "No cleaned roster rows. Range 1.7–1440 min.",
-            ["1.7–1440"],
+            "No cleaned roster rows.",
+            [],
             period,
+            group="handlers",
+            lead="Mean J−I inside 1.7–1440 min.",
         ))
 
     peak = max(by_hour, key=lambda item: item["count"]) if by_hour else None
@@ -434,6 +443,7 @@ def _section_conclusions(
             f"{peak['label']}, {peak['count']} emails.",
             [peak["label"], str(peak["count"])],
             period,
+            lead="Emails counted by the hour they arrived.",
         ))
     else:
         notes.append(section_note(
@@ -442,6 +452,7 @@ def _section_conclusions(
             "No parseable email times.",
             [],
             period,
+            lead="Emails counted by the hour they arrived.",
         ))
 
     flagged_text = (
@@ -454,6 +465,7 @@ def _section_conclusions(
         flagged_text,
         [str(len(flagged[:40])), str(len(processing)), str(len(missing_ship))],
         period,
+        lead="Rows still processing, missing a shipment, or outside the cleaned times.",
     ))
     return notes
 

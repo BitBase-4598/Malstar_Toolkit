@@ -3145,6 +3145,33 @@ tbody tr.selected td {
   margin: 8px 0 0;
 }
 
+.dash-conclusion-lead {
+  margin: 6px 0 0;
+  color: var(--maersk-muted);
+}
+
+.dash-conclusion-group {
+  background: var(--maersk-hover);
+}
+
+.dash-conclusion-group ul {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.dash-conclusion-group li {
+  padding: 0;
+  border: 0;
+}
+
+.dash-conclusion-group li strong {
+  font-family: "Maersk Headline", Arial, sans-serif;
+  color: var(--maersk-navy);
+}
+
 .dash-key {
   background: #e2f3fb;
   color: var(--maersk-navy);

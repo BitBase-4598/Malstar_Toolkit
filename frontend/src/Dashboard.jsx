@@ -111,6 +111,20 @@ function processAverages(rows, allowed) {
   return { avg, count: all.length, processByHandler };
 }
 
+function groupConclusions(items) {
+  const groups = [];
+  for (const item of items || []) {
+    const key = item.group || item.kind;
+    const last = groups[groups.length - 1];
+    if (last && last.key === "handlers" && key === "handlers") {
+      last.items.push(item);
+    } else {
+      groups.push({ key, items: [item] });
+    }
+  }
+  return groups;
+}
+
 function highlightKeywords(text, keywords) {
   const source = String(text || "");
   const keys = [...new Set(keywords || [])]
@@ -1592,12 +1606,31 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
                 </div>
               </div>
               <ul className="dash-conclusions">
-                {(conclusions || []).map((item) => (
-                  <li key={item.kind}>
-                    <strong className="dash-conclusion-section">{item.section || item.kind}</strong>
-                    {item.period ? <span className="dash-conclusion-period">{item.period}</span> : null}
-                    <p>{highlightKeywords(item.text, item.keywords)}</p>
-                  </li>
+                {groupConclusions(conclusions).map((group) => (
+                  group.key === "handlers" ? (
+                    <li key="handlers" className="dash-conclusion-group">
+                      <strong className="dash-conclusion-section">Handlers</strong>
+                      {group.items[0]?.period ? (
+                        <span className="dash-conclusion-period">{group.items[0].period}</span>
+                      ) : null}
+                      <ul>
+                        {group.items.map((item) => (
+                          <li key={item.kind}>
+                            <strong>{item.section}</strong>
+                            {item.lead ? <p className="dash-conclusion-lead">{item.lead}</p> : null}
+                            <p>{highlightKeywords(item.text, item.keywords)}</p>
+                          </li>
+                        ))}
+                      </ul>
+                    </li>
+                  ) : (
+                    <li key={group.items[0].kind}>
+                      <strong className="dash-conclusion-section">{group.items[0].section || group.items[0].kind}</strong>
+                      {group.items[0].period ? <span className="dash-conclusion-period">{group.items[0].period}</span> : null}
+                      {group.items[0].lead ? <p className="dash-conclusion-lead">{group.items[0].lead}</p> : null}
+                      <p>{highlightKeywords(group.items[0].text, group.items[0].keywords)}</p>
+                    </li>
+                  )
                 ))}
               </ul>
               <ReportSchedule onNotice={onNotice} />
