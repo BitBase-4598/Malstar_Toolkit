@@ -737,7 +737,7 @@ function HandlerRoster({ names, onNotice, onSaved }) {
   );
 }
 
-function CohortColumn({ title, cohort }) {
+function CohortColumn({ title, cohort, tone = "" }) {
   const stats = cohort || {};
   const processNote = stats.avgProcessCount
     ? `${stats.avgProcessCount} rows · 1.7–1440 min`
@@ -746,7 +746,7 @@ function CohortColumn({ title, cohort }) {
     ? `${stats.avgWaitCount} rows · 0–2880 min wait`
     : "0–2880 min wait";
   return (
-    <section className="dash-cohort">
+    <section className={`dash-cohort${tone ? ` is-${tone}` : ""}`}>
       <h4>{title}</h4>
       <div className="dash-kpis dash-kpis-cohort">
         <article className="dash-kpi">
@@ -1000,8 +1000,8 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
               <p>GSC and Area for the selected dates and mailboxes</p>
             </div>
             <div className="dash-compare">
-              <CohortColumn title="GSC" cohort={data?.compare?.gsc} />
-              <CohortColumn title="Area" cohort={data?.compare?.area} />
+              <CohortColumn title="GSC" cohort={data?.compare?.gsc} tone="gsc" />
+              <CohortColumn title="Area" cohort={data?.compare?.area} tone="area" />
             </div>
           </div>
           <div className="dash-section">

@@ -4426,14 +4426,36 @@ html.lcl-html #root {
 .dash-compare {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--space-lg);
+  gap: 40px;
+}
+
+.dash-cohort {
+  min-width: 0;
+  padding: 16px 16px 20px;
+  border: 1px solid var(--maersk-border);
+  border-radius: var(--radius-lg);
+  background: var(--maersk-white);
+}
+
+.dash-cohort.is-gsc {
+  border-color: color-mix(in srgb, var(--maersk-blue) 55%, var(--maersk-border));
+}
+
+.dash-cohort.is-area {
+  border-color: color-mix(in srgb, var(--maersk-navy) 28%, var(--maersk-border));
 }
 
 .dash-cohort h4 {
-  margin: 0 0 var(--space-sm);
+  margin: 0 0 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--maersk-border);
   color: var(--maersk-navy);
   font-size: var(--type-title);
   font-weight: 600;
+}
+
+.dash-cohort.is-gsc h4 {
+  color: var(--maersk-blue-dark);
 }
 
 .dash-kpis.dash-kpis-cohort {
