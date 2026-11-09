@@ -397,12 +397,10 @@ def _section_conclusions(
 
     if top_handler:
         name = short_handler_name(top_handler["label"])
-        handler_text = (
-            f"{name} handled the most bookings on the roster, {top_handler['count']} in this period."
-        )
+        handler_text = f"{name}, {top_handler['count']} bookings."
         handler_keys = [name, str(top_handler["count"])]
     else:
-        handler_text = "Nobody on the roster handled a booking in this period."
+        handler_text = "No roster bookings."
         handler_keys = []
     notes.append(section_note(
         "by-handler",
@@ -420,7 +418,7 @@ def _section_conclusions(
         notes.append(section_note(
             "quadrant",
             "Handler quadrants",
-            f"The roster is finishing converted bookings quickly, at {group_avg} min on average.",
+            f"Roster process average {group_avg} min.",
             [f"{group_avg} min"],
             period,
             group="handlers",
@@ -428,7 +426,7 @@ def _section_conclusions(
         notes.append(section_note(
             "process-by-handler",
             "Avg process-time by handler",
-            f"{slow_name} is the slowest on average, at {slowest['minutes']} min.",
+            f"{slow_name}, {slowest['minutes']} min.",
             [slow_name, f"{slowest['minutes']} min"],
             period,
             group="handlers",
@@ -437,7 +435,7 @@ def _section_conclusions(
         notes.append(section_note(
             "quadrant",
             "Handler quadrants",
-            "The roster has no cleaned process time to place on the quadrant.",
+            "No roster process times.",
             [],
             period,
             group="handlers",
@@ -445,7 +443,7 @@ def _section_conclusions(
         notes.append(section_note(
             "process-by-handler",
             "Avg process-time by handler",
-            "No roster handler has a cleaned average in this period.",
+            "No cleaned roster rows.",
             [],
             period,
             group="handlers",

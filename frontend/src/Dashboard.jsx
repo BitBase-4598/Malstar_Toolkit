@@ -1617,7 +1617,6 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
                         {group.items.map((item) => (
                           <li key={item.kind}>
                             <strong>{item.section}</strong>
-                            {item.lead ? <p className="dash-conclusion-lead">{item.lead}</p> : null}
                             <p>{highlightKeywords(item.text, item.keywords)}</p>
                           </li>
                         ))}
