@@ -317,6 +317,24 @@ def section_note(kind, section, text, keywords, period, group="", lead=""):
     }
 
 
+def weekday_hour_peaks(items):
+    names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    counts = {name: [0] * 24 for name in names}
+    for item in items:
+        received = parse_dash_datetime(item.get("emailReceived"))
+        if received is None:
+            continue
+        counts[names[received.weekday()]][received.hour] += 1
+    peaks = []
+    for name in names:
+        hours = counts[name]
+        if not sum(hours):
+            continue
+        hour = max(range(24), key=lambda index: hours[index])
+        peaks.append({"weekday": name, "label": f"{hour:02d}:00", "count": hours[hour]})
+    return peaks
+
+
 def _section_conclusions(
     period,
     items,
@@ -326,6 +344,7 @@ def _section_conclusions(
     top_handler,
     avg_by_handler,
     by_hour,
+    weekday_peaks,
     roster,
     processing,
     missing_ship,
@@ -373,7 +392,7 @@ def _section_conclusions(
             area_summary["avgWaitLabel"],
         ],
         period,
-        lead="Same six cards for both groups. Process keeps 1.7–1440 min. Wait keeps 0–2880 min and usage above 2 min.",
+        lead="GSC turned a larger share of bookings into shipments, and did it in less time than Area.",
     ))
 
     if top_handler:
@@ -390,7 +409,7 @@ def _section_conclusions(
         handler_keys,
         period,
         group="handlers",
-        lead=f"Booking count for the saved roster of {len(roster)} people.",
+        lead=f"Among the {len(roster)} roster handlers, one person carried the most bookings.",
     ))
 
     if avg_by_handler:
@@ -404,7 +423,7 @@ def _section_conclusions(
             [f"{group_avg} min"],
             period,
             group="handlers",
-            lead="More bookings sit higher. Lower process time sits to the right.",
+            lead="The roster as a group is finishing converted work quickly.",
         ))
         notes.append(section_note(
             "process-by-handler",
@@ -413,7 +432,7 @@ def _section_conclusions(
             [slow_name, f"{slowest['minutes']} min"],
             period,
             group="handlers",
-            lead="Mean J−I inside 1.7–1440 min. Longest roster average.",
+            lead="One roster handler is taking longer than the others on average.",
         ))
     else:
         notes.append(section_note(
@@ -423,7 +442,7 @@ def _section_conclusions(
             [],
             period,
             group="handlers",
-            lead="More bookings sit higher. Lower process time sits to the right.",
+            lead="There is not enough cleaned process time to place the roster.",
         ))
         notes.append(section_note(
             "process-by-handler",
@@ -432,18 +451,25 @@ def _section_conclusions(
             [],
             period,
             group="handlers",
-            lead="Mean J−I inside 1.7–1440 min.",
+            lead="No roster handler has a cleaned process time in this range.",
         ))
 
     peak = max(by_hour, key=lambda item: item["count"]) if by_hour else None
+    day_bits = [
+        f"{item['weekday']} {item['label']} ({item['count']})"
+        for item in weekday_peaks
+    ]
     if peak and peak["count"]:
+        hour_text = f"Overall {peak['label']}, {peak['count']} emails."
+        if day_bits:
+            hour_text += " By weekday the peaks are " + ", ".join(day_bits) + "."
         notes.append(section_note(
             "by-hour",
             "Volume by hour",
-            f"{peak['label']}, {peak['count']} emails.",
-            [peak["label"], str(peak["count"])],
+            hour_text,
+            [peak["label"], str(peak["count"]), *[item["weekday"] for item in weekday_peaks], *[item["label"] for item in weekday_peaks]],
             period,
-            lead="Emails counted by the hour they arrived.",
+            lead="Inbound mail bunches in the morning, and the busiest hour shifts by weekday.",
         ))
     else:
         notes.append(section_note(
@@ -452,7 +478,7 @@ def _section_conclusions(
             "No parseable email times.",
             [],
             period,
-            lead="Emails counted by the hour they arrived.",
+            lead="There is no received time to place mail on the clock.",
         ))
 
     flagged_text = (
@@ -465,7 +491,7 @@ def _section_conclusions(
         flagged_text,
         [str(len(flagged[:40])), str(len(processing)), str(len(missing_ship))],
         period,
-        lead="Rows still processing, missing a shipment, or outside the cleaned times.",
+        lead="Most of the abnormal rows are still open or never received a shipment number.",
     ))
     return notes
 
@@ -584,6 +610,7 @@ def build_dashboard_payload(conn, date_from="", date_to="", mailbox=""):
         if received:
             hour_counts[received.hour] += 1
     by_hour = [{"label": f"{hour:02d}:00", "count": hour_counts[hour]} for hour in range(24)]
+    weekday_peaks = weekday_hour_peaks(items)
     avg_by_handler = []
     for name, values in handler_process.items():
         result = mean_minutes(values)
@@ -662,6 +689,7 @@ def build_dashboard_payload(conn, date_from="", date_to="", mailbox=""):
         top_handler=top_handler,
         avg_by_handler=avg_by_handler,
         by_hour=by_hour,
+        weekday_peaks=weekday_peaks,
         roster=roster,
         processing=processing,
         missing_ship=missing_ship,
