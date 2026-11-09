@@ -10,6 +10,7 @@ from services.dashboard_analytics import (
     build_dashboard_payload,
     parse_dashboard_record,
 )
+from services.dashboard_reports import dispatch_due_reports, get_schedule, save_schedule, send_report
 from util import now_stamp
 
 bp = Blueprint("dashboard", __name__)
@@ -42,6 +43,40 @@ def get_dashboard():
     with get_connection() as conn:
         data = build_dashboard_payload(conn, date_from, date_to, mailboxes)
     return jsonify({"success": True, "data": data})
+
+
+@bp.get("/api/dashboard/report-schedule")
+def read_report_schedule():
+    with get_connection() as conn:
+        data = get_schedule(conn)
+    return jsonify({"success": True, "data": data})
+
+
+@bp.put("/api/dashboard/report-schedule")
+def write_report_schedule():
+    payload = request.get_json(silent=True) or {}
+    try:
+        with get_connection() as conn:
+            data = save_schedule(conn, payload)
+    except ValueError as error:
+        return jsonify({"success": False, "message": str(error)}), 400
+    audit("dashboard.schedule", summary="report schedule saved")
+    return jsonify({"success": True, "data": data, "message": "Report schedule saved"})
+
+
+@bp.post("/api/dashboard/report-schedule/send")
+def send_report_now():
+    payload = request.get_json(silent=True) or {}
+    cadence = str(payload.get("cadence") or "").strip()
+    try:
+        with get_connection() as conn:
+            result = send_report(conn, cadence, datetime.now())
+    except ValueError as error:
+        return jsonify({"success": False, "message": str(error)}), 400
+    except RuntimeError as error:
+        return jsonify({"success": False, "message": str(error)}), 400
+    audit("dashboard.schedule", summary=f"sent {cadence} report")
+    return jsonify({"success": True, "data": result, "message": f"Sent {result['subject']}"})
 
 
 @bp.post("/api/dashboard/import")

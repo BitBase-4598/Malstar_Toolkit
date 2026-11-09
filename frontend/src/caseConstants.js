@@ -23,7 +23,7 @@ export const DETAIL_FIELDS = [
 
 export const CASE_MAILBOXES = [
   "CUSLCL.SZH@LnS.maersk.com",
-  "CUSLCLLEUR.SZH@LnS.maersk.com",
+  "CUSLCLEUR.SZH@LnS.maersk.com",
   "HKGLCL@LnS.maersk.com",
   "TWNLCL-CUS@LnS.maersk.com",
   "CN.BOSCH.CFSPRSEXP@lns.maersk.com",

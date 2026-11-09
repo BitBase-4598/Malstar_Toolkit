@@ -4309,3 +4309,134 @@ html.lcl-html #root {
 .dash-weekday-chips button.active {
   color: var(--maersk-white);
 }
+
+.dash-toolbar-side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+}
+
+.dash-export-pdf {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.dash-compare {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-lg);
+}
+
+.dash-cohort h4 {
+  margin: 0 0 var(--space-sm);
+  color: var(--maersk-navy);
+  font-size: var(--type-title);
+  font-weight: 600;
+}
+
+.dash-kpis.dash-kpis-cohort {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.dash-report-schedule {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md) 20px var(--space-lg);
+  border-top: 1px solid var(--maersk-border);
+}
+
+.dash-report-schedule p,
+.dash-report-schedule strong {
+  margin: 0;
+}
+
+.dash-report-schedule p {
+  color: var(--maersk-muted);
+  font-size: var(--type-ui);
+}
+
+.dash-report-schedule input[type="text"],
+.dash-report-schedule input[type="number"] {
+  display: block;
+  width: 100%;
+  margin-top: var(--space-2xs);
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--maersk-border);
+  border-radius: var(--radius);
+}
+
+.dash-report-options,
+.dash-report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.dash-report-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.dash-report-options input[type="number"] {
+  width: 72px;
+}
+
+@media (max-width: 1100px) {
+  .dash-compare {
+    grid-template-columns: 1fr;
+  }
+
+  .dash-kpis.dash-kpis-cohort {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media print {
+  .sidebar,
+  .topbar,
+  .dash-nonmod,
+  .dash-help,
+  .dash-report-schedule,
+  .dash-export-pdf,
+  .toast,
+  .alert {
+    display: none !important;
+  }
+
+  html,
+  body,
+  #root,
+  .app-shell,
+  .workspace,
+  .page,
+  .page-stack,
+  .page-panel.active,
+  .dash-sub.active,
+  .dash-layout {
+    display: block !important;
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+
+  .page-panel,
+  .dash-sub {
+    display: none !important;
+  }
+
+  .page-panel.active,
+  .dash-sub.active {
+    display: block !important;
+  }
+
+  .dash-toolbar {
+    position: static;
+    box-shadow: none;
+  }
+}

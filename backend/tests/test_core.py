@@ -31,12 +31,14 @@ from services.dashboard_analytics import (
     average_turn_times,
     build_dashboard_payload,
     format_minutes,
+    is_gsc_mailbox,
     is_valid_time_usage,
     is_valid_turn_time,
     mean_minutes,
     minutes_between,
     parse_dashboard_record,
 )
+from services.dashboard_reports import dispatch_due_reports, save_schedule, send_report
 from services.files_store import sanitize_preview_html, stored_path
 from util import letters_only
 
@@ -189,6 +191,66 @@ def _assert_dashboard_mailbox_filter(conn):
         conn, "2026-09-21", "2026-09-29", ["ops@example.com", "desk@example.com"]
     )
     assert [row["orderNumber"] for row in both["rows"]] == ["A1", "B1"]
+
+
+def test_gsc_mailbox_spelling_and_split():
+    assert is_gsc_mailbox("cuslcleur.szh@lns.maersk.com")
+    assert not is_gsc_mailbox("CUSLCLLEUR.SZH@LnS.maersk.com")
+    assert not is_gsc_mailbox("CN.South.MOF@lns.maersk.com")
+    migrate()
+    with get_connection() as conn:
+        conn.execute("DELETE FROM DashboardBookings")
+        conn.executemany(
+            """
+            INSERT INTO DashboardBookings (
+                OrderNumber, ShipmentNumber, MessageId, ReportDate, EmailReceived,
+                EmailStatus, HandledBy, HandlingTime, BookingConvertedTime,
+                Subject, Mailbox, HandleWaitMinutes, ProcessMinutes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                ("G1", "S1", "M1", "2026-11-03", "2026-11-03 08:00:00", "AI-Booking: Converted",
+                 "ann", "2026-11-03 08:10:00", "2026-11-03 08:20:00", "", "CUSLCLEUR.SZH@LnS.maersk.com", 10, 10),
+                ("A1", "S2", "M2", "2026-11-03", "2026-11-03 08:00:00", "AI-Booking: Converted",
+                 "bob", "2026-11-03 09:00:00", "2026-11-03 10:00:00", "", "CN.South.MOF@lns.maersk.com", 60, 60),
+            ],
+        )
+        payload = build_dashboard_payload(conn, "2026-11-03", "2026-11-03")
+        assert payload["compare"]["gsc"]["total"] == 1
+        assert payload["compare"]["gsc"]["avgProcessLabel"] == "10.0 min"
+        assert payload["compare"]["area"]["total"] == 1
+        assert payload["compare"]["area"]["avgWaitCount"] == 1
+        conn.execute("DELETE FROM DashboardBookings")
+
+
+def test_ops_report_schedule_sends_daily_once():
+    migrate()
+    sent = []
+
+    def capture(recipients, subject, body):
+        sent.append((recipients, subject, body))
+
+    with get_connection() as conn:
+        save_schedule(conn, {
+            "dailyEnabled": True,
+            "monthlyEnabled": False,
+            "sendHour": 8,
+            "recipients": "ops@example.com",
+        })
+    when = __import__("datetime").datetime(2026, 11, 9, 8, 5)
+    first = dispatch_due_reports(when, capture)
+    second = dispatch_due_reports(when, capture)
+    assert len(first) == 1
+    assert first[0]["dateFrom"] == "2026-11-08"
+    assert "GSC:" in sent[0][2]
+    assert second == []
+    with get_connection() as conn:
+        try:
+            send_report(conn, "weekly", when, capture)
+            raised = False
+        except ValueError:
+            raised = True
+    assert raised
 
 
 def test_migrate_schema_version_once():

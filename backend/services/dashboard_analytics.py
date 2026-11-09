@@ -204,6 +204,56 @@ def average_turn_times(items):
 
 BLANK_MAILBOX = "(blank)"
 
+# Shared with frontend CASE_MAILBOXES. Match is case-insensitive.
+GSC_MAILBOXES = (
+    "CUSLCL.SZH@LnS.maersk.com",
+    "CUSLCLEUR.SZH@LnS.maersk.com",
+    "HKGLCL@LnS.maersk.com",
+    "TWNLCL-CUS@LnS.maersk.com",
+    "CN.BOSCH.CFSPRSEXP@lns.maersk.com",
+)
+GSC_MAILBOX_KEYS = {name.casefold() for name in GSC_MAILBOXES}
+
+
+def is_gsc_mailbox(mailbox):
+    return str(mailbox or "").strip().casefold() in GSC_MAILBOX_KEYS
+
+
+def cohort_summary(items):
+    """Same cleaning rules as the page KPIs, for one mailbox cohort."""
+    total = len(items)
+    converted = [item for item in items if is_converted_status(item.get("emailStatus"))]
+    processing = [item for item in items if is_processing_status(item.get("emailStatus"))]
+    missing_ship = [item for item in items if not item.get("shipmentNumber")]
+    process_result = average_process_times(items)
+    wait_result = average_turn_times(items)
+    avg_process, process_count = process_result if process_result else (None, 0)
+    avg_wait, wait_count = wait_result if wait_result else (None, 0)
+    return {
+        "total": total,
+        "converted": len(converted),
+        "conversionRate": round((len(converted) / total) * 100, 1) if total else 0,
+        "processing": len(processing),
+        "missingShipment": len(missing_ship),
+        "avgProcessMinutes": avg_process,
+        "avgProcessCount": process_count,
+        "avgProcessLabel": f"{avg_process} min" if avg_process is not None else "—",
+        "avgWaitMinutes": avg_wait,
+        "avgWaitCount": wait_count,
+        "avgWaitLabel": f"{avg_wait} min" if avg_wait is not None else "—",
+    }
+
+
+def split_gsc_area(items):
+    gsc = []
+    area = []
+    for item in items:
+        if is_gsc_mailbox(item.get("mailbox")):
+            gsc.append(item)
+        else:
+            area.append(item)
+    return gsc, area
+
 
 def selected_mailbox_keys(mailbox):
     if mailbox is None:
@@ -432,6 +482,7 @@ def build_dashboard_payload(conn, date_from="", date_to="", mailbox=""):
 
     flagged = list(flagged_map.values())
     flagged.sort(key=lambda item: (not item["isHighestProcess"], -len(item["reasons"]), item["orderNumber"]))
+    gsc_items, area_items = split_gsc_area(items)
 
     return {
         "meta": {
@@ -446,6 +497,10 @@ def build_dashboard_payload(conn, date_from="", date_to="", mailbox=""):
             "mailboxes": mailbox_names,
             "hasBlankMailbox": has_blank_mailbox,
             "mailbox": selected_mailboxes[0] if len(selected_mailboxes) == 1 else "",
+        },
+        "compare": {
+            "gsc": cohort_summary(gsc_items),
+            "area": cohort_summary(area_items),
         },
         "kpis": {
             "total": total,

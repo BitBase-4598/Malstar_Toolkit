@@ -190,6 +190,17 @@ def _create_tables(conn):
         "CREATE INDEX IF NOT EXISTS idx_dashboard_bookings_date ON DashboardBookings (ReportDate)"
     )
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS DashboardReportSchedule (
+            ID INTEGER PRIMARY KEY CHECK (ID = 1),
+            DailyEnabled INTEGER NOT NULL DEFAULT 0,
+            MonthlyEnabled INTEGER NOT NULL DEFAULT 0,
+            SendHour INTEGER NOT NULL DEFAULT 8,
+            Recipients TEXT NOT NULL DEFAULT '',
+            LastDailySent TEXT NOT NULL DEFAULT '',
+            LastMonthlySent TEXT NOT NULL DEFAULT ''
+        )
+    """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS NonModUploads (
             ID INTEGER PRIMARY KEY AUTOINCREMENT,
             Filename TEXT NOT NULL DEFAULT '',

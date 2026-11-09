@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { Upload } from "lucide-react";
+import { Download, Upload } from "lucide-react";
 import { api } from "./api";
 import FieldSelect from "./FieldSelect";
 
@@ -1042,6 +1042,172 @@ function NonModSection({ onNotice, onRefreshLogs }) {
   );
 }
 
+function ReportSchedule({ onNotice }) {
+  const [form, setForm] = useState({
+    dailyEnabled: false,
+    monthlyEnabled: false,
+    sendHour: 8,
+    recipients: "",
+    smtpConfigured: false,
+  });
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    api.getReportSchedule()
+      .then((result) => {
+        if (!active) {
+          return;
+        }
+        const data = result.data || {};
+        setForm({
+          dailyEnabled: Boolean(data.dailyEnabled),
+          monthlyEnabled: Boolean(data.monthlyEnabled),
+          sendHour: Number.isFinite(Number(data.sendHour)) ? Number(data.sendHour) : 8,
+          recipients: data.recipients || "",
+          smtpConfigured: Boolean(data.smtpConfigured),
+        });
+      })
+      .catch((error) => {
+        if (active) {
+          onNotice?.({ type: "error", text: error.message });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [onNotice]);
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      const result = await api.saveReportSchedule(form);
+      setForm((current) => ({ ...current, ...(result.data || {}), smtpConfigured: result.data?.smtpConfigured }));
+      onNotice?.({ type: "success", text: result.message || "Report schedule saved" });
+    } catch (error) {
+      onNotice?.({ type: "error", text: error.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sendNow = async (cadence) => {
+    setBusy(true);
+    try {
+      await api.saveReportSchedule(form);
+      const result = await api.sendReportSchedule(cadence);
+      onNotice?.({ type: "success", text: result.message || "Report sent" });
+    } catch (error) {
+      onNotice?.({ type: "error", text: error.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form
+      className="dash-report-schedule"
+      onSubmit={(event) => {
+        event.preventDefault();
+        save();
+      }}
+    >
+      <strong>Email schedule</strong>
+      <p>
+        Daily mail covers yesterday. Monthly mail goes out on the 1st for the previous month.
+        Times use the server clock.
+        {form.smtpConfigured ? "" : " SMTP_HOST and SMTP_FROM are not set, so sending will wait until they are."}
+      </p>
+      <label>
+        Recipients
+        <input
+          type="text"
+          value={form.recipients}
+          placeholder="name@maersk.com, other@maersk.com"
+          onChange={(event) => setForm((current) => ({ ...current, recipients: event.target.value }))}
+        />
+      </label>
+      <div className="dash-report-options">
+        <label>
+          <input
+            type="checkbox"
+            checked={form.dailyEnabled}
+            onChange={(event) => setForm((current) => ({ ...current, dailyEnabled: event.target.checked }))}
+          />
+          Daily
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={form.monthlyEnabled}
+            onChange={(event) => setForm((current) => ({ ...current, monthlyEnabled: event.target.checked }))}
+          />
+          Monthly
+        </label>
+        <label>
+          Hour
+          <input
+            type="number"
+            min="0"
+            max="23"
+            value={form.sendHour}
+            onChange={(event) => setForm((current) => ({ ...current, sendHour: Number(event.target.value) }))}
+          />
+        </label>
+      </div>
+      <div className="dash-report-actions">
+        <button type="submit" className="secondary" disabled={busy}>Save schedule</button>
+        <button type="button" className="ghost" disabled={busy} onClick={() => sendNow("daily")}>Send daily now</button>
+        <button type="button" className="ghost" disabled={busy} onClick={() => sendNow("monthly")}>Send monthly now</button>
+      </div>
+    </form>
+  );
+}
+
+function CohortColumn({ title, cohort }) {
+  const stats = cohort || {};
+  const processNote = stats.avgProcessCount
+    ? `${stats.avgProcessCount} rows · 1.7–1440 min`
+    : "1.7–1440 min";
+  const waitNote = stats.avgWaitCount
+    ? `${stats.avgWaitCount} rows · 0–2880 min wait`
+    : "0–2880 min wait";
+  return (
+    <section className="dash-cohort">
+      <h4>{title}</h4>
+      <div className="dash-kpis dash-kpis-cohort">
+        <article className="dash-kpi">
+          <span>Bookings</span>
+          <strong className="dash-kpi-count">{stats.total ?? 0}</strong>
+        </article>
+        <article className="dash-kpi">
+          <span>Converted</span>
+          <strong className="dash-kpi-count">{stats.converted ?? 0}</strong>
+          <em>{stats.conversionRate ?? 0}% conversion</em>
+        </article>
+        <article className="dash-kpi">
+          <span>Processing</span>
+          <strong className="dash-kpi-count">{stats.processing ?? 0}</strong>
+        </article>
+        <article className="dash-kpi">
+          <span>Missing shipment</span>
+          <strong className="dash-kpi-count">{stats.missingShipment ?? 0}</strong>
+        </article>
+        <article className="dash-kpi">
+          <span>Average process-time</span>
+          <strong className="dash-kpi-count">{stats.avgProcessLabel || "—"}</strong>
+          <em>{processNote}</em>
+        </article>
+        <article className="dash-kpi">
+          <span>Average wait</span>
+          <strong className="dash-kpi-count">{stats.avgWaitLabel || "—"}</strong>
+          <em>{waitNote}</em>
+        </article>
+      </div>
+    </section>
+  );
+}
+
 const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImportingChange }, ref) {
   const inputRef = useRef();
   const [data, setData] = useState(null);
@@ -1164,7 +1330,6 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
       }))
       .filter((item) => item.count > 0 && Number.isFinite(item.minutes));
   }, [data?.series?.byHandler, processStats.processByHandler]);
-  const avgProcessLabel = processStats.avg == null ? "—" : `${processStats.avg} min`;
   const avgProcessNote = "Shipment Converted, 1.7–1440 min";
   const conclusions = useMemo(() => {
     const items = data?.conclusions || [];
@@ -1233,11 +1398,17 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
             </label>
           </div>
         </div>
-        <p className="dash-meta">
-          {empty
-            ? "Upload the LCL booking daily report CSV."
-            : `${meta.filename} · ${meta.filteredCount} of ${meta.rowCount} rows · ${meta.uploadedAt}`}
-        </p>
+        <div className="dash-toolbar-side">
+          <p className="dash-meta">
+            {empty
+              ? "Upload the LCL booking daily report CSV."
+              : `${meta.filename} · ${meta.filteredCount} of ${meta.rowCount} rows · ${meta.uploadedAt}`}
+          </p>
+          <button type="button" className="secondary dash-export-pdf" onClick={() => window.print()} disabled={empty}>
+            <Download size={16} />
+            Export PDF
+          </button>
+        </div>
       </div>
       {loading && !data ? <p className="preview-empty">Loading dashboard…</p> : null}
       {empty && !loading ? (
@@ -1250,46 +1421,11 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
           <div className="dash-section">
             <div className="dash-section-head">
               <h3>Overview</h3>
-              <p>Key volumes and process-times for the selected dates</p>
+              <p>GSC and Area for the selected dates and mailboxes</p>
             </div>
-            <div className="dash-kpis">
-              <article className="dash-kpi">
-                <span>Total bookings</span>
-                <strong className="dash-kpi-count">{kpis.total}</strong>
-              </article>
-              <article className="dash-kpi">
-                <span>Converted</span>
-                <strong className="dash-kpi-count">{kpis.converted}</strong>
-                <em>{kpis.conversionRate}% conversion</em>
-              </article>
-              <article className="dash-kpi">
-                <span>Processing</span>
-                <strong className="dash-kpi-count">{kpis.processing}</strong>
-              </article>
-              <article className="dash-kpi">
-                <span>Handlers</span>
-                <strong className="dash-kpi-count">{kpis.handlers}</strong>
-              </article>
-              <article className="dash-kpi">
-                <span>Missing shipment</span>
-                <strong className="dash-kpi-count">{kpis.missingShipment}</strong>
-              </article>
-              <article className="dash-kpi">
-                <span>Average process-time</span>
-                <strong className="dash-kpi-count">{avgProcessLabel}</strong>
-                <em>{avgProcessNote}</em>
-              </article>
-              <article className="dash-kpi dash-kpi-highest">
-                <span>
-                  Highest process-time
-                  <span className="status-pill danger">highest</span>
-                </span>
-                <strong className="dash-kpi-count">{kpis.maxProcessLabel}</strong>
-                <em>
-                  {kpis.maxProcessOrder || "—"}
-                  {kpis.maxProcessHandler ? ` · ${shortHandler(kpis.maxProcessHandler)}` : ""}
-                </em>
-              </article>
+            <div className="dash-compare">
+              <CohortColumn title="GSC" cohort={data?.compare?.gsc} />
+              <CohortColumn title="Area" cohort={data?.compare?.area} />
             </div>
           </div>
           <div className="dash-section">
@@ -1381,6 +1517,7 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
                   </li>
                 ))}
               </ul>
+              <ReportSchedule onNotice={onNotice} />
             </section>
           </div>
           <FlaggedTable rows={flaggedRows} />

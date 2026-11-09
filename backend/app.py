@@ -179,9 +179,24 @@ def _warm_debosch():
         pass
 
 
+def _report_schedule_loop():
+    import time
+    from logging_util import APP_LOGGER
+    from services.dashboard_reports import dispatch_due_reports
+
+    while True:
+        try:
+            ensure_migrated()
+            dispatch_due_reports()
+        except Exception:
+            APP_LOGGER.exception("ops report schedule failed")
+        time.sleep(60)
+
+
 if __name__ == "__main__":
     import threading
     threading.Thread(target=_warm_lcl_cache, daemon=True).start()
+    threading.Thread(target=_report_schedule_loop, daemon=True).start()
     threading.Thread(target=_warm_unloco, daemon=True).start()
     threading.Thread(target=_warm_delcl, daemon=True).start()
     threading.Thread(target=_warm_debosch, daemon=True).start()

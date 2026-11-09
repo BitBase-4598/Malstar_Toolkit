@@ -53,6 +53,7 @@ ACTION_CATALOG = {
     "leave.delete": {"module": "leave", "label": "Leave plan deleted", "resource_type": "leave_plan"},
     "leave.export": {"module": "leave", "label": "Leave forecast exported", "resource_type": "leave_plan"},
     "dashboard.import": {"module": "dashboard", "label": "Dashboard imported", "resource_type": "dashboard"},
+    "dashboard.schedule": {"module": "dashboard", "label": "Ops report schedule", "resource_type": "dashboard"},
     "nonmod.upload": {"module": "nonmod", "label": "Non-Mod workbook uploaded", "resource_type": "nonmod"},
     "lcl.import": {"module": "lcl", "label": "LCL volume imported", "resource_type": "lcl"},
     "icb.import": {"module": "icb", "label": "ICB stations imported", "resource_type": "icb"},

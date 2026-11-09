@@ -28,4 +28,15 @@ export const dashboardApi = {
       body: JSON.stringify({ filename: file.name, records }),
     });
   },
+  getReportSchedule: () => request(`${API_ROOT}/dashboard/report-schedule`),
+  saveReportSchedule: (payload) => request(`${API_ROOT}/dashboard/report-schedule`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  }),
+  sendReportSchedule: (cadence) => request(`${API_ROOT}/dashboard/report-schedule/send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cadence }),
+  }),
 };
