@@ -625,14 +625,13 @@ function FlaggedTable({
               <th>Message Id</th>
               <th>Date</th>
               <th>Mailbox</th>
-              <th>Subject</th>
               <th>Reasons</th>
             </tr>
           </thead>
           <tbody>
             {visible.length === 0 ? (
               <tr>
-                <td colSpan="14" className="empty">
+                <td colSpan="13" className="empty">
                   {emptyMessage}
                 </td>
               </tr>
@@ -655,7 +654,6 @@ function FlaggedTable({
                   <td>{row.messageId || "—"}</td>
                   <td>{row.date || "—"}</td>
                   <td>{row.mailbox || "—"}</td>
-                  <td className="dash-subject">{row.subject || "—"}</td>
                   <td className="dash-reasons">{(row.reasons || []).join(", ") || "—"}</td>
                 </tr>
               ))
