@@ -49,10 +49,16 @@ function DashboardActions({ dashRef, dashImporting, dashPage, lclRef, lclImporti
     );
   }
   return (
-    <button className="primary" type="button" onClick={() => dashRef.current?.openUpload()} disabled={dashImporting}>
-      <Upload size={16} />
-      {dashImporting ? "Uploading..." : "Upload CSV"}
-    </button>
+    <>
+      <button className="secondary" type="button" onClick={() => dashRef.current?.exportPdf()}>
+        <Download size={16} />
+        Export to PDF
+      </button>
+      <button className="primary" type="button" onClick={() => dashRef.current?.openUpload()} disabled={dashImporting}>
+        <Upload size={16} />
+        {dashImporting ? "Uploading..." : "Upload CSV"}
+      </button>
+    </>
   );
 }
 
