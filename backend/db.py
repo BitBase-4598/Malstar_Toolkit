@@ -206,44 +206,8 @@ def _create_tables(conn):
             LastMonthlySent TEXT NOT NULL DEFAULT ''
         )
     """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS NonModUploads (
-            ID INTEGER PRIMARY KEY AUTOINCREMENT,
-            Filename TEXT NOT NULL DEFAULT '',
-            UploadedAt TEXT NOT NULL DEFAULT '',
-            ReportDate TEXT NOT NULL DEFAULT '',
-            RowCount INTEGER NOT NULL DEFAULT 0,
-            KpiJson TEXT NOT NULL DEFAULT '{}'
-        )
-    """)
-    conn.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_nonmod_uploads_date ON NonModUploads (ReportDate)"
-    )
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS NonModRows (
-            ID INTEGER PRIMARY KEY AUTOINCREMENT,
-            UploadID INTEGER NOT NULL,
-            RowIndex INTEGER NOT NULL DEFAULT 0,
-            OrderNumber TEXT NOT NULL DEFAULT '',
-            ShipmentNumber TEXT NOT NULL DEFAULT '',
-            MessageId TEXT NOT NULL DEFAULT '',
-            ReportDate TEXT NOT NULL DEFAULT '',
-            EmailReceived TEXT NOT NULL DEFAULT '',
-            OrderStatus TEXT NOT NULL DEFAULT '',
-            EmailStatus TEXT NOT NULL DEFAULT '',
-            HandledBy TEXT NOT NULL DEFAULT '',
-            HandlingTime TEXT NOT NULL DEFAULT '',
-            BookingConvertedTime TEXT NOT NULL DEFAULT '',
-            Subject TEXT NOT NULL DEFAULT '',
-            Mailbox TEXT NOT NULL DEFAULT '',
-            Matched INTEGER NOT NULL DEFAULT 0,
-            ChangesJson TEXT NOT NULL DEFAULT '{}',
-            FOREIGN KEY (UploadID) REFERENCES NonModUploads(ID) ON DELETE CASCADE
-        )
-    """)
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_nonmod_rows_upload ON NonModRows (UploadID, RowIndex)"
-    )
+    conn.execute("DROP TABLE IF EXISTS NonModRows")
+    conn.execute("DROP TABLE IF EXISTS NonModUploads")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS RagChunks (
             ID INTEGER PRIMARY KEY AUTOINCREMENT,

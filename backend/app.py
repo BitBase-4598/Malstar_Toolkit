@@ -43,7 +43,6 @@ def create_app():
     from blueprints.leave import bp as leave_bp
     from blueprints.lcl import bp as lcl_bp
     from blueprints.logs import bp as logs_bp
-    from blueprints.nonmod import bp as nonmod_bp
     from blueprints.remarks import bp as remarks_bp
     from blueprints.sops import bp as sops_bp
     from logging_util import APP_LOGGER, assign_request_id, audit
@@ -63,7 +62,6 @@ def create_app():
     app.register_blueprint(debosch_bp)
     app.register_blueprint(gca_bp)
     app.register_blueprint(remarks_bp)
-    app.register_blueprint(nonmod_bp)
 
     @app.before_request
     def bind_request_id():

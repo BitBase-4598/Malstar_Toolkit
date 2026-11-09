@@ -45,7 +45,6 @@ RAG_TOP_K = 8
 RAG_EXCERPT = 420
 ASK_MAX_QUESTION = 800
 DASHBOARD_MAX_ROWS = 5000
-NONMOD_MAX_ROWS = 20000
 # Optional spreadsheet/CSV seeds for CVM tools. Set via env when files exist.
 LCL_XLSX_PATH = _optional_path("LCL_XLSX_PATH")
 LCL_MAX_UPLOAD_MB = int(os.environ.get("LCL_MAX_UPLOAD_MB", "512"))

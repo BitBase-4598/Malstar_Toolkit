@@ -4,7 +4,7 @@ tags: [statement]
 ---
 # non-mod-hidden-on-ops
 
-The Non-Modification block is not rendered at the bottom of the Ops page. The Non-Mod API remains in the backend.
+The Non-Modification module is removed: no Ops section, no `/api/non-mod` routes, and its tables are dropped on startup.
 
 ## Concepts
 - [[MALSTAR Ops]]
