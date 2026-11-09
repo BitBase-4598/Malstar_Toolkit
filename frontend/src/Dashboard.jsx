@@ -1,7 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Upload } from "lucide-react";
 import { api } from "./api";
-import { exportOpsPdf } from "./exportOpsPdf";
 import FieldSelect from "./FieldSelect";
 
 const WEEKDAY_FILTERS = [
@@ -857,6 +856,7 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
     try {
       const start = dateFrom || data?.meta?.dateFrom || "all";
       const end = dateTo || data?.meta?.dateTo || "all";
+      const { exportOpsPdf } = await import("./exportOpsPdf");
       await exportOpsPdf(layoutRef.current, `malstar-ops-${start}-to-${end}.pdf`);
     } catch (error) {
       onNotice?.({ type: "error", text: error.message });
