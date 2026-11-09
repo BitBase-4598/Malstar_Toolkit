@@ -1,6 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Upload } from "lucide-react";
 import { api } from "./api";
+import { exportOpsPdf } from "./exportOpsPdf";
 import FieldSelect from "./FieldSelect";
 
 const WEEKDAY_FILTERS = [
@@ -783,6 +784,7 @@ function CohortColumn({ title, cohort }) {
 
 const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImportingChange }, ref) {
   const inputRef = useRef();
+  const layoutRef = useRef(null);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
@@ -853,7 +855,9 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
     }
     setExporting(true);
     try {
-      await api.exportDashboardPdf(dateFrom, dateTo, mailboxes);
+      const start = dateFrom || data?.meta?.dateFrom || "all";
+      const end = dateTo || data?.meta?.dateTo || "all";
+      await exportOpsPdf(layoutRef.current, `malstar-ops-${start}-to-${end}.pdf`);
     } catch (error) {
       onNotice?.({ type: "error", text: error.message });
     } finally {
@@ -929,7 +933,7 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
     : "";
 
   return (
-    <div className="dash-layout">
+    <div className="dash-layout" ref={layoutRef}>
       <input ref={inputRef} hidden type="file" accept=".csv,text/csv" onChange={upload} />
       <div className="dash-toolbar">
         <div>
