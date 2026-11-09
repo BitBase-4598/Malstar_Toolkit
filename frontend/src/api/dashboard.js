@@ -28,6 +28,11 @@ export const dashboardApi = {
       body: JSON.stringify({ filename: file.name, records }),
     });
   },
+  saveHandlerRoster: (names) => request(`${API_ROOT}/dashboard/handler-roster`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ names }),
+  }),
   getReportSchedule: () => request(`${API_ROOT}/dashboard/report-schedule`),
   saveReportSchedule: (payload) => request(`${API_ROOT}/dashboard/report-schedule`, {
     method: "PUT",

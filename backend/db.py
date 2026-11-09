@@ -190,6 +190,12 @@ def _create_tables(conn):
         "CREATE INDEX IF NOT EXISTS idx_dashboard_bookings_date ON DashboardBookings (ReportDate)"
     )
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS DashboardHandlerRoster (
+            ID INTEGER PRIMARY KEY CHECK (ID = 1),
+            Names TEXT NOT NULL DEFAULT ''
+        )
+    """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS DashboardReportSchedule (
             ID INTEGER PRIMARY KEY CHECK (ID = 1),
             DailyEnabled INTEGER NOT NULL DEFAULT 0,

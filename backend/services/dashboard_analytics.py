@@ -214,6 +214,60 @@ GSC_MAILBOXES = (
 )
 GSC_MAILBOX_KEYS = {name.casefold() for name in GSC_MAILBOXES}
 
+DEFAULT_HANDLER_ROSTER = (
+    "qing.huang",
+    "wenjie.yan",
+    "meiling.xiang",
+    "nicole.y.jiang",
+    "yolanda.feng",
+    "jane.l",
+    "tao.l",
+    "nathan.li",
+    "andrew.li",
+    "y.zhong",
+)
+
+
+def handler_key(value):
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return text.split("@", 1)[0].casefold()
+
+
+def parse_handler_roster(text):
+    names = []
+    seen = set()
+    for part in str(text or "").replace(",", "\n").splitlines():
+        name = part.strip()
+        key = handler_key(name)
+        if not key or key in seen or "@" in name:
+            continue
+        seen.add(key)
+        names.append(name.split("@", 1)[0])
+    return names
+
+
+def handler_roster(conn):
+    row = conn.execute("SELECT Names FROM DashboardHandlerRoster WHERE ID = 1").fetchone()
+    if row is None or not str(row["Names"] or "").strip():
+        return list(DEFAULT_HANDLER_ROSTER)
+    return parse_handler_roster(row["Names"])
+
+
+def save_handler_roster(conn, text):
+    names = parse_handler_roster(text)
+    if not names:
+        raise ValueError("Add at least one handler.")
+    conn.execute(
+        """
+        INSERT INTO DashboardHandlerRoster (ID, Names) VALUES (1, ?)
+        ON CONFLICT(ID) DO UPDATE SET Names = excluded.Names
+        """,
+        ("\n".join(names),),
+    )
+    return names
+
 
 def is_gsc_mailbox(mailbox):
     return str(mailbox or "").strip().casefold() in GSC_MAILBOX_KEYS
@@ -327,9 +381,14 @@ def build_dashboard_payload(conn, date_from="", date_to="", mailbox=""):
     max_process = None
     if usage_ok:
         max_process = max(usage_ok, key=lambda item: item["processMinutes"])
+    roster = handler_roster(conn)
+    roster_keys = {handler_key(name) for name in roster}
     handler_counts = {}
     handler_process = {}
     for item in items:
+        key = handler_key(item.get("handledBy"))
+        if key not in roster_keys:
+            continue
         handler = item["handledBy"] or "(blank)"
         handler_counts[handler] = handler_counts.get(handler, 0) + 1
         if is_valid_time_usage(item):
@@ -497,6 +556,7 @@ def build_dashboard_payload(conn, date_from="", date_to="", mailbox=""):
             "mailboxes": mailbox_names,
             "hasBlankMailbox": has_blank_mailbox,
             "mailbox": selected_mailboxes[0] if len(selected_mailboxes) == 1 else "",
+            "handlerRoster": roster,
         },
         "compare": {
             "gsc": cohort_summary(gsc_items),

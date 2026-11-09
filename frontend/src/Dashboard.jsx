@@ -72,7 +72,11 @@ function isValidTimeUsage(row) {
   return Number.isFinite(value) && value >= TIME_USAGE_MIN_MINUTES && value <= TIME_USAGE_MAX_MINUTES;
 }
 
-function processAverages(rows) {
+function rosterKeys(names) {
+  return new Set((names || []).map((name) => String(name || "").trim().toLowerCase()).filter(Boolean));
+}
+
+function processAverages(rows, allowed) {
   const all = [];
   const byHandler = new Map();
   for (const row of rows) {
@@ -82,6 +86,9 @@ function processAverages(rows) {
     const value = Number(row.processMinutes);
     all.push(value);
     const handler = row.handledBy || "(blank)";
+    if (allowed && !allowed.has(shortHandler(handler).toLowerCase())) {
+      continue;
+    }
     const list = byHandler.get(handler);
     if (list) {
       list.push(value);
@@ -1164,6 +1171,52 @@ function ReportSchedule({ onNotice }) {
   );
 }
 
+function HandlerRoster({ names, onNotice, onSaved }) {
+  const [text, setText] = useState("");
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setText((names || []).join("\n"));
+  }, [names]);
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      const result = await api.saveHandlerRoster(text);
+      onNotice?.({ type: "success", text: result.message || "Handler list saved" });
+      setOpen(false);
+      await onSaved?.();
+    } catch (error) {
+      onNotice?.({ type: "error", text: error.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="dash-roster">
+      <button type="button" className="ghost" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+        Handler list ({(names || []).length})
+      </button>
+      {open ? (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            save();
+          }}
+        >
+          <label>
+            One name per line. By handler, the quadrant, and average process-time count only these people.
+            <textarea rows={8} value={text} onChange={(event) => setText(event.target.value)} />
+          </label>
+          <button type="submit" className="secondary" disabled={busy}>Save list</button>
+        </form>
+      ) : null}
+    </div>
+  );
+}
+
 function CohortColumn({ title, cohort }) {
   const stats = cohort || {};
   const processNote = stats.avgProcessCount
@@ -1319,7 +1372,11 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
   const flaggedRows = data?.flagged || [];
   const hourItems = useMemo(() => volumeByHour(rows, hourWeekday), [rows, hourWeekday]);
   const hourWeekdayLabel = WEEKDAY_FILTERS.find((item) => item.id === hourWeekday)?.label || "All";
-  const processStats = useMemo(() => processAverages(rows), [rows]);
+  const handlerRoster = meta?.handlerRoster || [];
+  const processStats = useMemo(
+    () => processAverages(rows, rosterKeys(handlerRoster)),
+    [rows, handlerRoster]
+  );
   const quadrantPoints = useMemo(() => {
     const minutes = new Map(processStats.processByHandler.map((item) => [item.label, item.minutes]));
     return (data?.series?.byHandler || [])
@@ -1431,8 +1488,13 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
           <div className="dash-section">
             <div className="dash-section-head">
               <h3>Performance</h3>
-              <p>Handler volume, workload quadrants, process-time, and inbound hours</p>
+              <p>Handler volume, workload quadrants, and process-time use the saved roster only</p>
             </div>
+            <HandlerRoster
+              names={handlerRoster}
+              onNotice={onNotice}
+              onSaved={() => load(dateFrom, dateTo, mailboxes)}
+            />
             <div className="dash-charts">
               <section className="card">
                 <div className="summary">

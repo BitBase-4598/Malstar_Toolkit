@@ -37,6 +37,7 @@ from services.dashboard_analytics import (
     mean_minutes,
     minutes_between,
     parse_dashboard_record,
+    save_handler_roster,
 )
 from services.dashboard_reports import dispatch_due_reports, save_schedule, send_report
 from services.files_store import sanitize_preview_html, stored_path
@@ -221,6 +222,36 @@ def test_gsc_mailbox_spelling_and_split():
         assert payload["compare"]["area"]["total"] == 1
         assert payload["compare"]["area"]["avgWaitCount"] == 1
         conn.execute("DELETE FROM DashboardBookings")
+
+
+def test_handler_roster_drops_people_outside_the_list():
+    migrate()
+    with get_connection() as conn:
+        conn.execute("DELETE FROM DashboardBookings")
+        conn.execute("DELETE FROM DashboardHandlerRoster")
+        conn.executemany(
+            """
+            INSERT INTO DashboardBookings (
+                OrderNumber, ReportDate, EmailStatus, HandledBy, HandleWaitMinutes, ProcessMinutes
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            [
+                ("H1", "2026-11-03", "AI-Booking: Converted", "qing.huang@lns.maersk.com", 10, 10),
+                ("H2", "2026-11-03", "AI-Booking: Converted", "someone.else@lns.maersk.com", 10, 10),
+            ],
+        )
+        payload = build_dashboard_payload(conn, "2026-11-03", "2026-11-03")
+        labels = [item["label"] for item in payload["series"]["byHandler"]]
+        assert labels == ["qing.huang@lns.maersk.com"]
+        assert "qing.huang" in payload["meta"]["handlerRoster"]
+        save_handler_roster(conn, "someone.else\nqing.huang")
+        custom = build_dashboard_payload(conn, "2026-11-03", "2026-11-03")
+        assert [item["label"] for item in custom["series"]["byHandler"]] == [
+            "qing.huang@lns.maersk.com",
+            "someone.else@lns.maersk.com",
+        ]
+        conn.execute("DELETE FROM DashboardBookings")
+        conn.execute("DELETE FROM DashboardHandlerRoster")
 
 
 def test_ops_report_schedule_sends_daily_once():

@@ -4324,6 +4324,30 @@ html.lcl-html #root {
   gap: var(--space-xs);
 }
 
+.dash-roster {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-sm);
+}
+
+.dash-roster form {
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.dash-roster textarea {
+  display: block;
+  width: 100%;
+  margin-top: var(--space-2xs);
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--maersk-border);
+  border-radius: var(--radius);
+  resize: vertical;
+}
+
 .dash-compare {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);

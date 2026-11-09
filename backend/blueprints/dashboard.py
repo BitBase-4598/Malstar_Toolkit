@@ -9,6 +9,7 @@ from services.dashboard_analytics import (
     DASHBOARD_FIELDS,
     build_dashboard_payload,
     parse_dashboard_record,
+    save_handler_roster,
 )
 from services.dashboard_reports import dispatch_due_reports, get_schedule, save_schedule, send_report
 from util import now_stamp
@@ -43,6 +44,22 @@ def get_dashboard():
     with get_connection() as conn:
         data = build_dashboard_payload(conn, date_from, date_to, mailboxes)
     return jsonify({"success": True, "data": data})
+
+
+@bp.put("/api/dashboard/handler-roster")
+def write_handler_roster():
+    payload = request.get_json(silent=True) or {}
+    try:
+        with get_connection() as conn:
+            names = save_handler_roster(conn, payload.get("names"))
+    except ValueError as error:
+        return jsonify({"success": False, "message": str(error)}), 400
+    audit("dashboard.roster", summary=f"handlers={len(names)}")
+    return jsonify({
+        "success": True,
+        "data": {"handlerRoster": names},
+        "message": "Handler list saved",
+    })
 
 
 @bp.get("/api/dashboard/report-schedule")
