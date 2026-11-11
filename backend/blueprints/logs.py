@@ -69,13 +69,17 @@ def activity_log_row(row):
         "resourceType": row["ResourceType"] or "",
         "resourceId": row["ResourceId"] or "",
         "userAgent": row["UserAgent"] or "",
+        "actorName": row["ActorName"] if "ActorName" in row.keys() else "",
+        "actorId": row["ActorId"] if "ActorId" in row.keys() else "",
+        "actorRole": row["ActorRole"] if "ActorRole" in row.keys() else "",
     }
 
 
 LOG_SELECT = """
     ID, Timestamp, Action, Detail, ClientIP,
     EventId, RequestId, Module, ActionCode, Outcome, Severity,
-    ResourceType, ResourceId, Summary, UserAgent
+    ResourceType, ResourceId, Summary, UserAgent,
+    ActorName, ActorId, ActorRole
 """
 
 

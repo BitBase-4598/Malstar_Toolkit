@@ -723,6 +723,9 @@ def _ensure_activity_log_columns(conn):
         ("ResourceId", "TEXT NOT NULL DEFAULT ''"),
         ("Summary", "TEXT NOT NULL DEFAULT ''"),
         ("UserAgent", "TEXT NOT NULL DEFAULT ''"),
+        ("ActorName", "TEXT NOT NULL DEFAULT ''"),
+        ("ActorId", "TEXT NOT NULL DEFAULT ''"),
+        ("ActorRole", "TEXT NOT NULL DEFAULT ''"),
     )
     for name, definition in additions:
         if name not in columns and name.lower() not in columns:

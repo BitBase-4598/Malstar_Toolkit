@@ -46,6 +46,7 @@ def create_app():
     from blueprints.remarks import bp as remarks_bp
     from blueprints.sops import bp as sops_bp
     from logging_util import APP_LOGGER, assign_request_id, audit
+    from services.access import enforce_access
 
     app.register_blueprint(health_bp)
     app.register_blueprint(logs_bp)
@@ -68,6 +69,9 @@ def create_app():
         assign_request_id()
         if request.path != "/api/health":
             ensure_migrated()
+        denied = enforce_access()
+        if denied is not None:
+            return denied
 
     @app.after_request
     def echo_request_id(response):

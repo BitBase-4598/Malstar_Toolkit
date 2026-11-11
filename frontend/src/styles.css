@@ -1451,7 +1451,7 @@ td.copied {
 .log-filters,
 .log-row {
   display: grid;
-  grid-template-columns: minmax(132px, 168px) minmax(88px, 100px) minmax(120px, 176px) minmax(88px, 100px) minmax(0, 1fr) minmax(96px, 118px);
+  grid-template-columns: minmax(132px, 168px) minmax(88px, 100px) minmax(120px, 176px) minmax(88px, 100px) minmax(0, 1fr) minmax(120px, 180px) minmax(96px, 118px);
   gap: 10px;
   padding: 8px 20px;
   align-items: start;

@@ -176,6 +176,7 @@ export default function ActivityLog({ entries, loading, filters, onFiltersChange
         <span>Action</span>
         <span>Outcome</span>
         <span>Detail</span>
+        <span>Person</span>
         <span>IP</span>
       </div>
       <div className="log-list">
@@ -209,6 +210,10 @@ export default function ActivityLog({ entries, loading, filters, onFiltersChange
                       {entry.requestId}
                     </button>
                   ) : null}
+                </span>
+                <span className="log-ip" title={entry.actorId || ""}>
+                  {entry.actorName || "—"}
+                  {entry.actorRole ? ` · ${entry.actorRole}` : ""}
                 </span>
                 <span className="log-ip">{entry.clientIp || "—"}</span>
               </div>

@@ -5,7 +5,10 @@ tags: [tasks]
 
 ## Active
 
-_None._
+- [ ] One customer or station view that links remarks, codes, files, and related BadCases.
+- [ ] BadCases owners, due dates, and a link to the procedure changed after resolution.
+- [ ] Pilot Ask with approved, dated SOPs and a set of real staff questions.
+- [ ] Connect leave availability with historical workload.
 
 ## Parked
 

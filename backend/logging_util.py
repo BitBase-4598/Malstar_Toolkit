@@ -283,6 +283,9 @@ def audit(
     resource_id = str(resource_id or "")[:80]
     client_ip = current_client_ip()
     user_agent = current_user_agent()
+    from services.access import current_actor
+
+    actor = current_actor()
     extra_data = _safe_extra(extra)
     if exc_info is True:
         exc_info = sys.exc_info()
@@ -300,6 +303,9 @@ def audit(
         "resource_id": resource_id,
         "summary": summary,
         "actor_ip": client_ip,
+        "actor_name": actor["name"],
+        "actor_id": actor["id"],
+        "actor_role": actor["role"],
         "user_agent": user_agent,
     }
     if extra_data:
@@ -319,8 +325,9 @@ def audit(
                 INSERT INTO ActivityLogs (
                     Timestamp, Action, Detail, ClientIP,
                     EventId, RequestId, Module, ActionCode, Outcome, Severity,
-                    ResourceType, ResourceId, Summary, UserAgent
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ResourceType, ResourceId, Summary, UserAgent,
+                    ActorName, ActorId, ActorRole
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     stamp,
@@ -337,6 +344,9 @@ def audit(
                     resource_id,
                     summary[:2000],
                     user_agent,
+                    actor["name"],
+                    actor["id"],
+                    actor["role"],
                 ),
             )
     except DatabaseError as error:

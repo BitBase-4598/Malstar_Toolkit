@@ -365,6 +365,44 @@ def test_api_health_leave_dashboard():
     assert "kpis" in gca.get_json()["data"]
 
 
+def _entra_principal(name, role):
+    import base64
+    payload = {
+        "claims": [
+            {"typ": "preferred_username", "val": name},
+            {"typ": "http://schemas.microsoft.com/identity/claims/objectidentifier", "val": "oid-1"},
+            {"typ": "roles", "val": role},
+        ]
+    }
+    return base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+
+
+def test_entra_viewer_cannot_edit_and_audit_records_the_user():
+    migrate()
+    from app import create_app
+    from logging_util import audit
+
+    test_app = create_app()
+    client = test_app.test_client()
+    headers = {"X-MS-CLIENT-PRINCIPAL": _entra_principal("ada@maersk.com", "Malstar.Viewer")}
+    denied = client.post("/api/dashboard/import", json={"records": []}, headers=headers)
+    assert denied.status_code == 403
+    allowed = client.post(
+        "/api/dashboard/import",
+        json={"records": []},
+        headers={"X-MS-CLIENT-PRINCIPAL": _entra_principal("ada@maersk.com", "Malstar.Editor")},
+    )
+    assert allowed.status_code == 400
+    with test_app.test_request_context(headers=headers):
+        audit("record.create", summary="signed in")
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT ActorName, ActorRole FROM ActivityLogs WHERE Summary='signed in' ORDER BY ID DESC LIMIT 1"
+        ).fetchone()
+    assert row["ActorName"] == "ada@maersk.com"
+    assert row["ActorRole"] == "viewer"
+
+
 def test_audit_writes_sqlite_and_json():
     migrate()
     from config import LOG_PATH
