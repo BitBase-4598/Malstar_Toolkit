@@ -1,6 +1,7 @@
 ---
 date: 2026-11-09
 chat: Ops dashboard GSC Area and PDF
+aliases: ["Session: Ops dashboard GSC Area and PDF"]
 tags: [session]
 ---
 # Session: Ops dashboard GSC Area and PDF

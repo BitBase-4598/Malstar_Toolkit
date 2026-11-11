@@ -12,6 +12,8 @@ A row is GSC when its mailbox matches one of the five shared addresses, ignoring
 - [[MALSTAR Ops]]
 - [[gsc-five-mailboxes]]
 - [[area-is-everyone-else]]
+- [[conclusion-leads-follow-data]]
 
 ## Sessions
 - [[Session: Ops dashboard GSC Area and PDF]]
+- [[Session: Ops dashboard accuracy fixes]]

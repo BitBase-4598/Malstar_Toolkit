@@ -14,7 +14,9 @@ tags: [moc]
 - [[GSC and Area]]
 - [[Handler roster]]
 - [[Ops PDF export]]
+- [[Booking repeats]]
+- [[Conclusion leads]]
 
 ## Open tasks
 
-See [[Open tasks]].
+See [[Open tasks]]. Active: Azure deploy login is failing; confirm the booking repeat rule.
