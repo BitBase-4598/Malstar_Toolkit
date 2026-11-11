@@ -29,6 +29,9 @@ function volumeByHour(rows, weekdayId) {
   const counts = Array(24).fill(0);
   const wanted = weekdayId === "all" ? null : Number(weekdayId);
   for (const row of rows) {
+    if (row.isRepeat) {
+      continue;
+    }
     const stamp = parseReceivedStamp(row.emailReceived);
     if (!stamp) {
       continue;
@@ -46,69 +49,18 @@ function volumeByHour(rows, weekdayId) {
   }));
 }
 
-const TIME_USAGE_MIN_MINUTES = 1.7;
-const TIME_USAGE_MAX_MINUTES = 1440;
-
 function roundOne(value) {
   return Math.round(value * 10) / 10;
 }
 
+// Same rule as is_converted_status in backend/services/dashboard_analytics.py.
+// Metric math lives in the backend; this is only used to colour status pills.
 function isConvertedStatus(status) {
-  return String(status || "").toLowerCase().includes("converted");
-}
-
-function hasCompleteUsageTimes(row) {
-  return Boolean(String(row.handlingTime || "").trim() && String(row.bookingConvertedTime || "").trim());
-}
-
-function isValidTimeUsage(row) {
-  if (!isConvertedStatus(row.emailStatus) || !hasCompleteUsageTimes(row)) {
+  const text = String(status || "").toLowerCase();
+  if (!/(^|[^a-z])converted(?![a-z])/.test(text)) {
     return false;
   }
-  if (row.processMinutes == null || row.processMinutes === "") {
-    return false;
-  }
-  const value = Number(row.processMinutes);
-  return Number.isFinite(value) && value >= TIME_USAGE_MIN_MINUTES && value <= TIME_USAGE_MAX_MINUTES;
-}
-
-function rosterKeys(names) {
-  return new Set((names || []).map((name) => String(name || "").trim().toLowerCase()).filter(Boolean));
-}
-
-function processAverages(rows, allowed) {
-  const all = [];
-  const byHandler = new Map();
-  for (const row of rows) {
-    if (!isValidTimeUsage(row)) {
-      continue;
-    }
-    const value = Number(row.processMinutes);
-    all.push(value);
-    const handler = row.handledBy || "(blank)";
-    if (allowed && !allowed.has(shortHandler(handler).toLowerCase())) {
-      continue;
-    }
-    const list = byHandler.get(handler);
-    if (list) {
-      list.push(value);
-    } else {
-      byHandler.set(handler, [value]);
-    }
-  }
-  const avg = all.length ? roundOne(all.reduce((sum, value) => sum + value, 0) / all.length) : null;
-  const processByHandler = [...byHandler.entries()]
-    .map(([label, values]) => ({
-      label,
-      minutes: roundOne(values.reduce((sum, value) => sum + value, 0) / values.length),
-      count: values.length,
-    }))
-    .sort((left, right) => right.minutes - left.minutes || left.label.localeCompare(right.label));
-  const peak = processByHandler[0]?.minutes;
-  for (const item of processByHandler) {
-    item.isMax = item.minutes === peak;
-  }
-  return { avg, count: all.length, processByHandler };
+  return !/\b(not|non|un)[\s\-_]*converted/.test(text);
 }
 
 function groupConclusions(items) {
@@ -173,7 +125,7 @@ function formatMinutes(value) {
 
 function statusTone(status) {
   const text = String(status || "").toLowerCase();
-  if (text.includes("converted")) {
+  if (isConvertedStatus(text)) {
     return "converted";
   }
   if (text.includes("processing")) {
@@ -910,12 +862,9 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
   const hourItems = useMemo(() => volumeByHour(rows, hourWeekday), [rows, hourWeekday]);
   const hourWeekdayLabel = WEEKDAY_FILTERS.find((item) => item.id === hourWeekday)?.label || "All";
   const handlerRoster = meta?.handlerRoster || [];
-  const processStats = useMemo(
-    () => processAverages(rows, rosterKeys(handlerRoster)),
-    [rows, handlerRoster]
-  );
+  const processByHandler = data?.series?.processByHandler || [];
   const quadrantPoints = useMemo(() => {
-    const minutes = new Map(processStats.processByHandler.map((item) => [item.label, item.minutes]));
+    const minutes = new Map(processByHandler.map((item) => [item.label, item.minutes]));
     return (data?.series?.byHandler || [])
       .map((item) => ({
         label: item.label,
@@ -923,7 +872,7 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
         count: Number(item.count) || 0,
       }))
       .filter((item) => item.count > 0 && Number.isFinite(item.minutes));
-  }, [data?.series?.byHandler, processStats.processByHandler]);
+  }, [data?.series?.byHandler, processByHandler]);
   const avgProcessNote = "Shipment Converted, 1.7–1440 min";
   const conclusions = data?.conclusions || [];
   const conclusionPeriod = meta?.dateFrom && meta?.dateTo
@@ -1047,7 +996,7 @@ const Dashboard = forwardRef(function Dashboard({ onNotice, onRefreshLogs, onImp
                   </div>
                 </div>
                 <div className="dash-chart-body">
-                  <BarList items={processStats.processByHandler} valueKey="minutes" highlightKey="isMax" />
+                  <BarList items={processByHandler} valueKey="minutes" highlightKey="isMax" />
                 </div>
               </section>
               <section className="card">

@@ -5,6 +5,7 @@ tags: [moc]
 
 ## Recent sessions
 
+- [[Session: Ops dashboard accuracy fixes]]
 - [[Session: Ops dashboard GSC Area and PDF]]
 
 ## Active concepts
