@@ -246,16 +246,142 @@ def test_handler_roster_drops_people_outside_the_list():
         )
         payload = build_dashboard_payload(conn, "2026-11-03", "2026-11-03")
         labels = [item["label"] for item in payload["series"]["byHandler"]]
-        assert labels == ["qing.huang@lns.maersk.com"]
+        assert labels == ["qing.huang"]
         assert "qing.huang" in payload["meta"]["handlerRoster"]
         save_handler_roster(conn, "someone.else\nqing.huang")
         custom = build_dashboard_payload(conn, "2026-11-03", "2026-11-03")
         assert [item["label"] for item in custom["series"]["byHandler"]] == [
-            "qing.huang@lns.maersk.com",
-            "someone.else@lns.maersk.com",
+            "qing.huang",
+            "someone.else",
         ]
         conn.execute("DELETE FROM DashboardBookings")
         conn.execute("DELETE FROM DashboardHandlerRoster")
+
+
+_BOOKING_INSERT = """
+    INSERT INTO DashboardBookings (
+        OrderNumber, ShipmentNumber, MessageId, ReportDate, EmailReceived,
+        EmailStatus, HandledBy, HandlingTime, BookingConvertedTime,
+        Subject, Mailbox, HandleWaitMinutes, ProcessMinutes
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+"""
+_GSC = "CUSLCL.SZH@LnS.maersk.com"
+_AREA = "CN.South.MOF@lns.maersk.com"
+
+
+def _booking(order, mid, mailbox, process, status="AI-Booking: Converted",
+             handler="qing.huang@lns.maersk.com", shipment="S", received_hour=8):
+    received = f"2026-11-04 {received_hour:02d}:00:00"
+    handled = f"2026-11-04 {received_hour:02d}:10:00"
+    converted_hour, converted_min = divmod(received_hour * 60 + 10 + process, 60)
+    converted = f"2026-11-04 {converted_hour:02d}:{converted_min:02d}:00"
+    return (order, shipment, mid, "2026-11-04", received, status, handler,
+            handled, converted, "", mailbox, 10, process)
+
+
+def _payload_for(rows):
+    migrate()
+    with get_connection() as conn:
+        conn.execute("DELETE FROM DashboardBookings")
+        conn.execute("DELETE FROM DashboardHandlerRoster")
+        conn.executemany(_BOOKING_INSERT, rows)
+        try:
+            return build_dashboard_payload(conn, "2026-11-04", "2026-11-04")
+        finally:
+            conn.execute("DELETE FROM DashboardBookings")
+
+
+def _lead(payload, kind):
+    return next(item["lead"] for item in payload["conclusions"] if item["kind"] == kind)
+
+
+def test_converted_status_rejects_negations():
+    from services.dashboard_analytics import is_converted_status
+
+    for good in ("Converted", "Shipment Converted", "AI-Booking: Converted"):
+        assert is_converted_status(good), good
+    for bad in ("Not converted", "Non-converted", "Unconverted", "AI-Booking: Not Converted", "Processing", ""):
+        assert not is_converted_status(bad), bad
+
+
+def test_overview_lead_follows_the_numbers():
+    gsc_wins = _payload_for([
+        _booking("G1", "M1", _GSC, 10),
+        _booking("A1", "M2", _AREA, 40),
+        _booking("A2", "M3", _AREA, 40, status="Processing"),
+    ])
+    assert _lead(gsc_wins, "overview") == (
+        "GSC converted a larger share of bookings (100.0% vs 50.0%) and processed them faster (10.0 vs 40.0 min)."
+    )
+    area_wins = _payload_for([
+        _booking("G1", "M1", _GSC, 40),
+        _booking("G2", "M2", _GSC, 40, status="Processing"),
+        _booking("A1", "M3", _AREA, 10),
+    ])
+    lead = _lead(area_wins, "overview")
+    assert lead.startswith("Area converted a larger share")
+    assert "GSC converted a larger" not in lead
+    split = _payload_for([
+        _booking("G1", "M1", _GSC, 10),
+        _booking("G2", "M2", _GSC, 10, status="Processing"),
+        _booking("A1", "M3", _AREA, 40),
+    ])
+    assert _lead(split, "overview") == (
+        "Area converted a larger share of bookings (100.0% vs 50.0%), but GSC processed faster (10.0 vs 40.0 min)."
+    )
+    only_gsc = _payload_for([_booking("G1", "M1", _GSC, 10)])
+    assert _lead(only_gsc, "overview") == "Only GSC mailboxes received bookings in this period."
+
+
+def test_volume_and_flagged_leads_follow_the_numbers():
+    payload = _payload_for([
+        _booking("A1", "M1", _AREA, 10, received_hour=14),
+        _booking("A2", "M2", _AREA, 10, received_hour=15),
+        _booking("A3", "M3", _AREA, 10, received_hour=9, shipment=""),
+    ])
+    assert _lead(payload, "by-hour") == "67% of mail arrives after noon."
+    flagged = _lead(payload, "flagged")
+    assert "Missing shipment" in flagged or "Highest process-time" in flagged
+
+
+def test_flagged_count_is_not_capped():
+    rows = [_booking(f"O{i}", f"M{i}", _AREA, 10, shipment="") for i in range(55)]
+    payload = _payload_for(rows)
+    assert len(payload["flagged"]) == 55
+    flagged_note = next(item for item in payload["conclusions"] if item["kind"] == "flagged")
+    assert flagged_note["text"].startswith("55 flagged")
+
+
+def test_repeated_rows_count_once_but_stay_visible():
+    payload = _payload_for([
+        _booking("O1", "M1", _GSC, 10),
+        _booking("O1", "M1", _GSC, 10),          # exact repeat of the same booking
+        _booking("O2", "M1", _GSC, 20),          # same email, different order: real booking
+        _booking("O3", "", _AREA, 30),           # no message id: always kept
+        _booking("O4", "", _AREA, 30),
+    ])
+    assert payload["kpis"]["total"] == 4
+    assert payload["kpis"]["repeatRows"] == 1
+    assert payload["compare"]["gsc"]["total"] == 2
+    assert payload["meta"]["filteredCount"] == 5
+    assert len(payload["rows"]) == 5
+    assert sum(row["isRepeat"] for row in payload["rows"]) == 1
+    reasons = {reason for row in payload["flagged"] for reason in row["reasons"]}
+    assert "Duplicate message id" in reasons
+
+
+def test_handler_variants_merge_into_one_bar():
+    payload = _payload_for([
+        _booking("O1", "M1", _GSC, 10, handler="Qing.Huang@lns.maersk.com"),
+        _booking("O2", "M2", _GSC, 30, handler="qing.huang@maersk.com"),
+        _booking("O3", "M3", _GSC, 20, handler="nathan.li@lns.maersk.com"),
+    ])
+    assert payload["series"]["byHandler"] == [
+        {"label": "qing.huang", "count": 2},
+        {"label": "nathan.li", "count": 1},
+    ]
+    process = {item["label"]: item["minutes"] for item in payload["series"]["processByHandler"]}
+    assert process == {"qing.huang": 20.0, "nathan.li": 20.0}
 
 
 def test_ops_pdf_contains_gsc_and_area():

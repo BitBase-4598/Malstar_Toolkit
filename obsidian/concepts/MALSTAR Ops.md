@@ -14,6 +14,12 @@ The page is the `Dashboard` tool, Ops sub-page. Metrics live in `backend/service
 - [[Ops PDF export]]
 - [[gsc-five-mailboxes]]
 - [[ops-conclusions-are-six-sections]]
+- [[Booking repeats]]
+- [[Conclusion leads]]
+- [[metrics-computed-in-backend-only]]
+- [[converted-excludes-negations]]
+- [[flagged-rows-uncapped]]
 
 ## Sessions
 - [[Session: Ops dashboard GSC Area and PDF]]
+- [[Session: Ops dashboard accuracy fixes]]

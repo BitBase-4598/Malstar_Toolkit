@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 
 from config import DASHBOARD_MISSING
@@ -108,8 +109,17 @@ def dashboard_row_to_dict(row):
     }
 
 
+_CONVERTED_WORD = re.compile(r"(?<![a-z])converted(?![a-z])")
+_NOT_CONVERTED = re.compile(r"(?:\bnot|\bnon|\bun)[\s\-_]*converted")
+
+
 def is_converted_status(status):
-    return "converted" in str(status or "").casefold()
+    """True for "Converted" / "Shipment Converted" / "AI-Booking: Converted",
+    false for "Not converted", "Non-converted", "Unconverted"."""
+    text = str(status or "").casefold()
+    if not _CONVERTED_WORD.search(text):
+        return False
+    return not _NOT_CONVERTED.search(text)
 
 
 def is_processing_status(status):
@@ -335,6 +345,71 @@ def weekday_hour_peaks(items):
     return peaks
 
 
+def overview_lead(gsc, area):
+    """One sentence comparing GSC and Area, derived from the numbers."""
+    if not gsc["total"] and not area["total"]:
+        return ""
+    if not area["total"]:
+        return "Only GSC mailboxes received bookings in this period."
+    if not gsc["total"]:
+        return "Only Area mailboxes received bookings in this period."
+
+    gsc_rate, area_rate = gsc["conversionRate"], area["conversionRate"]
+    if gsc_rate == area_rate:
+        rate_leader = ""
+        rate_text = f"GSC and Area converted the same share of bookings ({gsc_rate}%)"
+    else:
+        rate_leader = "GSC" if gsc_rate > area_rate else "Area"
+        high, low = max(gsc_rate, area_rate), min(gsc_rate, area_rate)
+        rate_text = f"{rate_leader} converted a larger share of bookings ({high}% vs {low}%)"
+
+    gsc_min, area_min = gsc["avgProcessMinutes"], area["avgProcessMinutes"]
+    if gsc_min is None or area_min is None:
+        return f"{rate_text}."
+    if gsc_min == area_min:
+        return f"{rate_text}, and both took {gsc_min} min to process on average."
+    speed_leader = "GSC" if gsc_min < area_min else "Area"
+    fast, slow = min(gsc_min, area_min), max(gsc_min, area_min)
+    speed = f"{fast} vs {slow} min"
+    if not rate_leader:
+        return f"{rate_text}; {speed_leader} processed faster ({speed})."
+    if speed_leader == rate_leader:
+        return f"{rate_text} and processed them faster ({speed})."
+    return f"{rate_text}, but {speed_leader} processed faster ({speed})."
+
+
+def volume_lead(by_hour, weekday_peaks):
+    total = sum(item["count"] for item in by_hour)
+    if not total:
+        return "There is no received time to place mail on the clock."
+    morning = sum(item["count"] for item in by_hour[:12])
+    share = round(morning * 100 / total)
+    if share >= 50:
+        when = f"{share}% of mail arrives before noon"
+    else:
+        when = f"{100 - share}% of mail arrives after noon"
+    labels = {item["label"] for item in weekday_peaks}
+    if len(weekday_peaks) <= 1:
+        return f"{when}."
+    if len(labels) == 1:
+        return f"{when}, and every weekday peaks at the same hour."
+    return f"{when}, and the busiest hour shifts by weekday."
+
+
+def flagged_lead(flagged):
+    if not flagged:
+        return "No rows were flagged in this period."
+    reason_counts = {}
+    for item in flagged:
+        for reason in item["reasons"]:
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+    reason, count = max(reason_counts.items(), key=lambda pair: (pair[1], pair[0]))
+    total = len(flagged)
+    if count * 2 > total:
+        return f"Most flagged rows are \"{reason}\" ({count} of {total})."
+    return f"The most common flag is \"{reason}\" ({count} of {total})."
+
+
 def _section_conclusions(
     period,
     items,
@@ -392,7 +467,7 @@ def _section_conclusions(
             area_summary["avgWaitLabel"],
         ],
         period,
-        lead="GSC turned a larger share of bookings into shipments, and did it in less time than Area.",
+        lead=overview_lead(gsc_summary, area_summary),
     ))
 
     if top_handler:
@@ -464,7 +539,7 @@ def _section_conclusions(
             hour_text,
             [peak["label"], str(peak["count"]), *[item["weekday"] for item in weekday_peaks], *[item["label"] for item in weekday_peaks]],
             period,
-            lead="Inbound mail bunches in the morning, and the busiest hour shifts by weekday.",
+            lead=volume_lead(by_hour, weekday_peaks),
         ))
     else:
         notes.append(section_note(
@@ -477,16 +552,16 @@ def _section_conclusions(
         ))
 
     flagged_text = (
-        f"{len(flagged[:40])} flagged, {len(processing)} processing, "
+        f"{len(flagged)} flagged, {len(processing)} processing, "
         f"{len(missing_ship)} missing shipment."
     )
     notes.append(section_note(
         "flagged",
         "Flagged rows",
         flagged_text,
-        [str(len(flagged[:40])), str(len(processing)), str(len(missing_ship))],
+        [str(len(flagged)), str(len(processing)), str(len(missing_ship))],
         period,
-        lead="Most of the abnormal rows are still open or never received a shipment number.",
+        lead=flagged_lead(flagged),
     ))
     return notes
 
@@ -500,6 +575,21 @@ def split_gsc_area(items):
         else:
             area.append(item)
     return gsc, area
+
+
+def drop_repeated_rows(items):
+    """Keep one row per (message id, order number). Rows without a message id are
+    always kept. An email that produced several different orders is not a repeat.
+    The last copy wins because rows arrive ordered by date and handling time."""
+    last = {}
+    for item in items:
+        mid = item.get("messageId")
+        key = (mid, item.get("orderNumber") or "") if mid else ("#id", item["id"])
+        last[key] = item["id"]
+    kept_ids = set(last.values())
+    unique = [item for item in items if item["id"] in kept_ids]
+    repeat_ids = {item["id"] for item in items if item["id"] not in kept_ids}
+    return unique, repeat_ids
 
 
 def selected_mailbox_keys(mailbox):
@@ -554,9 +644,11 @@ def build_dashboard_payload(conn, date_from="", date_to="", mailbox=""):
     selected_mailboxes = selected_mailbox_keys(mailbox)
     selected_keys = set(selected_mailboxes)
     if selected_keys:
-        items = [item for item in date_items if (item["mailbox"] or BLANK_MAILBOX) in selected_keys]
+        all_items = [item for item in date_items if (item["mailbox"] or BLANK_MAILBOX) in selected_keys]
     else:
-        items = date_items
+        all_items = date_items
+    # Metrics count each booking once; repeated copies stay visible in rows/flagged.
+    items, repeat_ids = drop_repeated_rows(all_items)
     total = len(items)
     converted = [item for item in items if is_converted_status(item["emailStatus"])]
     processing = [item for item in items if is_processing_status(item["emailStatus"])]
@@ -575,14 +667,15 @@ def build_dashboard_payload(conn, date_from="", date_to="", mailbox=""):
     if usage_ok:
         max_process = max(usage_ok, key=lambda item: item["processMinutes"])
     roster = handler_roster(conn)
-    roster_keys = {handler_key(name) for name in roster}
+    # Group by the part before "@", ignoring case, and label with the roster spelling,
+    # so "Nathan.Li@a.com" and "nathan.li@b.com" are one person.
+    roster_labels = {handler_key(name): name for name in roster}
     handler_counts = {}
     handler_process = {}
     for item in items:
-        key = handler_key(item.get("handledBy"))
-        if key not in roster_keys:
+        handler = roster_labels.get(handler_key(item.get("handledBy")))
+        if handler is None:
             continue
-        handler = item["handledBy"] or "(blank)"
         handler_counts[handler] = handler_counts.get(handler, 0) + 1
         if is_valid_time_usage(item):
             handler_process.setdefault(handler, []).append(item["processMinutes"])
@@ -636,7 +729,7 @@ def build_dashboard_payload(conn, date_from="", date_to="", mailbox=""):
         slowest_wait = max(turn_ok, key=lambda item: item["handleWaitMinutes"])
 
     message_ids = {}
-    for item in items:
+    for item in all_items:
         mid = item["messageId"]
         if not mid:
             continue
@@ -696,7 +789,7 @@ def build_dashboard_payload(conn, date_from="", date_to="", mailbox=""):
             "filename": meta_row["Filename"] if meta_row else "",
             "uploadedAt": meta_row["UploadedAt"] if meta_row else "",
             "rowCount": meta_row["RowCount"] if meta_row else stored_count,
-            "filteredCount": total,
+            "filteredCount": len(all_items),
             "dateMin": date_min,
             "dateMax": date_max,
             "dateFrom": date_from or date_min,
@@ -712,6 +805,7 @@ def build_dashboard_payload(conn, date_from="", date_to="", mailbox=""):
         },
         "kpis": {
             "total": total,
+            "repeatRows": len(repeat_ids),
             "converted": len(converted),
             "processing": len(processing),
             "conversionRate": round((len(converted) / total) * 100, 1) if total else 0,
@@ -731,7 +825,7 @@ def build_dashboard_payload(conn, date_from="", date_to="", mailbox=""):
             "processByHandler": avg_by_handler,
         },
         "conclusions": conclusions,
-        "flagged": flagged[:40],
+        "flagged": flagged,
         "rows": [
             {
                 "id": item["id"],
@@ -748,7 +842,8 @@ def build_dashboard_payload(conn, date_from="", date_to="", mailbox=""):
                 "mailbox": item.get("mailbox") or "",
                 "handleWaitMinutes": item["handleWaitMinutes"],
                 "processMinutes": item["processMinutes"],
+                "isRepeat": item["id"] in repeat_ids,
             }
-            for item in items
+            for item in all_items
         ],
     }
