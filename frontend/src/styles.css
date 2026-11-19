@@ -3899,6 +3899,21 @@ tbody tr.selected td {
   padding: 8px 0 0;
 }
 
+.search-chips.is-loose {
+  flex-wrap: nowrap;
+  overflow: visible;
+  gap: 4px;
+  padding: 2px 0 8px;
+}
+
+.search-chips.is-loose button {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 5px 7px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 html.lcl-html,
 html.lcl-html body,
 html.lcl-html #root {
@@ -4525,5 +4540,293 @@ html.lcl-html #root {
   .dash-toolbar {
     position: static;
     box-shadow: none;
+  }
+}
+
+.page-panel.active:has(.prefill) {
+  overflow: hidden;
+}
+
+.prefill {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.prefill-section.prefill-query {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "keys reset"
+    "combos combos";
+  align-items: end;
+  gap: 8px 12px;
+  flex-shrink: 0;
+  padding: 12px 14px;
+  background: #d7eef7;
+  border-color: #5eb6d6;
+  box-shadow: inset 4px 0 0 #0077b2;
+}
+
+.prefill-query .prefill-keys {
+  grid-area: keys;
+}
+
+.prefill-reset {
+  grid-area: reset;
+  align-self: end;
+  padding: 8px 14px;
+}
+
+.prefill-query .prefill-combos {
+  grid-area: combos;
+  margin: 0;
+  padding: 0;
+}
+
+.prefill-keys {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.prefill-board {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: max-content max-content max-content;
+  align-content: start;
+  gap: 8px;
+  overflow: auto;
+}
+
+.prefill-board .is-shipper {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.prefill-board .is-consignee {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.prefill-board .is-location {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.prefill-board .is-partners {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.prefill-board .is-details {
+  grid-column: 1 / -1;
+  grid-row: 3;
+}
+
+.prefill-key {
+  position: relative;
+}
+
+.prefill-key input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--maersk-white);
+  border: 1.5px solid #0077b2;
+  border-radius: var(--radius-sm);
+  color: var(--maersk-navy);
+  font: inherit;
+  font-size: var(--type-ui);
+  padding: 8px 28px 8px 10px;
+}
+
+.prefill-key input:focus {
+  outline: 2px solid var(--maersk-navy);
+  outline-offset: 0;
+}
+
+.prefill-key button {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--maersk-muted);
+  cursor: pointer;
+}
+
+.prefill-combos {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-top: 0;
+}
+
+.prefill-combos button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.prefill-section {
+  border: 1px solid var(--maersk-border);
+  border-radius: var(--radius);
+  background: var(--maersk-white);
+  padding: 8px 10px;
+  min-height: max-content;
+  height: auto;
+  overflow: hidden;
+}
+
+.prefill-section h2 {
+  margin: 0 0 4px;
+  color: var(--maersk-navy);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.prefill-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.prefill-cell {
+  min-width: 0;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+}
+
+.prefill-cell.is-wide {
+  grid-column: span 2;
+}
+
+.prefill-cell.is-suggested {
+  background: #f4ecff;
+}
+
+.prefill-label {
+  display: block;
+  color: var(--maersk-muted);
+  font-size: var(--type-label);
+}
+
+.prefill-value {
+  display: block;
+  width: 100%;
+  min-height: 1.15em;
+  margin: 1px 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--maersk-navy);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+button.prefill-value {
+  cursor: pointer;
+}
+
+.prefill-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--maersk-muted);
+  font-size: var(--type-label);
+}
+
+.prefill-badge {
+  margin-left: 0;
+  text-transform: none;
+}
+
+.prefill-badge.is-high {
+  background: var(--maersk-success-bg);
+  color: #1f6b1a;
+}
+
+.prefill-badge.is-mid {
+  background: #e8f6fb;
+  color: var(--maersk-blue-dark);
+}
+
+.prefill-badge.is-low {
+  background: var(--maersk-row);
+  color: var(--maersk-navy);
+}
+
+.is-shipper .prefill-grid,
+.is-consignee .prefill-grid,
+.is-location .prefill-grid,
+.is-partners .prefill-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.is-details .prefill-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.prefill-disclosure {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin: 0;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--maersk-navy);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.prefill-disclosure svg {
+  flex-shrink: 0;
+  transform: rotate(-90deg);
+}
+
+.prefill-disclosure svg.is-open {
+  transform: none;
+}
+
+@media (max-width: 900px) {
+  .workspace:has(.prefill),
+  .page:has(.prefill) {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .page:has(.prefill) .page-stack,
+  .page:has(.prefill) .page-panel.active {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
+    overflow: hidden;
   }
 }

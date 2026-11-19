@@ -46,7 +46,7 @@ export default function App() {
   const [dashPage, setDashPage] = useState("ops");
   const [dashPagesVisited, setDashPagesVisited] = useState({ ops: true });
   const [recordsImporting, setRecordsImporting] = useState(false);
-  const [searchTab, setSearchTab] = useState("remarks");
+  const [searchTab, setSearchTab] = useState("prefill");
 
   const refreshLogs = useCallback(async () => {
     setLogsLoading(true);

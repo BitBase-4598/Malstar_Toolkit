@@ -12,6 +12,7 @@ import IcbTable from "./IcbTable";
 import UnlocoTable from "./UnlocoTable";
 import DeLclTable from "./DeLclTable";
 import DeBoschTable from "./DeBoschTable";
+import TwPrefillPanel from "./TwPrefillPanel";
 import useConfirm from "./useConfirm";
 
 const emptyForm = {
@@ -64,6 +65,7 @@ const emptyDebosch = {
 };
 
 const SEARCH_TABS = [
+  { id: "prefill", label: "Prefill Suggestion" },
   { id: "remarks", label: "Controlling Customer" },
   { id: "icb", label: "Controlling Agent" },
   { id: "unlocode", label: "UNLOCODE" },
@@ -80,6 +82,7 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
   const unlocoFileRef = useRef();
   const delclFileRef = useRef();
   const deboschFileRef = useRef();
+  const prefillFileRef = useRef();
   const [confirm, confirmDialog] = useConfirm();
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -156,6 +159,8 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
   const [deboschMeta, setDeboschMeta] = useState({ filename: "", importedAt: "", rowCount: 0 });
   const [deboschLoading, setDeboschLoading] = useState(false);
   const deboschLoadSeq = useRef(0);
+  const [prefillImporting, setPrefillImporting] = useState(false);
+  const [prefillReload, setPrefillReload] = useState(0);
 
   const remarksQuery = debounced.trim();
   const cacheKey = (q, targetPage) => `${q}|${targetPage}`;
@@ -231,8 +236,8 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
   }, [query]);
 
   useEffect(() => {
-    onImportingChange?.(importing || icbImporting || unlocoImporting || delclImporting || deboschImporting);
-  }, [importing, icbImporting, unlocoImporting, delclImporting, deboschImporting, onImportingChange]);
+    onImportingChange?.(importing || icbImporting || unlocoImporting || delclImporting || deboschImporting || prefillImporting);
+  }, [importing, icbImporting, unlocoImporting, delclImporting, deboschImporting, prefillImporting, onImportingChange]);
 
   const load = useCallback(async (signal) => {
     const seq = ++loadSeq.current;
@@ -646,13 +651,17 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
       deboschFileRef.current?.click();
       return;
     }
+    if (searchTab === "prefill") {
+      prefillFileRef.current?.click();
+      return;
+    }
     remarksFileRef.current?.click();
   };
 
   useImperativeHandle(ref, () => ({
     openNew,
     openUpload,
-    importing: importing || icbImporting || unlocoImporting || delclImporting || deboschImporting,
+    importing: importing || icbImporting || unlocoImporting || delclImporting || deboschImporting || prefillImporting,
   }));
 
   const openEdit = (row) => {
@@ -1101,6 +1110,25 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
     }
   };
 
+  const uploadTwPrefill = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    setPrefillImporting(true);
+    try {
+      const result = await api.importTwPrefill(file);
+      onNotice?.({ type: "success", text: result.message });
+      setPrefillReload((current) => current + 1);
+      await onRefreshLogs?.();
+    } catch (error) {
+      onNotice?.({ type: "error", text: error.message });
+    } finally {
+      setPrefillImporting(false);
+      event.target.value = "";
+    }
+  };
+
   const changePage = (next) => {
     const target = typeof next === "function" ? next(page) : Number(next);
     if (!Number.isFinite(target) || target < 1 || target === page) {
@@ -1138,34 +1166,39 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
         accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         onChange={uploadDebosch}
       />
-      <div className="page-intro">
-        <p>Search controlling customer, controlling agent, UNLOCODE, DE-LCL, or DE-BOSCH.</p>
-      </div>
-      <div className="search">
-        <Search size={19} />
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder={
-            searchTab === "debosch"
-              ? "Organization name, codes, UNLOCO, city, or postcode"
-              : searchTab === "delcl"
-                ? "Consignee, orga code, senator, or delivery agent"
-                : searchTab === "unlocode"
-                ? "Country name, country, UNLOCODE, or port"
-                : searchTab === "icb"
-                  ? "Company, port, UNLOCODE, or ICB code"
-                  : "Company name or CTRLOrgcode"
-          }
-          aria-describedby="search-hint"
-        />
-        {query ? (
-          <button type="button" onClick={() => setQuery("")} aria-label="Clear search">
-            <X size={17} />
-          </button>
-        ) : null}
-      </div>
-      <div className="filter-chips search-chips" role="tablist" aria-label="Search results">
+      <input ref={prefillFileRef} hidden type="file" accept=".csv,text/csv" onChange={uploadTwPrefill} />
+      {searchTab === "prefill" ? null : (
+        <div className="page-intro">
+          <p>Search controlling customer, controlling agent, UNLOCODE, DE-LCL, or DE-BOSCH.</p>
+        </div>
+      )}
+      {searchTab === "prefill" ? null : (
+        <div className="search">
+          <Search size={19} />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={
+              searchTab === "debosch"
+                ? "Organization name, codes, UNLOCO, city, or postcode"
+                : searchTab === "delcl"
+                  ? "Consignee, orga code, senator, or delivery agent"
+                  : searchTab === "unlocode"
+                  ? "Country name, country, UNLOCODE, or port"
+                  : searchTab === "icb"
+                    ? "Company, port, UNLOCODE, or ICB code"
+                    : "Company name or CTRLOrgcode"
+            }
+            aria-describedby="search-hint"
+          />
+          {query ? (
+            <button type="button" onClick={() => setQuery("")} aria-label="Clear search">
+              <X size={17} />
+            </button>
+          ) : null}
+        </div>
+      )}
+      <div className={`filter-chips search-chips${searchTab === "prefill" ? " is-loose" : ""}`} role="tablist" aria-label="Search results">
         {SEARCH_TABS.map((tab) => (
           <button
             key={tab.id}
@@ -1179,6 +1212,7 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
           </button>
         ))}
       </div>
+      {searchTab === "prefill" ? null : (
       <p id="search-hint" className="search-hint">
         {searchTab === "debosch"
           ? deboschMeta.rowCount
@@ -1198,7 +1232,14 @@ const RecordsWorkspace = forwardRef(function RecordsWorkspace(
                 : "Import ICB.csv to load stations. Search country, branch, UNLOCO, agent, or ICB."
               : "Company names match letters only. CTRLOrgcode matches the code as typed."}
       </p>
-      {searchTab === "debosch" ? (
+      )}
+      {searchTab === "prefill" ? (
+        <TwPrefillPanel
+          onNotice={onNotice}
+          onCopyError={(message) => onNotice?.({ type: "error", text: message })}
+          reloadToken={prefillReload}
+        />
+      ) : searchTab === "debosch" ? (
         <DeBoschTable
           rows={deboschRows}
           loading={deboschLoading}

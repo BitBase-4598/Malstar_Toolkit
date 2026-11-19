@@ -475,6 +475,41 @@ def _create_tables(conn):
             Version INTEGER NOT NULL
         )
     """)
+    conn.execute(_sql("""
+        CREATE TABLE IF NOT EXISTS TwPrefillShipments (
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            ShipmentId TEXT NOT NULL DEFAULT '',
+            Shipper TEXT NOT NULL DEFAULT '',
+            ShipperName TEXT NOT NULL DEFAULT '',
+            ShipperLetters TEXT NOT NULL DEFAULT '',
+            Consignee TEXT NOT NULL DEFAULT '',
+            ConsigneeName TEXT NOT NULL DEFAULT '',
+            ConsigneeLetters TEXT NOT NULL DEFAULT '',
+            Origin TEXT NOT NULL DEFAULT '',
+            Dest TEXT NOT NULL DEFAULT '',
+            Incoterm TEXT NOT NULL DEFAULT '',
+            SvcLevel TEXT NOT NULL DEFAULT '',
+            HblMode TEXT NOT NULL DEFAULT '',
+            PickupCfs TEXT NOT NULL DEFAULT '',
+            PickupAgent TEXT NOT NULL DEFAULT '',
+            DeliveryAgent TEXT NOT NULL DEFAULT '',
+            ControllingAgent TEXT NOT NULL DEFAULT '',
+            ControllingCustomer TEXT NOT NULL DEFAULT '',
+            Stackability TEXT NOT NULL DEFAULT '',
+            BusinessUnit TEXT NOT NULL DEFAULT '',
+            PlannedDischarge TEXT NOT NULL DEFAULT '',
+            ShipperAddress TEXT NOT NULL DEFAULT '',
+            ConsigneeAddress TEXT NOT NULL DEFAULT ''
+        )
+    """))
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS TwPrefillMeta (
+            ID INTEGER PRIMARY KEY CHECK (ID = 1),
+            Filename TEXT NOT NULL DEFAULT '',
+            ImportedAt TEXT NOT NULL DEFAULT '',
+            RowCount INTEGER NOT NULL DEFAULT 0
+        )
+    """)
     _ensure_rag_fts(conn)
 
 

@@ -1743,6 +1743,78 @@ def test_gateway_get_timeout_is_raised_for_heavy_reads():
     assert _forward_timeout("api/lcl/import", "POST") == WRITE_TIMEOUT
 
 
+_TW_HEADER = (
+    "Shipper,Shipper Full Name,Consignee,Consignee Full Name,Origin,Dest.,"
+    "Incoterm,Svc. lvl.,HBL Dlv. Mode,Pickup CFS,Pickup Agent,Dlv. Agent,"
+    "Controlling Agent,Controlling Customer,Shipment Stackability,Business Unit,"
+    "Planned Discharge,Shipment ID,Consignee Address,Consignee Address 1,"
+    "CN Address 2,CN City,CN State,CN Country/Region,Consignor Address 1,"
+    "CR Address 2,CR City,CR State,CR Country/Region"
+)
+
+
+def _tw_row(shipper, consignee, origin, dest, pickup, shipment):
+    return ",".join([
+        shipper, shipper + " NAME", consignee, consignee + " NAME", origin, dest,
+        "FOB", "STD", "CFS/CFS", pickup, "DAMTAITPE1", "DAMGERHAM",
+        "DAMGERHAM", consignee, "Yes", "SCM", dest, shipment,
+        "", "1 Street", "", "City", "", "DE", "9 Road", "", "Town", "", "TW",
+    ])
+
+
+def test_tw_prefill_suggest_and_rejected_csv():
+    from io import BytesIO
+
+    from app import create_app
+
+    migrate()
+    client = create_app().test_client()
+    lines = [_TW_HEADER]
+    for index in range(12):
+        lines.append(_tw_row("KORINTTPE", "FORLOGBER", "TWTYN", "DEBRV", "INFLOGTPE1", f"S{index}"))
+    for index in range(10):
+        lines.append(_tw_row("KHHSHP", "KHHCEE", "TWKHH", "DEHAM", "INFLOGTPE1", f"K{index}"))
+    for index in range(2):
+        lines.append(_tw_row("OTHERSHP", "OTHERCEE", "TWKHH", "DEHAM", "OTHERCFS", f"T{index}"))
+    payload = ("\n".join(lines) + "\n").encode("utf-8")
+    imported = client.post(
+        "/api/tw-prefill/import",
+        data={"file": (BytesIO(payload), "tw.csv")},
+    )
+    assert imported.status_code == 200, imported.get_json()
+    assert imported.get_json()["data"]["rowCount"] == 24
+
+    hit = client.get("/api/tw-prefill/suggest?shipper=KORINTTPE&origin=TWTYN&dest=DEBRV")
+    body = hit.get_json()
+    combo = body["combos"][0]
+    assert combo["consignee"] == "FORLOGBER"
+    assert combo["pickupCfs"] == "INFLOGTPE1"
+    assert combo["pickupAgent"] == "DAMTAITPE1"
+    assert combo["deliveryAgent"] == "DAMGERHAM"
+    assert combo["controllingAgent"] == "DAMGERHAM"
+    assert combo["controllingCustomer"] == "FORLOGBER"
+    assert combo["incoterm"] == "FOB"
+    assert combo["confidence"] == "高"
+    assert combo["count"] == 12
+
+    origin_only = client.get("/api/tw-prefill/suggest?origin=TWKHH")
+    ranked = origin_only.get_json()["fields"]["pickupCfs"]
+    assert ranked[0]["value"] == "INFLOGTPE1"
+    assert ranked[0]["count"] == 10
+
+    blank = client.get("/api/tw-prefill/suggest")
+    assert blank.get_json()["combos"] == []
+
+    rejected = client.post(
+        "/api/tw-prefill/import",
+        data={"file": (BytesIO(b"Shipper,Consignee\nA,B\n"), "bad.csv")},
+    )
+    assert rejected.status_code == 400
+    assert "Dest." in rejected.get_json()["message"]
+    kept = client.get("/api/tw-prefill/suggest?shipper=KORINTTPE")
+    assert kept.get_json()["total"] == 12
+
+
 if __name__ == "__main__":
     names = [name for name, value in list(globals().items()) if name.startswith("test_") and callable(value)]
     failed = 0

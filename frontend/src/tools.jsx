@@ -23,10 +23,12 @@ function SearchActions({ recordsRef, recordsImporting, searchTab }) {
         <Upload size={16} />
         {recordsImporting ? "Importing..." : searchTab === "delcl" || searchTab === "debosch" ? "Import Excel" : "Import CSV"}
       </button>
-      <button className="primary" type="button" onClick={() => recordsRef.current?.openNew()}>
-        <Plus size={16} />
-        Add record
-      </button>
+      {searchTab === "prefill" ? null : (
+        <button className="primary" type="button" onClick={() => recordsRef.current?.openNew()}>
+          <Plus size={16} />
+          Add record
+        </button>
+      )}
     </>
   );
 }

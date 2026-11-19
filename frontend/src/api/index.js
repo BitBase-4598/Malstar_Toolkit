@@ -12,6 +12,7 @@ import { delclApi } from "./delcl";
 import { deboschApi } from "./debosch";
 import { gcaApi } from "./gca";
 import { casesApi } from "./cases";
+import { twPrefillApi } from "./twPrefill";
 
 export { RECORDS_PAGE_SIZE };
 
@@ -30,4 +31,5 @@ export const api = {
   ...deboschApi,
   ...gcaApi,
   ...casesApi,
+  ...twPrefillApi,
 };
