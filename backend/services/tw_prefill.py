@@ -220,52 +220,102 @@ def parse_csv(data):
     return parse_table(raw_header, reader)
 
 
-def replace_records(filename, records):
+def _row_values(item):
+    return (
+        item["shipmentId"],
+        item["shipper"],
+        item["shipperName"],
+        item["shipperLetters"],
+        item["consignee"],
+        item["consigneeName"],
+        item["consigneeLetters"],
+        item["origin"],
+        item["dest"],
+        item["incoterm"],
+        item["svcLevel"],
+        item["hblMode"],
+        item["pickupCfs"],
+        item["pickupAgent"],
+        item["deliveryAgent"],
+        item["controllingAgent"],
+        item["controllingCustomer"],
+        item["stackability"],
+        item["businessUnit"],
+        item["plannedDischarge"],
+        item["shipperAddress"],
+        item["consigneeAddress"],
+    )
+
+
+def _content_key(item):
+    return _row_values(item)[1:]
+
+
+def append_records(filename, records):
     stamp = now_stamp()
     stored_name = (filename or "tw-prefill.csv")[:200]
-    values = [
-        (
-            item["shipmentId"],
-            item["shipper"],
-            item["shipperName"],
-            item["shipperLetters"],
-            item["consignee"],
-            item["consigneeName"],
-            item["consigneeLetters"],
-            item["origin"],
-            item["dest"],
-            item["incoterm"],
-            item["svcLevel"],
-            item["hblMode"],
-            item["pickupCfs"],
-            item["pickupAgent"],
-            item["deliveryAgent"],
-            item["controllingAgent"],
-            item["controllingCustomer"],
-            item["stackability"],
-            item["businessUnit"],
-            item["plannedDischarge"],
-            item["shipperAddress"],
-            item["consigneeAddress"],
-        )
-        for item in records
-    ]
     with get_connection() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        conn.execute("DELETE FROM TwPrefillShipments")
-        conn.executemany(
-            """
-            INSERT INTO TwPrefillShipments (
-                ShipmentId, Shipper, ShipperName, ShipperLetters,
-                Consignee, ConsigneeName, ConsigneeLetters,
-                Origin, Dest, Incoterm, SvcLevel, HblMode,
-                PickupCfs, PickupAgent, DeliveryAgent,
-                ControllingAgent, ControllingCustomer, Stackability,
-                BusinessUnit, PlannedDischarge, ShipperAddress, ConsigneeAddress
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            values,
-        )
+        existing_ids = {
+            row["ShipmentId"]
+            for row in conn.execute(
+                "SELECT ShipmentId FROM TwPrefillShipments WHERE ShipmentId != ''"
+            )
+        }
+        existing_blank = {
+            (
+                row["Shipper"], row["ShipperName"], row["ShipperLetters"],
+                row["Consignee"], row["ConsigneeName"], row["ConsigneeLetters"],
+                row["Origin"], row["Dest"], row["Incoterm"], row["SvcLevel"], row["HblMode"],
+                row["PickupCfs"], row["PickupAgent"], row["DeliveryAgent"],
+                row["ControllingAgent"], row["ControllingCustomer"], row["Stackability"],
+                row["BusinessUnit"], row["PlannedDischarge"],
+                row["ShipperAddress"], row["ConsigneeAddress"],
+            )
+            for row in conn.execute(
+                """
+                SELECT Shipper, ShipperName, ShipperLetters, Consignee, ConsigneeName,
+                       ConsigneeLetters, Origin, Dest, Incoterm, SvcLevel, HblMode,
+                       PickupCfs, PickupAgent, DeliveryAgent, ControllingAgent,
+                       ControllingCustomer, Stackability, BusinessUnit, PlannedDischarge,
+                       ShipperAddress, ConsigneeAddress
+                FROM TwPrefillShipments WHERE ShipmentId = ''
+                """
+            )
+        }
+        seen_ids = set()
+        seen_blank = set()
+        fresh = []
+        skipped = 0
+        for item in records:
+            shipment_id = item["shipmentId"]
+            if shipment_id:
+                if shipment_id in existing_ids or shipment_id in seen_ids:
+                    skipped += 1
+                    continue
+                seen_ids.add(shipment_id)
+            else:
+                key = _content_key(item)
+                if key in existing_blank or key in seen_blank:
+                    skipped += 1
+                    continue
+                seen_blank.add(key)
+            fresh.append(_row_values(item))
+        if fresh:
+            conn.executemany(
+                """
+                INSERT INTO TwPrefillShipments (
+                    ShipmentId, Shipper, ShipperName, ShipperLetters,
+                    Consignee, ConsigneeName, ConsigneeLetters,
+                    Origin, Dest, Incoterm, SvcLevel, HblMode,
+                    PickupCfs, PickupAgent, DeliveryAgent,
+                    ControllingAgent, ControllingCustomer, Stackability,
+                    BusinessUnit, PlannedDischarge, ShipperAddress, ConsigneeAddress
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                fresh,
+            )
+        total = conn.execute("SELECT COUNT(*) FROM TwPrefillShipments").fetchone()[0]
         conn.execute(
             """
             INSERT INTO TwPrefillMeta (ID, Filename, ImportedAt, RowCount)
@@ -275,16 +325,22 @@ def replace_records(filename, records):
                 ImportedAt=excluded.ImportedAt,
                 RowCount=excluded.RowCount
             """,
-            (stored_name, stamp, len(records)),
+            (stored_name, stamp, total),
         )
-    return {"filename": stored_name, "rowCount": len(records), "importedAt": stamp}
+    return {
+        "filename": stored_name,
+        "rowCount": total,
+        "added": len(fresh),
+        "skipped": skipped,
+        "importedAt": stamp,
+    }
 
 
 def import_tw_prefill_csv(filename, data):
     records, error = parse_csv(data)
     if error:
         return None, error
-    return replace_records(filename, records), None
+    return append_records(filename, records), None
 
 
 def import_tw_prefill_xlsx(path):
@@ -302,7 +358,7 @@ def import_tw_prefill_xlsx(path):
         workbook.close()
     if error:
         return None, error
-    return replace_records(path.name, records), None
+    return append_records(path.name, records), None
 
 
 def meta_dict(conn):

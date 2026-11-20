@@ -1782,6 +1782,8 @@ def test_tw_prefill_suggest_and_rejected_csv():
         data={"file": (BytesIO(payload), "tw.csv")},
     )
     assert imported.status_code == 200, imported.get_json()
+    assert imported.get_json()["data"]["added"] == 24
+    assert imported.get_json()["data"]["skipped"] == 0
     assert imported.get_json()["data"]["rowCount"] == 24
 
     hit = client.get("/api/tw-prefill/suggest?shipper=KORINTTPE&origin=TWTYN&dest=DEBRV")
@@ -1821,7 +1823,20 @@ def test_tw_prefill_suggest_and_rejected_csv():
         json={"filename": "Book1.csv", "content": encoded},
     )
     assert via_json.status_code == 200, via_json.get_json()
+    assert via_json.get_json()["data"]["added"] == 0
+    assert via_json.get_json()["data"]["skipped"] == 24
     assert via_json.get_json()["data"]["rowCount"] == 24
+
+    extra = ("\n".join([_TW_HEADER, _tw_row("NEWSHIP", "NEWCEE", "TWKHH", "NLRTM", "INFLOGTPE1", "NEW1")]) + "\n").encode()
+    appended = client.post(
+        "/api/tw-prefill/import",
+        data={"file": (BytesIO(extra), "extra.csv")},
+    )
+    assert appended.status_code == 200, appended.get_json()
+    assert appended.get_json()["data"]["added"] == 1
+    assert appended.get_json()["data"]["rowCount"] == 25
+    still = client.get("/api/tw-prefill/suggest?shipper=KORINTTPE&origin=TWTYN&dest=DEBRV")
+    assert still.get_json()["combos"][0]["count"] == 12
 
 
 if __name__ == "__main__":

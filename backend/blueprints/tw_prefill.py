@@ -52,11 +52,15 @@ def import_records():
     if error:
         audit("twprefill.import", "failure", summary=error)
         return jsonify({"success": False, "message": error}), 400
-    count = result["rowCount"]
-    noun = "shipment" if count == 1 else "shipments"
-    audit("twprefill.import", summary=f"file={result['filename']} rows={count}")
+    added = result["added"]
+    skipped = result["skipped"]
+    noun = "shipment" if added == 1 else "shipments"
+    audit(
+        "twprefill.import",
+        summary=f"file={result['filename']} added={added} skipped={skipped} total={result['rowCount']}",
+    )
     return jsonify({
         "success": True,
-        "message": f"Imported {count:,} {noun}",
+        "message": f"Added {added:,} {noun}, skipped {skipped:,} duplicates",
         "data": result,
     })
