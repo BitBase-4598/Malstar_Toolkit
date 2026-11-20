@@ -1,4 +1,4 @@
-import { API_ROOT, IMPORT_TIMEOUT_MS, request } from "./client";
+import { API_ROOT, IMPORT_TIMEOUT_MS, JSON_UPLOAD_LIMIT, fileToBase64, request } from "./client";
 
 function queryString(filters) {
   const params = new URLSearchParams();
@@ -14,9 +14,26 @@ function queryString(filters) {
 export const twPrefillApi = {
   suggestTwPrefill: (filters, options) =>
     request(`${API_ROOT}/tw-prefill/suggest?${queryString(filters)}`, options),
-  importTwPrefill: (file) => {
+  importTwPrefill: async (file) => {
     const form = new FormData();
     form.append("file", file);
-    return request(`${API_ROOT}/tw-prefill/import`, { method: "POST", body: form, timeout: IMPORT_TIMEOUT_MS });
+    try {
+      return await request(`${API_ROOT}/tw-prefill/import`, {
+        method: "POST",
+        body: form,
+        timeout: IMPORT_TIMEOUT_MS,
+      });
+    } catch (error) {
+      if (file.size > JSON_UPLOAD_LIMIT) {
+        throw error;
+      }
+      const content = await fileToBase64(file);
+      return request(`${API_ROOT}/tw-prefill/import`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, content }),
+        timeout: IMPORT_TIMEOUT_MS,
+      });
+    }
   },
 };

@@ -40,9 +40,13 @@ export async function request(url, options = {}) {
     try {
       payload = text ? JSON.parse(text) : {};
     } catch {
+      const cleaned = String(text || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      if (/zscaler/i.test(cleaned) || /<!doctype|<html/i.test(text || "")) {
+        throw new Error(`Upload was blocked by the network proxy (HTTP ${response.status}).`);
+      }
       throw new Error(
-        text?.trim()
-          ? `Request failed (HTTP ${response.status}). ${text.replace(/<[^>]+>/g, " ").trim().slice(0, 180)}`
+        cleaned
+          ? `Request failed (HTTP ${response.status}). ${cleaned.slice(0, 180)}`
           : `Invalid response (HTTP ${response.status}).`
       );
     }

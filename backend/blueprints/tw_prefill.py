@@ -1,5 +1,8 @@
+import base64
+
 from flask import Blueprint, jsonify, request
 
+from config import MAX_JSON_UPLOAD_MB
 from logging_util import audit
 from services.tw_prefill import import_tw_prefill_csv, suggest
 
@@ -19,14 +22,33 @@ def suggest_records():
     return jsonify({"success": True, **payload})
 
 
+def _json_upload():
+    data = request.get_json(silent=True) or {}
+    raw = str(data.get("content") or data.get("contentBase64") or "")
+    if not raw:
+        return None, None, "No file was uploaded."
+    try:
+        payload = base64.b64decode(raw, validate=False)
+    except Exception:
+        return None, None, "The file data is not valid base64."
+    if len(payload) > MAX_JSON_UPLOAD_MB * 1024 * 1024:
+        return None, None, f"JSON uploads are limited to {MAX_JSON_UPLOAD_MB} MB. Use a smaller file."
+    filename = str(data.get("filename") or "tw-prefill.csv")
+    return filename, payload, None
+
+
 @bp.post("/api/tw-prefill/import")
 def import_records():
-    if "file" not in request.files:
-        audit("twprefill.import", "failure", summary="no file uploaded")
-        return jsonify({"success": False, "message": "No file was uploaded."}), 400
-    file = request.files["file"]
-    filename = file.filename or "tw-prefill.csv"
-    result, error = import_tw_prefill_csv(filename, file.read())
+    if "file" in request.files:
+        file = request.files["file"]
+        filename = file.filename or "tw-prefill.csv"
+        raw = file.read()
+    else:
+        filename, raw, error = _json_upload()
+        if error:
+            audit("twprefill.import", "failure", summary=error)
+            return jsonify({"success": False, "message": error}), 400
+    result, error = import_tw_prefill_csv(filename, raw)
     if error:
         audit("twprefill.import", "failure", summary=error)
         return jsonify({"success": False, "message": error}), 400

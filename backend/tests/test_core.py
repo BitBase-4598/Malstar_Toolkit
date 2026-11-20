@@ -1814,6 +1814,15 @@ def test_tw_prefill_suggest_and_rejected_csv():
     kept = client.get("/api/tw-prefill/suggest?shipper=KORINTTPE")
     assert kept.get_json()["total"] == 12
 
+    import base64
+    encoded = base64.b64encode(payload).decode("ascii")
+    via_json = client.post(
+        "/api/tw-prefill/import",
+        json={"filename": "Book1.csv", "content": encoded},
+    )
+    assert via_json.status_code == 200, via_json.get_json()
+    assert via_json.get_json()["data"]["rowCount"] == 24
+
 
 if __name__ == "__main__":
     names = [name for name, value in list(globals().items()) if name.startswith("test_") and callable(value)]
