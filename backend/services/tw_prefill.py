@@ -112,13 +112,25 @@ def confidence_label(count, total):
     return "参考"
 
 
+HEADER_ALIASES = {
+    "incoterm": ("inco",),
+    "svc. lvl.": ("service level",),
+    "cn address 2": ("consignee address 2",),
+    "cr address 2": ("consignor address 2",),
+}
+
+
 def map_headers(raw_header):
+    accepted = {}
+    for label, name in COLUMNS:
+        accepted[normalize_header(label)] = name
+        for alias in HEADER_ALIASES.get(normalize_header(label), ()):
+            accepted.setdefault(normalize_header(alias), name)
     found = {}
     for index, cell in enumerate(raw_header or []):
-        key = normalize_header(cell)
-        for label, name in COLUMNS:
-            if key == normalize_header(label) and name not in found:
-                found[name] = index
+        name = accepted.get(normalize_header(cell))
+        if name and name not in found:
+            found[name] = index
     missing = [label for label, name in COLUMNS if name not in found]
     return found, missing
 

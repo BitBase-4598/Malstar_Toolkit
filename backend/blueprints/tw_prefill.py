@@ -24,6 +24,13 @@ def suggest_records():
 
 def _json_upload():
     data = request.get_json(silent=True) or {}
+    csv_text = data.get("csv")
+    filename = str(data.get("filename") or "tw-prefill.csv")
+    if isinstance(csv_text, str) and csv_text.strip():
+        payload = csv_text.encode("utf-8")
+        if len(payload) > 8 * 1024 * 1024:
+            return None, None, "Each upload part is limited to 8 MB."
+        return filename, payload, None
     raw = str(data.get("content") or data.get("contentBase64") or "")
     if not raw:
         return None, None, "No file was uploaded."
@@ -33,7 +40,6 @@ def _json_upload():
         return None, None, "The file data is not valid base64."
     if len(payload) > MAX_JSON_UPLOAD_MB * 1024 * 1024:
         return None, None, f"JSON uploads are limited to {MAX_JSON_UPLOAD_MB} MB. Use a smaller file."
-    filename = str(data.get("filename") or "tw-prefill.csv")
     return filename, payload, None
 
 

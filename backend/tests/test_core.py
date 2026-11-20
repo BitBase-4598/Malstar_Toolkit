@@ -1839,6 +1839,33 @@ def test_tw_prefill_suggest_and_rejected_csv():
     assert still.get_json()["combos"][0]["count"] == 12
 
 
+def test_tw_prefill_book_export_aliases():
+    from app import create_app
+
+    migrate()
+    client = create_app().test_client()
+    header = (
+        "Shipper,Shipper Full Name,Consignee,Consignee Full Name,Origin,Dest.,"
+        "INCO,Service Level,HBL Dlv. Mode,Pickup CFS,Pickup Agent,Dlv. Agent,"
+        "Controlling Agent,Controlling Customer,Shipment Stackability,Business Unit,"
+        "Planned Discharge,Shipment ID,Consignee Address,Consignee Address 1,"
+        "Consignee Address 2,CN City,CN State,CN Country/Region,Consignor Address 1,"
+        "Consignor Address 2,CR City,CR State,CR Country/Region"
+    )
+    row = _tw_row("NEWSZX", "NEWCEE", "CNSNZ", "TRIZT", "SHEZHESZX69", "S26SSZ1")
+    imported = client.post(
+        "/api/tw-prefill/import",
+        json={"filename": "BOOK2.csv", "csv": f"{header}\n{row}\n"},
+    )
+    assert imported.status_code == 200, imported.get_json()
+    assert imported.get_json()["data"]["added"] == 1
+    hit = client.get("/api/tw-prefill/suggest?shipper=NEWSZX&origin=CNSNZ&dest=TRIZT")
+    combo = hit.get_json()["combos"][0]
+    assert combo["incoterm"] == "FOB"
+    assert combo["svcLevel"] == "STD"
+    assert combo["pickupCfs"] == "SHEZHESZX69"
+
+
 if __name__ == "__main__":
     names = [name for name, value in list(globals().items()) if name.startswith("test_") and callable(value)]
     failed = 0
